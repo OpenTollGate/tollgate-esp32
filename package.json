@@ -1,0 +1,15 @@
+{
+  "name": "esp32-tollgate-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/api.mjs && node tests/network.mjs",
+    "test:api": "node tests/api.mjs",
+    "test:network": "node tests/network.mjs",
+    "test:portal": "npx playwright test tests/captive-portal.spec.mjs",
+    "test:smoke": "node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}

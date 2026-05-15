@@ -26,6 +26,20 @@ esp_err_t firewall_init(esp_ip4_addr_t ap_ip)
     return ESP_OK;
 }
 
+static void update_nat(void)
+{
+    bool should_enable = (s_client_count > 0);
+    if (should_enable && !s_nat_enabled) {
+        ip_napt_enable(s_ap_ip.addr, 1);
+        s_nat_enabled = true;
+        ESP_LOGI(TAG, "NAT enabled (client authenticated)");
+    } else if (!should_enable && s_nat_enabled) {
+        ip_napt_enable(s_ap_ip.addr, 0);
+        s_nat_enabled = false;
+        ESP_LOGI(TAG, "NAT disabled (no authenticated clients)");
+    }
+}
+
 void firewall_enable_nat(void)
 {
     if (s_nat_enabled) return;
@@ -54,6 +68,7 @@ void firewall_grant_access(uint32_t client_ip)
     s_clients[s_client_count].ip = client_ip;
     s_client_count++;
     dns_server_set_client_authenticated(client_ip, true);
+    update_nat();
 
     esp_ip4_addr_t ip_addr = { .addr = client_ip };
     ESP_LOGI(TAG, "Access granted to " IPSTR, IP2STR(&ip_addr));
@@ -66,6 +81,7 @@ void firewall_revoke_access(uint32_t client_ip)
             s_clients[i] = s_clients[s_client_count - 1];
             s_client_count--;
             dns_server_set_client_authenticated(client_ip, false);
+            update_nat();
             esp_ip4_addr_t ip_addr = { .addr = client_ip };
             ESP_LOGI(TAG, "Access revoked for " IPSTR, IP2STR(&ip_addr));
             return;
@@ -79,6 +95,7 @@ void firewall_revoke_all(void)
         dns_server_set_client_authenticated(s_clients[i].ip, false);
     }
     s_client_count = 0;
+    update_nat();
     ESP_LOGI(TAG, "All client access revoked");
 }
 

@@ -85,7 +85,6 @@ static void parse_dns_name(const uint8_t *buf, int buf_len, int offset, char *ou
 
 static int build_nxdomain(uint8_t *response, int req_len)
 {
-    memcpy(response, response, req_len);
     dns_header_t *hdr = (dns_header_t *)response;
     hdr->flags = htons(0x8403);
     hdr->ancount = 0;
@@ -96,7 +95,7 @@ static int build_nxdomain(uint8_t *response, int req_len)
 
 static int build_redirect_response(uint8_t *response, int req_len)
 {
-    memcpy(response, response, req_len);
+    memmove(response, response, req_len);
     dns_header_t *hdr = (dns_header_t *)response;
     hdr->flags = htons(0x8180);
     hdr->ancount = htons(1);
