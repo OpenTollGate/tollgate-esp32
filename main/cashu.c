@@ -14,9 +14,9 @@ static const size_t V3_PREFIX_LEN = 6;
 
 static int b64url_decode(const char *input, size_t input_len, char *out, size_t out_size, size_t *out_len)
 {
-    char b64[1024];
+    char *b64 = malloc(input_len + 4);
+    if (!b64) return -1;
     size_t b64_len = input_len;
-    if (b64_len >= sizeof(b64)) return -1;
     memcpy(b64, input, b64_len);
     b64[b64_len] = '\0';
 
@@ -24,7 +24,7 @@ static int b64url_decode(const char *input, size_t input_len, char *out, size_t 
         if (b64[i] == '-') b64[i] = '+';
         else if (b64[i] == '_') b64[i] = '/';
     }
-    while (b64_len % 4 != 0 && b64_len < sizeof(b64) - 1) {
+    while (b64_len % 4 != 0) {
         b64[b64_len++] = '=';
     }
     b64[b64_len] = '\0';
@@ -32,6 +32,7 @@ static int b64url_decode(const char *input, size_t input_len, char *out, size_t 
     size_t olen = 0;
     int ret = mbedtls_base64_decode((unsigned char *)out, out_size, &olen,
                                      (const unsigned char *)b64, b64_len);
+    free(b64);
     if (ret != 0) return -1;
     *out_len = olen;
     return 0;
@@ -86,16 +87,19 @@ esp_err_t cashu_decode_token(const char *token_str, cashu_token_t *out)
         return ESP_FAIL;
     }
 
-    char json_buf[2048];
+    char *json_buf = malloc(2048);
+    if (!json_buf) return ESP_FAIL;
     size_t json_len = 0;
     if (b64url_decode(token_str + V3_PREFIX_LEN, len - V3_PREFIX_LEN,
-                      json_buf, sizeof(json_buf) - 1, &json_len) != 0) {
+                      json_buf, 2047, &json_len) != 0) {
         ESP_LOGE(TAG, "Base64url decode failed");
+        free(json_buf);
         return ESP_FAIL;
     }
     json_buf[json_len] = '\0';
 
     cJSON *root = cJSON_Parse(json_buf);
+    free(json_buf);
     if (!root) {
         ESP_LOGE(TAG, "JSON parse failed");
         return ESP_FAIL;
@@ -167,14 +171,16 @@ esp_err_t cashu_check_proof_states(const char *mint_url, const cashu_token_t *to
     char *ys_json = cJSON_PrintUnformatted(ys_arr);
     cJSON_Delete(ys_arr);
 
-    char post_body[2048];
-    snprintf(post_body, sizeof(post_body), "{\"Ys\":%s}", ys_json);
+    char *post_body = malloc(4096);
+    if (!post_body) { cJSON_free(ys_json); return ESP_FAIL; }
+    snprintf(post_body, 4096, "{\"Ys\":%s}", ys_json);
     cJSON_free(ys_json);
 
     char url[512];
     snprintf(url, sizeof(url), "%s/v1/checkstate", mint_url);
 
-    char resp_buf[4096];
+    char *resp_buf = malloc(8192);
+    if (!resp_buf) { free(post_body); return ESP_FAIL; }
     int resp_len = 0;
 
     esp_http_client_config_t config = {
@@ -183,27 +189,32 @@ esp_err_t cashu_check_proof_states(const char *mint_url, const cashu_token_t *to
         .timeout_ms = 10000,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) return ESP_FAIL;
+    if (!client) { free(post_body); free(resp_buf); return ESP_FAIL; }
 
     esp_http_client_set_header(client, "Content-Type", "application/json");
     esp_err_t err = esp_http_client_open(client, strlen(post_body));
     if (err != ESP_OK) {
         esp_http_client_cleanup(client);
+        free(post_body);
+        free(resp_buf);
         return err;
     }
     esp_http_client_write(client, post_body, strlen(post_body));
+    free(post_body);
 
-    resp_len = esp_http_client_read(client, resp_buf, sizeof(resp_buf) - 1);
+    resp_len = esp_http_client_read(client, resp_buf, 8191);
     int status = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
 
     if (status != 200 || resp_len <= 0) {
         ESP_LOGE(TAG, "checkstate returned %d", status);
+        free(resp_buf);
         return ESP_FAIL;
     }
     resp_buf[resp_len] = '\0';
 
     cJSON *root = cJSON_Parse(resp_buf);
+    free(resp_buf);
     if (!root) return ESP_FAIL;
 
     cJSON *states_arr = cJSON_GetObjectItemCaseSensitive(root, "states");

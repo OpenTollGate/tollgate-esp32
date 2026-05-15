@@ -20,7 +20,7 @@ PYTHON ?= python3
 .PHONY: help setup detect-ports detect-chip detect-all
 .PHONY: flash flash-a flash-b monitor monitor-a monitor-b
 .PHONY: test smoke test-api test-portal test-network test-full
-.PHONY: tokens test-payment
+.PHONY: tokens test-payment wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log
 .PHONY: bootstrap-config
 
@@ -47,7 +47,12 @@ help:
 	@echo "  test-full         All 14 Phase 1 tests"
 	@echo ""
 	@echo "Test (Phase 2):"
-	@echo "  tokens            Mint test Cashu tokens (AMOUNT=21)"
+	@echo "  wallet-setup      Initialize nutshell wallet for test mint"
+	@echo "  wallet-info       Show mint info"
+	@echo "  wallet-balance    Show wallet balance"
+	@echo "  mint-token        Invoice + send test token (AMOUNT=21)"
+	@echo "  send-token        Send cashuA token (AMOUNT=21)"
+	@echo "  tokens            Alias for send-token"
 	@echo "  test-payment      Payment flow tests"
 	@echo ""
 	@echo "Utilities:"
@@ -165,17 +170,39 @@ test-full: test-api test-portal test-network
 	@echo "=== Full test suite passed ==="
 
 # ──────────────────────────────────────────────
-# Phase 2: Payment Testing
+# Phase 2: Payment Testing (Nutshell wallet)
 # ──────────────────────────────────────────────
 
-tokens:
-	@echo "=== Minting test tokens from $(TEST_MINT) ==="
+wallet-setup:
+	@echo "=== Setting up Nutshell wallet for $(TEST_MINT) ==="
+	cashu --env-mint $(TEST_MINT) info 2>/dev/null || \
+		cashu --env-mint $(TEST_MINT) restore
+
+wallet-info:
+	@echo "=== Mint info ==="
+	cashu --env-mint $(TEST_MINT) info
+
+wallet-balance:
+	@echo "=== Wallet balance ==="
+	cashu --env-mint $(TEST_MINT) balance
+
+mint-token:
+	@echo "=== Minting test token (AMOUNT=$(or $(AMOUNT),21)) ==="
 	@AMOUNT=$${AMOUNT:-21}; \
-	cd scripts/mint-token && go run main.go -mint https://$(TEST_MINT) -amount $$AMOUNT
+	cashu --env-mint $(TEST_MINT) invoice $$AMOUNT && \
+	echo "--- Token (cashuA legacy) ---" && \
+	cashu --env-mint $(TEST_MINT) send --legacy $$AMOUNT
+
+send-token:
+	@AMOUNT=$${AMOUNT:-21}; \
+	echo "=== Sending $$AMOUNT sats as cashuA token ===" && \
+	cashu --env-mint $(TEST_MINT) send --legacy $$AMOUNT
+
+tokens: send-token
 
 test-payment:
 	@echo "=== Running payment tests ==="
-	$(NODE) tests/payment.mjs
+	$(NODE) tests/phase2.mjs
 
 # ──────────────────────────────────────────────
 # Utilities

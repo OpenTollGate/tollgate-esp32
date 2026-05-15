@@ -330,6 +330,7 @@ esp_err_t tollgate_api_start(void)
     config.server_port = 2121;
     config.ctrl_port = 32769;
     config.max_uri_handlers = 10;
+    config.stack_size = 16384;
 
     esp_err_t ret = httpd_start(&s_api_server, &config);
     if (ret != ESP_OK) {
