@@ -14,6 +14,8 @@
 #include "dns_server.h"
 #include "captive_portal.h"
 #include "firewall.h"
+#include "session.h"
+#include "tollgate_api.h"
 
 #define MAX_STA_RETRY 5
 #define AP_IP_ADDR "192.168.4.1"
@@ -105,9 +107,11 @@ static void start_services(void)
     upstream_dns.addr = dns_addr->addr;
 
     firewall_init(ap_ip_info.ip);
+    session_manager_init();
 
     dns_server_start(ap_ip_info.ip, upstream_dns);
     captive_portal_start();
+    tollgate_api_start();
 
     s_services_running = true;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
@@ -123,6 +127,7 @@ static void stop_services(void)
     }
 
     captive_portal_stop();
+    tollgate_api_stop();
     dns_server_stop();
     firewall_disable_nat();
     firewall_revoke_all();
@@ -218,4 +223,9 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "WiFi AP+STA started, waiting for connection...");
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        session_tick();
+    }
 }
