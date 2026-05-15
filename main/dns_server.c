@@ -11,10 +11,14 @@
 #define MAX_PENDING 50
 #define DNS_BUF_SIZE 512
 #define DNS_PORT 53
+#define DOT_PORT 853
 #define DNS_TASK_STACK 4096
+#define DOT_TASK_STACK 3072
 #define DNS_TASK_PRIO 5
+#define DOT_TASK_PRIO 5
 #define DNS_FORWARD_TIMEOUT_MS 2000
 #define NXDOMAIN_TTL 30
+#define HIJACK_TTL 10
 
 static const char *TAG = "dns_server";
 
@@ -47,6 +51,7 @@ typedef struct {
 static auth_entry_t s_auth_list[MAX_AUTH_IPS];
 static int s_auth_count = 0;
 static TaskHandle_t s_dns_task = NULL;
+static TaskHandle_t s_dot_task = NULL;
 static volatile bool s_dns_running = false;
 static esp_ip4_addr_t s_ap_ip;
 static esp_ip4_addr_t s_upstream_dns;
@@ -106,7 +111,7 @@ static int build_redirect_response(uint8_t *response, int req_len)
     ans.name = htons(0xC00C);
     ans.type = htons(1);
     ans.class = htons(1);
-    ans.ttl = htonl(NXDOMAIN_TTL);
+    ans.ttl = htonl(HIJACK_TTL);
     ans.len = htons(4);
     ans.addr = s_ap_ip.addr;
     memcpy(response + resp_len, &ans, sizeof(ans));
@@ -201,29 +206,70 @@ static void dns_server_task(void *arg)
                 sendto(sock, tx_buf, resp_len, 0, (struct sockaddr *)&client_addr, client_len);
             }
         } else {
+            char qname[256] = {0};
+            parse_dns_name(rx_buf, n, sizeof(dns_header_t), qname, sizeof(qname));
+            ESP_LOGI(TAG, "Hijack DNS from " IPSTR ": %s (type=%d)", IP2STR(&(esp_ip4_addr_t){.addr=client_ip}), qname, qtype);
             if (qtype == 1) {
                 int resp_len = build_redirect_response(rx_buf, req_len);
                 memcpy(tx_buf, rx_buf, resp_len);
                 dns_header_t *resp_hdr = (dns_header_t *)tx_buf;
                 resp_hdr->id = htons(txn_id);
                 sendto(sock, tx_buf, resp_len, 0, (struct sockaddr *)&client_addr, client_len);
-            } else if (qtype == 28) {
+            } else {
                 int resp_len = build_nxdomain(rx_buf, req_len);
                 memcpy(tx_buf, rx_buf, resp_len);
                 dns_header_t *resp_hdr = (dns_header_t *)tx_buf;
                 resp_hdr->id = htons(txn_id);
                 sendto(sock, tx_buf, resp_len, 0, (struct sockaddr *)&client_addr, client_len);
-            } else {
-                int resp_len = forward_dns(rx_buf, req_len, tx_buf, sizeof(tx_buf), &client_addr, txn_id);
-                if (resp_len > 0) {
-                    sendto(sock, tx_buf, resp_len, 0, (struct sockaddr *)&client_addr, client_len);
-                }
             }
         }
     }
 
     close(sock);
     ESP_LOGI(TAG, "DNS server stopped");
+    vTaskDelete(NULL);
+}
+
+static void dot_reject_task(void *arg)
+{
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        ESP_LOGE(TAG, "Failed to create DoT reject socket");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    int opt = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in bind_addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(DOT_PORT),
+        .sin_addr.s_addr = INADDR_ANY,
+    };
+    if (bind(sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
+        ESP_LOGE(TAG, "Failed to bind DoT reject socket on port %d", DOT_PORT);
+        close(sock);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    listen(sock, 1);
+    ESP_LOGI(TAG, "DoT reject server on port %d (forces DNS fallback to port 53)", DOT_PORT);
+
+    while (s_dns_running) {
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        int client_sock = accept(sock, (struct sockaddr *)&client_addr, &client_len);
+        if (client_sock >= 0) {
+            struct linger ling = { .l_onoff = 1, .l_linger = 0 };
+            setsockopt(client_sock, SOL_SOCKET, SO_LINGER, &ling, sizeof(ling));
+            close(client_sock);
+        }
+    }
+
+    close(sock);
+    ESP_LOGI(TAG, "DoT reject server stopped");
     vTaskDelete(NULL);
 }
 
@@ -234,6 +280,7 @@ esp_err_t dns_server_start(esp_ip4_addr_t ap_ip, esp_ip4_addr_t upstream_dns)
     s_upstream_dns = upstream_dns;
     s_dns_running = true;
     xTaskCreate(dns_server_task, "dns_server", DNS_TASK_STACK, NULL, DNS_TASK_PRIO, &s_dns_task);
+    xTaskCreate(dot_reject_task, "dot_reject", DOT_TASK_STACK, NULL, DOT_TASK_PRIO, &s_dot_task);
     return ESP_OK;
 }
 

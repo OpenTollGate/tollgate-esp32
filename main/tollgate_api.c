@@ -2,10 +2,12 @@
 #include "cashu.h"
 #include "config.h"
 #include "session.h"
+#include "firewall.h"
 #include "esp_log.h"
 #include "cJSON.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
+#include "freertos/task.h"
 #include <string.h>
 
 static const char *TAG = "tollgate_api";
@@ -179,11 +181,22 @@ static esp_err_t api_post_payment(httpd_req_t *req)
 
     ESP_LOGI(TAG, "Payment received: %d bytes", total);
 
-    cashu_token_t token;
-    esp_err_t err = cashu_decode_token(body, &token);
+    cashu_token_t *token = malloc(sizeof(cashu_token_t));
+    if (!token) {
+        cJSON *notice = create_notice("error", "session-error", "Out of memory");
+        char *json = cJSON_PrintUnformatted(notice);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, json, strlen(json));
+        cJSON_free(json);
+        cJSON_Delete(notice);
+        return ESP_OK;
+    }
+    esp_err_t err = cashu_decode_token(body, token);
     free(body);
 
     if (err != ESP_OK) {
+        free(token);
         cJSON *notice = create_notice("error", "payment-error-invalid", "Failed to decode Cashu token");
         char *json = cJSON_PrintUnformatted(notice);
         httpd_resp_set_status(req, "400 Bad Request");
@@ -194,8 +207,9 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         return ESP_OK;
     }
 
-    const char *mint_url = token.mint_url[0] ? token.mint_url : tollgate_config_get()->mint_url;
+    const char *mint_url = token->mint_url[0] ? token->mint_url : tollgate_config_get()->mint_url;
     if (!cashu_is_mint_accepted(mint_url)) {
+        free(token);
         cJSON *notice = create_notice("error", "payment-error-mint-not-accepted", "Mint not accepted");
         char *json = cJSON_PrintUnformatted(notice);
         httpd_resp_set_status(req, "402 Payment Required");
@@ -206,8 +220,9 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         return ESP_OK;
     }
 
-    for (int i = 0; i < token.proof_count; i++) {
-        if (session_is_secret_spent(token.proofs[i].secret)) {
+    for (int i = 0; i < token->proof_count; i++) {
+        if (session_is_secret_spent(token->proofs[i].secret)) {
+            free(token);
             cJSON *notice = create_notice("error", "payment-error-token-spent", "Token already spent");
             char *json = cJSON_PrintUnformatted(notice);
             httpd_resp_set_status(req, "402 Payment Required");
@@ -219,10 +234,24 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         }
     }
 
-    cashu_proof_state_t states[CASHU_MAX_PROOFS];
+    cashu_proof_state_t *states = malloc(CASHU_MAX_PROOFS * sizeof(cashu_proof_state_t));
+    if (!states) {
+        free(token);
+        cJSON *notice = create_notice("error", "session-error", "Out of memory");
+        char *json = cJSON_PrintUnformatted(notice);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, json, strlen(json));
+        cJSON_free(json);
+        cJSON_Delete(notice);
+        return ESP_OK;
+    }
     int state_count = 0;
-    err = cashu_check_proof_states(mint_url, &token, states, &state_count);
+    err = cashu_check_proof_states(mint_url, token, states, &state_count);
+    ESP_LOGI(TAG, "Stack HWM after checkstate: %u", uxTaskGetStackHighWaterMark(NULL));
     if (err != ESP_OK) {
+        free(states);
+        free(token);
         cJSON *notice = create_notice("error", "payment-error-verification", "Failed to verify token with mint");
         char *json = cJSON_PrintUnformatted(notice);
         httpd_resp_set_status(req, "502 Bad Gateway");
@@ -235,6 +264,8 @@ static esp_err_t api_post_payment(httpd_req_t *req)
 
     for (int i = 0; i < state_count; i++) {
         if (states[i].spent) {
+            free(states);
+            free(token);
             cJSON *notice = create_notice("error", "payment-error-token-spent", "Token already spent");
             char *json = cJSON_PrintUnformatted(notice);
             httpd_resp_set_status(req, "402 Payment Required");
@@ -247,8 +278,10 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     }
 
     const tollgate_config_t *cfg = tollgate_config_get();
-    uint64_t allotment = cashu_calculate_allotment_ms(token.total_amount, cfg->price_per_step, cfg->step_size_ms);
+    uint64_t allotment = cashu_calculate_allotment_ms(token->total_amount, cfg->price_per_step, cfg->step_size_ms);
     if (allotment == 0) {
+        free(states);
+        free(token);
         cJSON *notice = create_notice("error", "payment-error-insufficient", "Token value too low");
         char *json = cJSON_PrintUnformatted(notice);
         httpd_resp_set_status(req, "402 Payment Required");
@@ -259,11 +292,14 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         return ESP_OK;
     }
 
+    int secret_count = token->proof_count > 5 ? 5 : token->proof_count;
     const char *secrets[5];
-    for (int i = 0; i < token.proof_count && i < 5; i++) {
-        secrets[i] = token.proofs[i].secret;
+    for (int i = 0; i < secret_count; i++) {
+        secrets[i] = token->proofs[i].secret;
     }
-    session_t *session = session_create(client_ip, allotment, secrets, token.proof_count);
+    session_t *session = session_create(client_ip, allotment, secrets, secret_count);
+    free(states);
+    free(token);
     if (!session) {
         cJSON *notice = create_notice("error", "session-error", "Failed to create session");
         char *json = cJSON_PrintUnformatted(notice);
@@ -310,12 +346,17 @@ static esp_err_t api_get_usage(httpd_req_t *req)
 static esp_err_t api_get_whoami(httpd_req_t *req)
 {
     uint32_t client_ip = 0;
-    char resp[64];
+    char resp[96];
     if (get_client_ip(req, &client_ip) == ESP_OK) {
+        char mac[18] = {0};
         esp_ip4_addr_t ip = { .addr = client_ip };
-        snprintf(resp, sizeof(resp), "mac=" IPSTR, IP2STR(&ip));
+        if (firewall_get_mac_for_ip(client_ip, mac, sizeof(mac)) == ESP_OK) {
+            snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=%s", IP2STR(&ip), mac);
+        } else {
+            snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=unknown", IP2STR(&ip));
+        }
     } else {
-        snprintf(resp, sizeof(resp), "mac=unknown");
+        snprintf(resp, sizeof(resp), "ip=unknown mac=unknown");
     }
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, resp, strlen(resp));

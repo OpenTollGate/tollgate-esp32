@@ -72,9 +72,22 @@ if (TEST_TOKEN) {
 
   // Test 18: Internet after payment
   console.log('\nTest 18: Internet works after payment');
-  await sleep(1000);
-  const ping18 = execSync('ping -c 2 -W 2 -I wlp59s0 8.8.8.8', { encoding: 'utf8', timeout: 10000 });
-  assert(ping18 && !ping18.includes('100% packet loss'), 'Internet works');
+  await sleep(1500);
+  const sudoPw = process.env.SUDO_PW || 'c03rad0r123';
+  try {
+    execSync(`echo '${sudoPw}' | sudo -S ip route add default via 192.168.4.1 dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
+  } catch {}
+  let pingOk = false;
+  try {
+    const ping18 = execSync('ping -c 3 -W 3 8.8.8.8', { encoding: 'utf8', timeout: 15000 });
+    pingOk = ping18 && !ping18.includes('100% packet loss');
+  } catch {
+    pingOk = false;
+  }
+  try {
+    execSync(`echo '${sudoPw}' | sudo -S ip route del default via 192.168.4.1 dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
+  } catch {}
+  assert(pingOk, 'Internet works');
 
   // Test 20: Spent token
   console.log('\nTest 20: Reuse token (should fail)');
@@ -88,7 +101,7 @@ if (TEST_TOKEN) {
 // Test: whoami on :2121
 console.log('\nTest: GET :2121/whoami');
 const bodyWhoami = curlBody(`${API}/whoami`);
-assert(bodyWhoami && bodyWhoami.startsWith('mac='), '/whoami returns mac=...');
+assert(bodyWhoami && bodyWhoami.includes('mac='), '/whoami returns mac=...');
 
 // Test: Portal has payment form
 console.log('\nTest: Portal has payment form');

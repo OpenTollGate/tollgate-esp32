@@ -100,11 +100,17 @@ static bool is_captive_detection_uri(const char *uri)
            strcmp(uri, "/ncsi.txt") == 0 ||
            strcmp(uri, "/connecttest.txt") == 0 ||
            strcmp(uri, "/wpad.dat") == 0 ||
-           strcmp(uri, "/redirect") == 0;
+           strcmp(uri, "/redirect") == 0 ||
+           strcmp(uri, "/kindle-wifi/wifistub.html") == 0 ||
+           strcmp(uri, "/fwlink") == 0 ||
+           strcmp(uri, "/connectivity-check.html") == 0 ||
+           strcmp(uri, "/generate_204/") == 0 ||
+           strcmp(uri, "/hotspot-detect.html/") == 0;
 }
 
 static esp_err_t portal_handler(httpd_req_t *req)
 {
+    ESP_LOGI(TAG, "GET %s from client", req->uri);
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, PORTAL_HTML, strlen(PORTAL_HTML));
     return ESP_OK;
@@ -139,12 +145,17 @@ static esp_err_t status_handler(httpd_req_t *req)
 static esp_err_t whoami_handler(httpd_req_t *req)
 {
     uint32_t client_ip;
-    char resp[64];
+    char resp[96];
     if (get_client_ip(req, &client_ip) == ESP_OK) {
+        char mac[18] = {0};
         esp_ip4_addr_t ip = { .addr = client_ip };
-        snprintf(resp, sizeof(resp), "mac=" IPSTR, IP2STR(&ip));
+        if (firewall_get_mac_for_ip(client_ip, mac, sizeof(mac)) == ESP_OK) {
+            snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=%s", IP2STR(&ip), mac);
+        } else {
+            snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=unknown", IP2STR(&ip));
+        }
     } else {
-        snprintf(resp, sizeof(resp), "mac=unknown");
+        snprintf(resp, sizeof(resp), "ip=unknown mac=unknown");
     }
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, resp, strlen(resp));
@@ -174,13 +185,22 @@ static esp_err_t reset_auth_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t catchall_handler(httpd_req_t *req)
+static esp_err_t redirect_to_portal_handler(httpd_req_t *req)
 {
-    if (is_captive_detection_uri(req->uri)) {
-        return portal_handler(req);
-    }
+    ESP_LOGI(TAG, "Captive detect: GET %s → 302 → http://192.168.4.1/", req->uri);
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+static esp_err_t catchall_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "Catchall: GET %s → 302 → http://192.168.4.1/", req->uri);
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    httpd_resp_set_hdr(req, "Connection", "close");
     httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
@@ -191,6 +211,13 @@ static const httpd_uri_t uri_status = { .uri = "/api/status", .method = HTTP_GET
 static const httpd_uri_t uri_whoami = { .uri = "/whoami", .method = HTTP_GET, .handler = whoami_handler };
 static const httpd_uri_t uri_usage = { .uri = "/usage", .method = HTTP_GET, .handler = usage_handler };
 static const httpd_uri_t uri_reset = { .uri = "/reset_authentication", .method = HTTP_GET, .handler = reset_auth_handler };
+static const httpd_uri_t uri_gen204 = { .uri = "/generate_204", .method = HTTP_GET, .handler = redirect_to_portal_handler };
+static const httpd_uri_t uri_hotspot = { .uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = redirect_to_portal_handler };
+static const httpd_uri_t uri_canonical = { .uri = "/canonical.html", .method = HTTP_GET, .handler = redirect_to_portal_handler };
+static const httpd_uri_t uri_success = { .uri = "/success.txt", .method = HTTP_GET, .handler = redirect_to_portal_handler };
+static const httpd_uri_t uri_ncsi = { .uri = "/ncsi.txt", .method = HTTP_GET, .handler = redirect_to_portal_handler };
+static const httpd_uri_t uri_connecttest = { .uri = "/connecttest.txt", .method = HTTP_GET, .handler = redirect_to_portal_handler };
+static const httpd_uri_t uri_wpad = { .uri = "/wpad.dat", .method = HTTP_GET, .handler = redirect_to_portal_handler };
 static const httpd_uri_t uri_catchall = { .uri = "/*", .method = HTTP_GET, .handler = catchall_handler };
 
 esp_err_t captive_portal_start(void)
@@ -198,7 +225,7 @@ esp_err_t captive_portal_start(void)
     if (s_server) return ESP_OK;
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 20;
     config.uri_match_fn = httpd_uri_match_wildcard;
 
     esp_err_t ret = httpd_start(&s_server, &config);
@@ -213,6 +240,13 @@ esp_err_t captive_portal_start(void)
     httpd_register_uri_handler(s_server, &uri_whoami);
     httpd_register_uri_handler(s_server, &uri_usage);
     httpd_register_uri_handler(s_server, &uri_reset);
+    httpd_register_uri_handler(s_server, &uri_gen204);
+    httpd_register_uri_handler(s_server, &uri_hotspot);
+    httpd_register_uri_handler(s_server, &uri_canonical);
+    httpd_register_uri_handler(s_server, &uri_success);
+    httpd_register_uri_handler(s_server, &uri_ncsi);
+    httpd_register_uri_handler(s_server, &uri_connecttest);
+    httpd_register_uri_handler(s_server, &uri_wpad);
     httpd_register_uri_handler(s_server, &uri_catchall);
 
     ESP_LOGI(TAG, "Captive portal started on port 80");

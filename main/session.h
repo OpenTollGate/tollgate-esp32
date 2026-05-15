@@ -24,6 +24,7 @@ session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
                           const char *spent_secrets[], int secret_count);
 
 session_t *session_find_by_ip(uint32_t client_ip);
+session_t *session_find_by_mac(const char *mac);
 
 void session_extend(session_t *session, uint64_t additional_ms);
 

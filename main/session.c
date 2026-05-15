@@ -29,6 +29,13 @@ esp_err_t session_manager_init(void)
     return ESP_OK;
 }
 
+static void populate_mac(session_t *session, uint32_t client_ip)
+{
+    if (firewall_get_mac_for_ip(client_ip, session->mac, sizeof(session->mac)) != ESP_OK) {
+        session->mac[0] = '\0';
+    }
+}
+
 session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
                           const char *spent_secrets[], int secret_count)
 {
@@ -59,6 +66,7 @@ session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
             s_sessions[i].start_time_ms = get_time_ms();
             s_sessions[i].active = true;
             s_sessions[i].spent_secret_count = 0;
+            populate_mac(&s_sessions[i], client_ip);
 
             for (int j = 0; j < secret_count && j < 5; j++) {
                 strncpy(s_sessions[i].spent_secrets[s_sessions[i].spent_secret_count],
@@ -77,7 +85,8 @@ session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
             firewall_grant_access(client_ip);
 
             esp_ip4_addr_t ip = { .addr = client_ip };
-            ESP_LOGI(TAG, "Session created: " IPSTR " allotment=%llums", IP2STR(&ip),
+            ESP_LOGI(TAG, "Session created: " IPSTR " mac=%s allotment=%llums", IP2STR(&ip),
+                     s_sessions[i].mac[0] ? s_sessions[i].mac : "unknown",
                      (unsigned long long)allotment_ms);
             return &s_sessions[i];
         }
@@ -91,6 +100,17 @@ session_t *session_find_by_ip(uint32_t client_ip)
 {
     for (int i = 0; i < SESSION_MAX_CLIENTS; i++) {
         if (s_sessions[i].active && s_sessions[i].client_ip == client_ip) {
+            return &s_sessions[i];
+        }
+    }
+    return NULL;
+}
+
+session_t *session_find_by_mac(const char *mac)
+{
+    for (int i = 0; i < SESSION_MAX_CLIENTS; i++) {
+        if (s_sessions[i].active && s_sessions[i].mac[0] != '\0' &&
+            strcmp(s_sessions[i].mac, mac) == 0) {
             return &s_sessions[i];
         }
     }
@@ -126,7 +146,8 @@ void session_check_expiry(void)
     for (int i = 0; i < SESSION_MAX_CLIENTS; i++) {
         if (s_sessions[i].active && session_is_expired(&s_sessions[i])) {
             esp_ip4_addr_t ip = { .addr = s_sessions[i].client_ip };
-            ESP_LOGI(TAG, "Session expired: " IPSTR, IP2STR(&ip));
+            ESP_LOGI(TAG, "Session expired: " IPSTR " mac=%s", IP2STR(&ip),
+                     s_sessions[i].mac[0] ? s_sessions[i].mac : "unknown");
             session_revoke(&s_sessions[i]);
         }
     }

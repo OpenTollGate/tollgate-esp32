@@ -23,9 +23,9 @@ Build a TollGate firmware for two ESP32 devices, following the [TollGate protoco
 | Testing | Playwright + curl + pyserial |
 | Build | Makefile |
 
-## Three-Phase Plan
+## Four-Phase Plan
 
-### Phase 1: Captive Portal + Firewall (No Payments)
+### Phase 1: Captive Portal + Firewall (No Payments) — COMPLETE
 
 **Goal:** WiFi repeater with captive portal that gates internet access. Validates DNS hijack, NAT, DHCP, firewall.
 
@@ -35,51 +35,55 @@ Build a TollGate firmware for two ESP32 devices, following the [TollGate protoco
 - Captive portal HTML on port 80
 
 **14 Test Cases:**
-| # | Test | Method | Pass Criteria |
-|---|------|--------|---------------|
-| 1 | Boot and AP appears | Serial + nmcli | SSID visible in scan |
-| 2 | DHCP lease | nmcli connect | Gets IP in 192.168.4.0/24 |
-| 3 | Captive portal serves HTML | GET / | 200, contains "TollGate" |
-| 4 | Captive detection URIs work | GET /generate_204 etc. | All return portal HTML |
-| 5 | DNS hijack before auth | nslookup google.com | Resolves to 192.168.4.1 |
-| 6 | No internet before auth | ping 8.8.8.8 | Fails |
-| 7 | /whoami returns MAC | GET /whoami | Returns mac=XX:XX:... |
-| 8 | /usage returns no session | GET /usage | Returns -1/-1 |
-| 9 | Grant access via API | GET /grant_access | 200, status granted |
-| 10 | DNS forward after auth | nslookup google.com | Resolves to real IP |
-| 11 | Internet after auth | ping 8.8.8.8 | Succeeds |
-| 12 | HTTP browsing works | Playwright | Page loads |
-| 13 | Reset auth | GET /reset_authentication | 200 |
-| 14 | Internet blocked after reset | ping 8.8.8.8 | Fails |
+| # | Test | Method | Pass Criteria | Status |
+|---|------|--------|---------------|--------|
+| 1 | Boot and AP appears | Serial + nmcli | SSID visible in scan | PASS |
+| 2 | DHCP lease | nmcli connect | Gets IP in 192.168.4.0/24 | PASS |
+| 3 | Captive portal serves HTML | GET / | 200, contains "TollGate" | PASS |
+| 4 | Captive detection URIs work | GET /generate_204 etc. | All return portal HTML | PASS |
+| 5 | DNS hijack before auth | nslookup google.com | Resolves to 192.168.4.1 | PASS |
+| 6 | No internet before auth | ping 8.8.8.8 | Fails | PASS |
+| 7 | /whoami returns MAC | GET /whoami | Returns mac=XX:XX:... | PASS |
+| 8 | /usage returns no session | GET /usage | Returns -1/-1 | PASS |
+| 9 | Grant access via API | GET /grant_access | 200, status granted | PASS |
+| 10 | DNS forward after auth | nslookup google.com | Resolves to real IP | PASS |
+| 11 | Internet after auth | ping 8.8.8.8 | Succeeds | PASS |
+| 12 | HTTP browsing works | Playwright | Page loads | PASS |
+| 13 | Reset auth | GET /reset_authentication | 200 | PASS |
+| 14 | Internet blocked after reset | ping 8.8.8.8 | Fails | PASS |
 
-### Phase 2: E-Cash Payments (Simple Melt-to-LNURL)
+### Phase 2: E-Cash Payments — IN PROGRESS
 
-**Goal:** Replace free access with Cashu payment. ESP32 parses token, melts via mint API to operator's LNURL.
+**Goal:** Replace free access with Cashu payment. ESP32 parses token, checks proof state via mint API, grants time-based session.
 
-**New Endpoints:**
+**Endpoints:**
 - `GET /` on :2121 — TollGate advertisement (kind=10021)
-- `POST /` on :2121 — Accept Cashu token, melt, return session (kind=1022) or notice (kind=21023)
+- `POST /` on :2121 — Accept Cashu token, validate, return session (kind=1022) or error (kind=21023)
+- `GET /usage` on :2121 — Session usage info
+- `GET /whoami` on :2121 — Client IP + MAC
 
 **13 Additional Test Cases:**
-| # | Test | Method | Pass Criteria |
-|---|------|--------|---------------|
-| 15 | Advertisement valid | GET :2121/ | kind=10021 with price_per_step |
-| 16 | Valid payment | POST :2121/ with token | kind=1022 session |
-| 17 | Usage tracking | GET :2121/usage | 0/allotment |
-| 18 | Internet after payment | ping | Succeeds |
-| 19 | Invalid token | POST :2121/ garbage | kind=21023 error |
-| 20 | Spent token | Reuse token | kind=21023 spent error |
-| 21 | Wrong mint | Token from unaccepted mint | kind=21023 mint error |
-| 22 | Session expiry | Wait for allotment | Internet blocked |
-| 23 | Session renewal | Second payment | Allotment extended |
-| 24 | Portal payment form | Playwright paste token | Checkmark shown |
-| 25 | Two clients pay independently | Two POSTs | Both authenticated |
-| 26 | Client isolation | Only payer gets internet | Non-payer blocked |
-| 27 | Full e2e: portal→pay→browse | Playwright | Complete flow |
+| # | Test | Method | Pass Criteria | Status |
+|---|------|--------|---------------|--------|
+| 15 | Advertisement valid | GET :2121/ | kind=10021 with price_per_step | PASS |
+| 16 | Valid payment | POST :2121/ with token | kind=1022 session | PASS |
+| 17 | Usage tracking | GET :2121/usage | 0/allotment | PASS |
+| 18 | Internet after payment | ping | Succeeds | PASS |
+| 19 | Invalid token | POST :2121/ garbage | kind=21023 error | PASS |
+| 20 | Spent token | Reuse token | kind=21023 spent error | PASS |
+| 21 | Wrong mint | Token from unaccepted mint | kind=21023 mint error | PASS |
+| 22 | Session expiry | Wait for allotment | Internet blocked | TODO |
+| 23 | Session renewal | Second payment | Allotment extended | TODO |
+| 24 | Portal payment form | Playwright paste token | Checkmark shown | TODO |
+| 25 | Two clients pay independently | Two POSTs | Both authenticated | TODO |
+| 26 | Client isolation | Only payer gets internet | Non-payer blocked | TODO |
+| 27 | Full e2e: portal→pay→browse | Playwright | Complete flow | TODO |
 
-### Phase 3: nucula Wallet Integration + Reseller
+**Captive Portal Fix:** Added DoT reject server on port 853 (TCP RST forces DNS-over-TLS fallback to plain DNS), DNS hijack returns NXDOMAIN for all non-A query types, explicit 302 redirect handlers for all captive detection URIs. Needs verification with actual GrapheneOS phone.
 
-**Goal:** Integrate nucula's full Cashu wallet. ESP32 holds balance, can be a reseller.
+### Phase 3: nucula Wallet + ESP32-to-ESP32 Payments — NOT STARTED
+
+**Goal:** Integrate nucula's full Cashu wallet. ESP32 holds balance, can be a reseller. ESP32-to-ESP32 direct payments.
 
 **11 Additional Test Cases:**
 | # | Test | Method | Pass Criteria |
@@ -96,4 +100,8 @@ Build a TollGate firmware for two ESP32 devices, following the [TollGate protoco
 | 37 | 5 consecutive payments | Loop | All authenticated |
 | 38 | Stress: rapid pay/expire | Loop with short sessions | No crash/leak |
 
-## Total: 38 Tests across 3 phases
+### Phase 4: ESP32-to-OpenWRT TollGate Interop — NOT STARTED
+
+**Goal:** ESP32 can pay OpenWRT TollGate using Cashu tokens. Full interoperability with existing OpenWRT-based TollGate infrastructure.
+
+## Total: 38 Tests across 4 phases

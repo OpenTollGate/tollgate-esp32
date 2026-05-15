@@ -6,6 +6,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define FW_MAX_MAC_LEN 18
+
 esp_err_t firewall_init(esp_ip4_addr_t ap_ip);
 void firewall_enable_nat(void);
 void firewall_disable_nat(void);
@@ -13,6 +15,9 @@ void firewall_grant_access(uint32_t client_ip);
 void firewall_revoke_access(uint32_t client_ip);
 void firewall_revoke_all(void);
 bool firewall_is_client_allowed(uint32_t client_ip);
+bool firewall_is_mac_allowed(const char *mac);
 int firewall_client_count(void);
+
+esp_err_t firewall_get_mac_for_ip(uint32_t client_ip, char *mac_out, size_t mac_out_size);
 
 #endif
