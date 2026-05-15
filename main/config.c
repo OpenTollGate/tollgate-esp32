@@ -38,7 +38,7 @@ esp_err_t tollgate_config_init(void)
             "\"ap_ssid\":\"TollGate\","
             "\"ap_password\":\"\","
             "\"ap_channel\":1,"
-            "\"mint_url\":\"https://nofee.testnut.cashu.space\","
+            "\"mint_url\":\"https://testnut.cashu.space\","
             "\"lnurl_url\":\"https://redeem.cashu.me/.well-known/lnurlp/tollgate\","
             "\"price_per_step\":21,"
             "\"step_size_ms\":60000"

@@ -162,17 +162,22 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         cJSON_Delete(notice);
         return ESP_OK;
     }
-    int received = httpd_req_recv(req, body, content_len);
-    if (received <= 0) {
-        free(body);
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "text/plain");
-        httpd_resp_send(req, "bad request", 11);
-        return ESP_OK;
+    int received = 0;
+    int total = 0;
+    while (total < content_len) {
+        received = httpd_req_recv(req, body + total, content_len - total);
+        if (received <= 0) {
+            free(body);
+            httpd_resp_set_status(req, "400 Bad Request");
+            httpd_resp_set_type(req, "text/plain");
+            httpd_resp_send(req, "bad request", 11);
+            return ESP_OK;
+        }
+        total += received;
     }
-    body[received] = '\0';
+    body[total] = '\0';
 
-    ESP_LOGI(TAG, "Payment received: %d bytes", received);
+    ESP_LOGI(TAG, "Payment received: %d bytes", total);
 
     cashu_token_t token;
     esp_err_t err = cashu_decode_token(body, &token);
@@ -330,7 +335,7 @@ esp_err_t tollgate_api_start(void)
     config.server_port = 2121;
     config.ctrl_port = 32769;
     config.max_uri_handlers = 10;
-    config.stack_size = 16384;
+    config.stack_size = 32768;
 
     esp_err_t ret = httpd_start(&s_api_server, &config);
     if (ret != ESP_OK) {

@@ -5,7 +5,7 @@
 #include "cJSON.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/sha256.h"
-#include <string.h>
+#include "esp_crt_bundle.h"
 
 static const char *TAG = "cashu";
 
@@ -78,6 +78,10 @@ esp_err_t cashu_decode_token(const char *token_str, cashu_token_t *out)
     memset(out, 0, sizeof(*out));
 
     size_t len = strlen(token_str);
+    char *nl = strchr(token_str, '\n');
+    if (nl) len = nl - token_str;
+    char *cr = strchr(token_str, '\r');
+    if (cr && (cr - token_str) < (int)len) len = cr - token_str;
     if (len <= V3_PREFIX_LEN) {
         ESP_LOGE(TAG, "Token too short");
         return ESP_FAIL;
@@ -87,11 +91,13 @@ esp_err_t cashu_decode_token(const char *token_str, cashu_token_t *out)
         return ESP_FAIL;
     }
 
-    char *json_buf = malloc(2048);
+    size_t b64_len = len - V3_PREFIX_LEN;
+    size_t decoded_size = (b64_len * 3) / 4 + 4;
+    char *json_buf = malloc(decoded_size);
     if (!json_buf) return ESP_FAIL;
     size_t json_len = 0;
-    if (b64url_decode(token_str + V3_PREFIX_LEN, len - V3_PREFIX_LEN,
-                      json_buf, 2047, &json_len) != 0) {
+    if (b64url_decode(token_str + V3_PREFIX_LEN, b64_len,
+                      json_buf, decoded_size - 1, &json_len) != 0) {
         ESP_LOGE(TAG, "Base64url decode failed");
         free(json_buf);
         return ESP_FAIL;
@@ -181,12 +187,12 @@ esp_err_t cashu_check_proof_states(const char *mint_url, const cashu_token_t *to
 
     char *resp_buf = malloc(8192);
     if (!resp_buf) { free(post_body); return ESP_FAIL; }
-    int resp_len = 0;
 
     esp_http_client_config_t config = {
         .url = url,
         .method = HTTP_METHOD_POST,
-        .timeout_ms = 10000,
+        .timeout_ms = 15000,
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) { free(post_body); free(resp_buf); return ESP_FAIL; }
@@ -194,20 +200,26 @@ esp_err_t cashu_check_proof_states(const char *mint_url, const cashu_token_t *to
     esp_http_client_set_header(client, "Content-Type", "application/json");
     esp_err_t err = esp_http_client_open(client, strlen(post_body));
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "checkstate open failed: %s", esp_err_to_name(err));
         esp_http_client_cleanup(client);
         free(post_body);
         free(resp_buf);
-        return err;
+        return ESP_FAIL;
     }
-    esp_http_client_write(client, post_body, strlen(post_body));
+    int written = esp_http_client_write(client, post_body, strlen(post_body));
     free(post_body);
+    ESP_LOGI(TAG, "checkstate written %d bytes", written);
 
-    resp_len = esp_http_client_read(client, resp_buf, 8191);
+    int content_length = esp_http_client_fetch_headers(client);
     int status = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "checkstate headers: status=%d, content_length=%d", status, content_length);
+
+    int resp_len = esp_http_client_read(client, resp_buf, 8191);
+    ESP_LOGI(TAG, "checkstate read: resp_len=%d", resp_len);
     esp_http_client_cleanup(client);
 
     if (status != 200 || resp_len <= 0) {
-        ESP_LOGE(TAG, "checkstate returned %d", status);
+        ESP_LOGE(TAG, "checkstate failed: status=%d, resp_len=%d", status, resp_len);
         free(resp_buf);
         return ESP_FAIL;
     }
