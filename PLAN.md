@@ -72,8 +72,8 @@ Build a TollGate firmware for two ESP32 devices, following the [TollGate protoco
 | 19 | Invalid token | POST :2121/ garbage | kind=21023 error | PASS |
 | 20 | Spent token | Reuse token | kind=21023 spent error | PASS |
 | 21 | Wrong mint | Token from unaccepted mint | kind=21023 mint error | PASS |
-| 22 | Session expiry | Wait for allotment | Internet blocked | TODO |
-| 23 | Session renewal | Second payment | Allotment extended | TODO |
+| 22 | Session expiry | Wait for allotment | Internet blocked | PASS |
+| 23 | Session renewal | Second payment | Allotment extended | PASS |
 | 24 | Portal payment form | Playwright paste token | Checkmark shown | TODO |
 | 25 | Two clients pay independently | Two POSTs | Both authenticated | TODO |
 | 26 | Client isolation | Only payer gets internet | Non-payer blocked | TODO |

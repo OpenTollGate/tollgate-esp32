@@ -58,12 +58,12 @@
 - [x] Test 19: Invalid token rejected (POST garbage → 400, kind=21023) — PASSING
 - [x] Test 20: Spent token rejected (reuse token → kind=21023) — PASSING
 - [x] Test 21: Wrong mint rejected (POST token from wrong mint → kind=21023) — PASSING
+- [x] Test 22: Session expiry (wait for allotment → internet blocked) — PASSING
+- [x] Test 23: Session renewal (second payment → allotment extended) — PASSING
 - [x] Test: /whoami returns ip=X.X.X.X mac=XX:XX:XX:XX:XX:XX — PASSING
 - [x] Test: Portal has payment form (Cashu token input + Pay button) — PASSING
 
-### Tests Not Yet Run (need hardware + time)
-- [ ] Test 22: Session expiry (wait for allotment → internet blocked)
-- [ ] Test 23: Session renewal (second payment → allotment extended)
+### Tests Not Yet Run (need Playwright)
 - [ ] Test 24: Portal payment form visible in browser (Playwright)
 - [ ] Test 25: Two clients pay independently
 - [ ] Test 26: Client isolation (only payer gets internet)
