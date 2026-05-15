@@ -94,6 +94,46 @@ if (TEST_TOKEN) {
   const body20 = curlBody(`${API}/`, { method: 'POST', data: TEST_TOKEN });
   const json20 = body20 ? JSON.parse(body20) : null;
   assert(json20 && json20.kind === 21023, 'Returns kind=21023 for spent token');
+
+  // Test 22: Session expiry
+  console.log('\nTest 22: Session expiry (waiting 65s for allotment to expire)...');
+  try {
+    execSync(`echo '${sudoPw}' | sudo -S ip route add default via 192.168.4.1 dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
+  } catch {}
+  await sleep(65000);
+  let expiredPingOk = true;
+  try {
+    const ping22 = execSync('ping -c 2 -W 2 8.8.8.8', { encoding: 'utf8', timeout: 10000 });
+    expiredPingOk = !ping22.includes('100% packet loss');
+  } catch {
+    expiredPingOk = false;
+  }
+  assert(!expiredPingOk, 'Internet blocked after session expiry');
+  const body22 = curlBody(`${API}/usage`);
+  assert(body22 && body22.includes('-1/-1'), 'Usage returns -1/-1 after expiry');
+
+  // Test 23: Session renewal
+  const TEST_TOKEN2 = process.env.TEST_TOKEN2;
+  if (TEST_TOKEN2) {
+    console.log('\nTest 23: Session renewal with second token');
+    const body23 = curlBody(`${API}/`, { method: 'POST', data: TEST_TOKEN2 });
+    const json23 = body23 ? JSON.parse(body23) : null;
+    assert(json23 && json23.kind === 1022, 'Returns kind=1022 for renewal');
+    await sleep(1500);
+    let renewPingOk = false;
+    try {
+      const ping23 = execSync('ping -c 2 -W 2 8.8.8.8', { encoding: 'utf8', timeout: 10000 });
+      renewPingOk = !ping23.includes('100% packet loss');
+    } catch {
+      renewPingOk = false;
+    }
+    assert(renewPingOk, 'Internet works after renewal');
+  } else {
+    console.log('\n  ⚠ Skipping test 23: Set TEST_TOKEN2 env var for renewal test');
+  }
+  try {
+    execSync(`echo '${sudoPw}' | sudo -S ip route del default via 192.168.4.1 dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
+  } catch {}
 } else {
   console.log('\n  ⚠ Skipping tests 16-20: Set TEST_TOKEN env var with a valid Cashu token');
 }
