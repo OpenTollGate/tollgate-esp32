@@ -1,0 +1,15 @@
+.env
+build/
+sdkconfig.old
+managed_components/
+dependencies.lock
+test-results/
+playwright-report/
+node_modules/
+*.pyc
+__pycache__/
+*.o
+*.bin
+*.elf
+*.map
+ NAND/
