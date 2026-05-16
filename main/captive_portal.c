@@ -31,56 +31,49 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 ".price{background:#252525;border-radius:12px;padding:16px;margin-bottom:16px}"
 ".price-amount{font-size:36px;font-weight:bold;color:#f7931a}"
 ".price-unit{color:#888;font-size:14px}"
-".mints{background:#252525;border-radius:12px;padding:12px;margin-bottom:16px;text-align:left}"
+"textarea{width:100%;height:80px;background:#252525;border:1px solid #333;border-radius:8px;"
+"color:#fff;padding:12px;font-family:monospace;font-size:12px;resize:none}"
+".btn{background:#f7931a;color:#000;border:none;border-radius:8px;padding:14px 28px;"
+"font-size:16px;font-weight:bold;cursor:pointer;width:100%;margin-top:8px}"
+".btn:hover{background:#e8850f}"
+".btn:disabled{background:#333;color:#666;cursor:not-allowed}"
+".mints{background:#252525;border-radius:12px;padding:12px;margin-top:16px;text-align:left}"
 ".mints-title{color:#888;font-size:12px;margin-bottom:8px}"
 ".mint-url{font-family:monospace;font-size:11px;color:#f7931a;word-break:break-all;"
-"background:#1a1a1a;padding:8px;border-radius:6px;position:relative;cursor:pointer}"
+"background:#1a1a1a;padding:8px;border-radius:6px;cursor:pointer}"
 ".mint-url:active{opacity:0.7}"
 ".mint-hint{color:#666;font-size:10px;margin-top:4px}"
 "#status{margin-top:16px;padding:12px;border-radius:8px;display:none;font-size:14px}"
 "#status.success{display:block;background:#1a472a;color:#4caf50}"
 "#status.error{display:block;background:#471a1a;color:#f44336}"
 "#status.processing{display:block;background:#1a3a47;color:#2196f3}"
-".btn{background:#f7931a;color:#000;border:none;border-radius:8px;padding:14px 28px;"
-"font-size:16px;font-weight:bold;cursor:pointer;width:100%;margin-top:8px}"
-".btn:hover{background:#e8850f}"
-".btn:disabled{background:#333;color:#666;cursor:not-allowed}"
-"textarea{width:100%;height:80px;background:#252525;border:1px solid #333;border-radius:8px;"
-"color:#fff;padding:12px;font-family:monospace;font-size:12px;margin-top:8px;resize:none}"
 "</style>"
 "</head><body>"
 "<div class='card'>"
 "<h1>TollGate</h1>"
 "<p class='subtitle'>Pay for internet access with ecash</p>"
 "<div class='price'>"
-"<div class='price-amount' id='price'>Loading...</div>"
+"<div class='price-amount'>__PRICE__</div>"
 "<div class='price-unit'>sats per minute</div>"
-"</div>"
-"<div class='mints'>"
-"<div class='mints-title'>SUPPORTED MINTS</div>"
-"<div class='mint-url' id='mintUrl' onclick='copyMint()'>Loading...</div>"
-"<div class='mint-hint'>Tap to copy &bull; Mint tokens at this URL before paying</div>"
 "</div>"
 "<textarea id='tokenInput' placeholder='Paste your Cashu token here (cashuA...)'></textarea>"
 "<button class='btn' id='payBtn' onclick='payToken()'>Pay & Connect</button>"
+"<div class='mints'>"
+"<div class='mints-title'>SUPPORTED MINTS</div>"
+"<div class='mint-url' id='mintUrl' onclick='copyMint()'>__MINT_URL__</div>"
+"<div class='mint-hint'>Tap to copy &bull; Mint tokens at this URL before paying</div>"
+"</div>"
 "<div id='status'></div>"
 "</div>"
 "<script>"
-"const priceEl=document.getElementById('price');"
+"const mintUrlEl=document.getElementById('mintUrl');"
+"const mintUrl=mintUrlEl.textContent;"
 "const statusEl=document.getElementById('status');"
 "const payBtn=document.getElementById('payBtn');"
 "const tokenInput=document.getElementById('tokenInput');"
-"const mintUrlEl=document.getElementById('mintUrl');"
-"fetch('http://__AP_IP__:2121/').then(r=>r.json()).then(d=>{"
-"if(d.tags){"
-"const p=d.tags.find(t=>t[0]==='price_per_step');if(p){priceEl.textContent=p[2]||'21';"
-"if(p[4]){mintUrlEl.textContent=p[4];}}"
-"}"
-"}).catch(()=>{priceEl.textContent='21';mintUrlEl.textContent='Error loading mint URL';});"
 "function copyMint(){"
-"const url=mintUrlEl.textContent;"
-"if(navigator.clipboard){navigator.clipboard.writeText(url);"
-"mintUrlEl.textContent='Copied!';setTimeout(()=>{mintUrlEl.textContent=url;},1000);}"
+"if(navigator.clipboard){navigator.clipboard.writeText(mintUrl);"
+"mintUrlEl.textContent='Copied!';setTimeout(()=>{mintUrlEl.textContent=mintUrl;},1000);}"
 "}"
 "function showStatus(msg,type){statusEl.textContent=msg;statusEl.className=type;}"
 "function payToken(){"
@@ -119,15 +112,32 @@ static esp_err_t portal_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "GET %s from client", req->uri);
     httpd_resp_set_type(req, "text/html");
 
-    char *html = NULL;
+    const tollgate_config_t *cfg = tollgate_config_get();
+    char price_str[16];
+    snprintf(price_str, sizeof(price_str), "%d", cfg->price_per_step);
+
     const char *tpl = PORTAL_HTML_TEMPLATE;
     size_t tpl_len = strlen(tpl);
-    int count = 0;
-    const char *p = tpl;
-    while ((p = strstr(p, "__AP_IP__")) != NULL) { count++; p += 9; }
 
-    size_t ip_len = strlen(s_ap_ip_str);
-    html = malloc(tpl_len + count * (ip_len > 9 ? ip_len - 9 : 0) + 1);
+    struct { const char *key; const char *val; } subs[] = {
+        { "__AP_IP__", s_ap_ip_str },
+        { "__PRICE__", price_str },
+        { "__MINT_URL__", cfg->mint_url },
+    };
+    int nsubs = sizeof(subs) / sizeof(subs[0]);
+
+    size_t extra = 0;
+    for (int i = 0; i < nsubs; i++) {
+        const char *p = tpl;
+        size_t klen = strlen(subs[i].key);
+        while ((p = strstr(p, subs[i].key)) != NULL) {
+            extra += strlen(subs[i].val) - klen;
+            p += klen;
+        }
+    }
+
+    size_t out_size = tpl_len + extra + 1;
+    char *html = malloc(out_size);
     if (!html) {
         httpd_resp_send_500(req);
         return ESP_OK;
@@ -136,13 +146,22 @@ static esp_err_t portal_handler(httpd_req_t *req)
     char *out = html;
     const char *src = tpl;
     while (*src) {
-        const char *found = strstr(src, "__AP_IP__");
-        if (found) {
-            memcpy(out, src, found - src);
-            out += found - src;
-            memcpy(out, s_ap_ip_str, ip_len);
-            out += ip_len;
-            src = found + 9;
+        const char *earliest = NULL;
+        int ei = -1;
+        for (int i = 0; i < nsubs; i++) {
+            const char *found = strstr(src, subs[i].key);
+            if (found && (earliest == NULL || found < earliest)) {
+                earliest = found;
+                ei = i;
+            }
+        }
+        if (earliest) {
+            size_t vlen = strlen(subs[ei].val);
+            memcpy(out, src, earliest - src);
+            out += earliest - src;
+            memcpy(out, subs[ei].val, vlen);
+            out += vlen;
+            src = earliest + strlen(subs[ei].key);
         } else {
             strcpy(out, src);
             out += strlen(src);

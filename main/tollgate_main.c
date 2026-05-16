@@ -156,6 +156,12 @@ static void wifi_create_ap_netif(void)
     ESP_ERROR_CHECK(esp_netif_set_ip_info(s_ap_netif, &ip_info));
     ESP_ERROR_CHECK(esp_netif_dhcps_start(s_ap_netif));
 
+    esp_netif_dns_info_t dns_info;
+    dns_info.ip.u_addr.ip4.addr = ip_info.ip.addr;
+    dns_info.ip.type = IPADDR_TYPE_V4;
+    esp_netif_set_dns_info(s_ap_netif, ESP_NETIF_DNS_MAIN, &dns_info);
+    ESP_LOGI(TAG, "AP DNS server set to " IPSTR, IP2STR(&ip_info.ip));
+
     dhcps_offer_t offer_dns = true;
     esp_netif_dhcps_option(s_ap_netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
                            &offer_dns, sizeof(offer_dns));

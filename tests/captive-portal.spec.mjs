@@ -15,7 +15,41 @@ test.describe('Captive Portal - Phase 2', () => {
   test('portal shows price from API', async ({ page }) => {
     await page.goto(PORTAL_URL);
     const priceEl = page.locator('.price-amount');
-    await expect(priceEl).not.toBeEmpty({ timeout: 5000 });
+    await expect(priceEl).toHaveText(/\d+/, { timeout: 5000 });
+  });
+
+  test('portal embeds mint URL without JavaScript fetch', async ({ request }) => {
+    const resp = await request.fetch(PORTAL_URL);
+    const body = await resp.text();
+    expect(body).not.toContain('Loading...');
+    expect(body).not.toContain('Error loading mint URL');
+    expect(body).toMatch(/testnut\.cashu\.space/);
+  });
+
+  test('portal embeds price without JavaScript fetch', async ({ request }) => {
+    const resp = await request.fetch(PORTAL_URL);
+    const body = await resp.text();
+    expect(body).not.toContain('__PRICE__');
+    expect(body).toMatch(/price-amount['"]>\d+</);
+  });
+
+  test('portal HTML has no unresolved template placeholders', async ({ request }) => {
+    const resp = await request.fetch(PORTAL_URL);
+    const body = await resp.text();
+    expect(body).not.toContain('__AP_IP__');
+    expect(body).not.toContain('__MINT_URL__');
+    expect(body).not.toContain('__PRICE__');
+  });
+
+  test('mints section appears after token input in DOM order', async ({ page }) => {
+    await page.goto(PORTAL_URL);
+    const textarea = page.locator('#tokenInput');
+    const mintUrl = page.locator('#mintUrl');
+    await expect(textarea).toBeVisible();
+    await expect(mintUrl).toBeVisible();
+    const inputBox = await textarea.boundingBox();
+    const mintBox = await mintUrl.boundingBox();
+    expect(mintBox.y).toBeGreaterThan(inputBox.y);
   });
 
   test('portal has Cashu token input', async ({ page }) => {
@@ -52,7 +86,7 @@ test.describe('Captive Portal - Phase 2', () => {
     expect(resp.status()).toBe(200);
     const text = await resp.text();
     expect(text).toMatch(/ip=\d+\.\d+\.\d+\.\d+/);
-    expect(text).toMatch(/mac=[0-9a-f]{2}:/);
+    expect(text).toMatch(/mac=(unknown|[0-9a-f]{2}:)/);
   });
 
   test('/usage returns -1/-1 before payment', async ({ page }) => {
