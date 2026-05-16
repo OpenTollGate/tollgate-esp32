@@ -1,0 +1,4 @@
+#ifndef STUBS_LWIP_SOCKETS_H
+#define STUBS_LWIP_SOCKETS_H
+
+#endif

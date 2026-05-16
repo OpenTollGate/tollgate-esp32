@@ -1,0 +1,4 @@
+#ifndef STUBS_DHCPSERVER_DHCP_H
+#define STUBS_DHCPSERVER_DHCP_H
+
+#endif

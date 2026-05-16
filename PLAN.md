@@ -382,7 +382,68 @@ Total payload: 9 bytes (fits easily in beacon, typical budget ~200 bytes)
 
 **Goal:** ESP32 can pay OpenWRT TollGate using Cashu tokens. Full interoperability with existing OpenWRT-based TollGate infrastructure.
 
-## Total: 38 Tests across 4 phases
+## Total: 38 + 20 Tests across 4 phases
+
+## Testing Infrastructure
+
+### Three-Layer Test Architecture
+
+| Layer | Location | What | Runs on | Requires |
+|-------|----------|------|---------|----------|
+| **Unit** | `tests/unit/` | Host-compiled C tests for pure-logic functions | Dev machine (gcc) | `libmbedtls-dev`, `libcjson-dev` |
+| **Integration** | `tests/integration/` | Node.js curl/ping against live board | Dev machine + Board A | Board flashed + connected |
+| **E2E** | `tests/e2e/` | Playwright browser tests | Dev machine + Board A | Board + browser |
+
+### Unit Tests (`tests/unit/`)
+
+Host-compiled C tests that verify pure-logic functions with known input/output vectors. No hardware needed. ESP-IDF types provided by stubs in `tests/unit/stubs/`. Source files are **never modified** for testing.
+
+**System deps:** `sudo apt install libmbedtls-dev libcjson-dev`
+
+| Test file | Module | What's tested |
+|-----------|--------|---------------|
+| `test_geohash.c` | `geohash.c` | `geohash_encode()` against reference vectors (Munich, NYC, origin, boundaries) |
+| `test_identity.c` | `identity.c` | `tollgate_derive()` HMAC-SHA512 determinism, MAC locally-administered bit, multicast bit cleared, SSID/IP derivation |
+| `test_nostr_event.c` | `nostr_event.c` | NIP-01 event ID (SHA-256 of canonical JSON), Schnorr signature generation + verification, JSON serialization |
+| `test_cashu.c` | `cashu.c` | `cashu_decode_token()`, `cashu_calculate_allotment_ms()`, `cashu_is_mint_accepted()` |
+| `test_session.c` | `session.c` | Session lifecycle: create/find/extend/expire/revoke, spent-secret dedup |
+
+**Run:** `make test-unit`
+
+### Integration Tests (`tests/integration/`)
+
+Node.js scripts that test against a live ESP32 board via HTTP, ping, nmcli. Require `TOLLGATE_IP` env var.
+
+| Test file | Phase | What's tested |
+|-----------|-------|---------------|
+| `phase1_api.mjs` | 1 | Portal HTML, captive URIs, whoami, usage, grant/reset, DNS hijack/forward |
+| `phase1_network.mjs` | 1 | AP scan, DHCP, DNS, NAT, ping before/after auth |
+| `phase2.mjs` | 2 | API advertisement, payment flow, invalid/spent/wrong-mint tokens, session expiry/renewal |
+| `phase3.mjs` | 3 | Wallet endpoints, identity-derived SSID/IP, wifistr on relay, send/receive roundtrip |
+| `smoke.mjs` | all | Quick 30s smoke: AP visible, portal, grant, internet, reset |
+
+**Run:** `TOLLGATE_IP=10.192.45.1 make test-integration`
+
+### E2E Tests (`tests/e2e/`)
+
+Playwright browser tests for the captive portal UI and payment flow.
+
+| Test file | What's tested |
+|-----------|---------------|
+| `captive-portal.spec.mjs` | Portal branding, price, mint URL, template substitution, captive URIs, catch-all, API structure |
+| `payment.spec.mjs` | Paste token → click Pay → success/error, empty submit, full payment flow |
+
+**Run:** `TOLLGATE_IP=10.192.45.1 make test-e2e`
+
+### Test Coverage Rules
+
+- Every new `.c/.h` file MUST have unit tests in `tests/unit/`
+- Every new HTTP endpoint MUST have integration tests in `tests/integration/`
+- Every new browser-visible feature MUST have Playwright tests in `tests/e2e/`
+- All tests must pass before commit
+- Commit + push every time a test passes that previously didn't pass
+- Never hardcode IP addresses — always use `process.env.TOLLGATE_IP`
+- See `AGENTS.md` for full rules
 
 ## Key Technical Notes
 

@@ -154,17 +154,54 @@
 - [ ] Write tests/phase3.mjs (wallet endpoint tests + cross-board)
 - [ ] All Phase 3 tests passing
 
+## Test Coverage — IN PROGRESS
+
+### Host Unit Tests (tests/unit/)
+- [ ] Create `tests/unit/stubs/` — clean ESP-IDF type stubs for host compilation
+- [ ] Create `tests/unit/Makefile` — compiles all unit tests with host gcc
+- [ ] Install system deps: `libmbedtls-dev`, `libcjson-dev`
+- [ ] `test_geohash.c` — geohash_encode against reference vectors (Munich, NYC, origin)
+- [ ] `test_identity.c` — HMAC-SHA512 derivation, MAC bits, SSID/IP determinism
+- [ ] `test_nostr_event.c` — NIP-01 event ID, Schnorr sign+verify, JSON serialization
+- [ ] `test_cashu.c` — token decode, allotment calc, mint validation
+- [ ] `test_session.c` — session lifecycle, expiry, spent-secret dedup
+- [ ] `make test-unit` passes all unit tests
+
+### Test Reorganization
+- [ ] Move `tests/api.mjs` → `tests/integration/phase1_api.mjs`
+- [ ] Move `tests/network.mjs` → `tests/integration/phase1_network.mjs`
+- [ ] Move `tests/smoke.mjs` → `tests/integration/smoke.mjs`
+- [ ] Move `tests/phase2.mjs` → `tests/integration/phase2.mjs`
+- [ ] Move `tests/captive-portal.spec.mjs` → `tests/e2e/captive-portal.spec.mjs`
+- [ ] Move `tests/playwright.config.mjs` → `tests/e2e/playwright.config.mjs`
+- [ ] Fix all hardcoded IPs (`192.168.4.1`) → `process.env.TOLLGATE_IP`
+
+### New Integration Tests
+- [ ] `tests/integration/phase3.mjs` — wallet GET/swap/send, identity SSID/IP, wifistr on relay
+- [ ] All Phase 3 integration tests passing
+
+### New E2E Tests
+- [ ] `tests/e2e/payment.spec.mjs` — paste token → pay → success, error handling, full flow
+- [ ] All E2E tests passing
+
+### Build System Updates
+- [ ] Update `Makefile` with `test-unit`, `test-integration`, `test-e2e`, `test-all` targets
+- [ ] Update `package.json` npm scripts for new paths
+- [ ] All `make test-*` targets work
+
 ## Phase 4: ESP32-to-OpenWRT TollGate Interop — NOT STARTED
 - [ ] ESP32 pays OpenWRT TollGate using Cashu tokens
 - [ ] Interoperability testing with existing OpenWRT TollGate on enx00e04c683d2d
 
 ## Reminders
 - Do NOT ask for instructions — proceed independently, skip blocked items, work on unblocked ones
+- **Commit + push every time a test passes that previously didn't pass**
 - Board A: `/dev/ttyACM0`, factory MAC `94:a9:90:2e:37:7c`
 - Board B: `/dev/ttyACM1`, factory MAC `fc:01:2c:c5:50:50`
 - Identity is now derived from nsec in config.json (SSID, IP, MAC all deterministic)
 - testnut.cashu.space auto-pays invoices: `cashu -h https://testnut.cashu.space invoice <amount>`
 - Token generation: `cashu -h https://testnut.cashu.space send --legacy <amount> 2>&1 | grep '^cashuA' | head -1`
 - sudo password: `c03rad0r123`
-- Commit + push whenever tests pass
+- Run `make test-unit` after any code change — must pass before commit
+- See `AGENTS.md` for full testing rules and project context
 - Proceed to Phase 4 after completing Phase 3

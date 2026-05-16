@@ -38,10 +38,12 @@ void geohash_encode(double lat, double lon, int precision, char *out)
     for (int i = 0; i < precision; i++) {
         int byte_idx = (i * 5) / 8;
         int bit_offset = (i * 5) % 8;
-        uint16_t val = (hash_bytes[byte_idx] << 8);
+        uint32_t val = ((uint32_t)hash_bytes[byte_idx] << 16);
         if (byte_idx + 1 < (int)sizeof(hash_bytes))
-            val |= hash_bytes[byte_idx + 1];
-        val = (val >> (16 - 5 - bit_offset)) & 0x1F;
+            val |= ((uint32_t)hash_bytes[byte_idx + 1] << 8);
+        if (byte_idx + 2 < (int)sizeof(hash_bytes))
+            val |= hash_bytes[byte_idx + 2];
+        val = (val >> (24 - 5 - bit_offset)) & 0x1F;
         out[i] = BASE32[val];
     }
     out[precision] = '\0';
