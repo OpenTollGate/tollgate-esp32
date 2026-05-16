@@ -19,3 +19,4 @@ tests/unit/test_identity
 tests/unit/test_nostr_event
 tests/unit/test_cashu
 tests/unit/test_session
+interop/routers.env
