@@ -50,6 +50,13 @@ session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
         return existing;
     }
 
+    for (int i = 0; i < secret_count; i++) {
+        if (session_is_secret_spent(spent_secrets[i])) {
+            ESP_LOGW(TAG, "Duplicate secret rejected");
+            return NULL;
+        }
+    }
+
     if (s_session_count >= SESSION_MAX_CLIENTS) {
         for (int i = 0; i < SESSION_MAX_CLIENTS; i++) {
             if (!s_sessions[i].active || session_is_expired(&s_sessions[i])) {
