@@ -49,12 +49,18 @@ int main(void)
     ASSERT_EQ_STR(id->ap_ssid, id2->ap_ssid, "SSID is deterministic");
 
     printf("\n--- Different nsec produces different identity ---\n");
+    uint8_t old_sta[6], old_ap[6];
+    char old_ssid[32];
+    memcpy(old_sta, id2->sta_mac, 6);
+    memcpy(old_ap, id2->ap_mac, 6);
+    strncpy(old_ssid, id2->ap_ssid, sizeof(old_ssid));
+
     ret = identity_init(TEST_NSEC2);
     ASSERT_EQ_INT(ESP_OK, ret, "Init with different nsec succeeds");
     const tollgate_identity_t *id3 = identity_get();
-    ASSERT(memcmp(id->sta_mac, id3->sta_mac, 6) != 0, "Different nsec produces different STA MAC");
-    ASSERT(memcmp(id->ap_mac, id3->ap_mac, 6) != 0, "Different nsec produces different AP MAC");
-    ASSERT(strcmp(id->ap_ssid, id3->ap_ssid) != 0, "Different nsec produces different SSID");
+    ASSERT(memcmp(old_sta, id3->sta_mac, 6) != 0, "Different nsec produces different STA MAC");
+    ASSERT(memcmp(old_ap, id3->ap_mac, 6) != 0, "Different nsec produces different AP MAC");
+    ASSERT(strcmp(old_ssid, id3->ap_ssid) != 0, "Different nsec produces different SSID");
 
     printf("\n--- Invalid nsec ---\n");
     ret = identity_init(NULL);
