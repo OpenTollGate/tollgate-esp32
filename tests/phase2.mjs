@@ -75,7 +75,7 @@ if (TEST_TOKEN) {
   await sleep(1500);
   const sudoPw = process.env.SUDO_PW || 'c03rad0r123';
   try {
-    execSync(`echo '${sudoPw}' | sudo -S ip route add default via 192.168.4.1 dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
+    execSync(`echo '${sudoPw}' | sudo -S ip route add default via ${IP} dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
   } catch {}
   let pingOk = false;
   try {
@@ -95,7 +95,7 @@ if (TEST_TOKEN) {
   // Test 22: Session expiry
   console.log('\nTest 22: Session expiry (waiting 65s for allotment to expire)...');
   try {
-    execSync(`echo '${sudoPw}' | sudo -S ip route add default via 192.168.4.1 dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
+    execSync(`echo '${sudoPw}' | sudo -S ip route add default via ${IP} dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
   } catch {}
   await sleep(65000);
   let expiredPingOk = true;
@@ -129,7 +129,7 @@ if (TEST_TOKEN) {
     console.log('\n  ⚠ Skipping test 23: Set TEST_TOKEN2 env var for renewal test');
   }
   try {
-    execSync(`echo '${sudoPw}' | sudo -S ip route del default via 192.168.4.1 dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
+    execSync(`echo '${sudoPw}' | sudo -S ip route del default via ${IP} dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
   } catch {}
 } else {
   console.log('\n  ⚠ Skipping tests 16-20: Set TEST_TOKEN env var with a valid Cashu token');
