@@ -19,6 +19,7 @@ esp_err_t tollgate_config_init(void)
     g_config.ap_max_conn = 4;
     g_config.price_per_step = 21;
     g_config.step_size_ms = 60000;
+    g_config.persist_threshold_sats = 1;
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -116,6 +117,9 @@ esp_err_t tollgate_config_init(void)
 
     cJSON *step = cJSON_GetObjectItem(root, "step_size_ms");
     if (step) g_config.step_size_ms = step->valueint;
+
+    cJSON *persist = cJSON_GetObjectItem(root, "persist_threshold_sats");
+    if (persist) g_config.persist_threshold_sats = (uint64_t)persist->valuedouble;
 
     cJSON_Delete(root);
     ESP_LOGI(TAG, "Config loaded: AP='%s', %d WiFi networks, price=%d sats/%dms",

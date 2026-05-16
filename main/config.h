@@ -34,6 +34,7 @@ typedef struct {
     char lnurl_url[256];
     int price_per_step;
     int step_size_ms;
+    uint64_t persist_threshold_sats;
 
     bool unique_derived;
 } tollgate_config_t;

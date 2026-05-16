@@ -7,7 +7,7 @@
 
 #define CASHU_MAX_PROOFS      10
 #define CASHU_MAX_SECRET_LEN  128
-#define CASHU_MAX_ID_LEN      16
+#define CASHU_MAX_ID_LEN      68
 #define CASHU_MAX_C_LEN       128
 
 typedef struct {

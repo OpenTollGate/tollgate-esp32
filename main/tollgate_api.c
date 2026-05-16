@@ -3,6 +3,7 @@
 #include "config.h"
 #include "session.h"
 #include "firewall.h"
+#include "wallet.h"
 #include "esp_log.h"
 #include "cJSON.h"
 #include "lwip/sockets.h"
@@ -298,9 +299,9 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         secrets[i] = token->proofs[i].secret;
     }
     session_t *session = session_create(client_ip, allotment, secrets, secret_count);
-    free(states);
-    free(token);
     if (!session) {
+        free(states);
+        free(token);
         cJSON *notice = create_notice("error", "session-error", "Failed to create session");
         char *json = cJSON_PrintUnformatted(notice);
         httpd_resp_set_status(req, "503 Service Unavailable");
@@ -317,6 +318,21 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     httpd_resp_send(req, json, strlen(json));
     cJSON_free(json);
     cJSON_Delete(session_event);
+
+    {
+        wallet_proof_t wproofs[CASHU_MAX_PROOFS];
+        int wcount = token->proof_count > CASHU_MAX_PROOFS ? CASHU_MAX_PROOFS : token->proof_count;
+        for (int i = 0; i < wcount; i++) {
+            wproofs[i].amount = token->proofs[i].amount;
+            strncpy(wproofs[i].id, token->proofs[i].id, WALLET_KEYSET_ID_LEN - 1);
+            strncpy(wproofs[i].secret, token->proofs[i].secret, WALLET_SECRET_LEN - 1);
+            strncpy(wproofs[i].c, token->proofs[i].c, WALLET_SIG_LEN - 1);
+        }
+        wallet_add_proofs(wproofs, wcount);
+    }
+
+    free(states);
+    free(token);
     return ESP_OK;
 }
 
@@ -363,10 +379,121 @@ static esp_err_t api_get_whoami(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t api_get_wallet(httpd_req_t *req)
+{
+    wallet_t *w = wallet_get();
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "balance", (double)w->balance);
+    cJSON_AddNumberToObject(root, "proof_count", w->proof_count);
+    cJSON_AddNumberToObject(root, "keyset_count", w->keyset_count);
+
+    cJSON *proofs = cJSON_CreateArray();
+    for (int i = 0; i < w->proof_count; i++) {
+        cJSON *p = cJSON_CreateObject();
+        cJSON_AddNumberToObject(p, "amount", (double)w->proofs[i].amount);
+        cJSON_AddStringToObject(p, "id", w->proofs[i].id);
+        cJSON_AddItemToArray(proofs, p);
+    }
+    cJSON_AddItemToObject(root, "proofs", proofs);
+
+    char *json = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, strlen(json));
+    cJSON_free(json);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static esp_err_t api_post_wallet_swap(httpd_req_t *req)
+{
+    const tollgate_config_t *cfg = tollgate_config_get();
+
+    if (wallet_balance() == 0) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, "{\"error\":\"no proofs to swap\"}", 27);
+        return ESP_OK;
+    }
+
+    wallet_print_status();
+
+    esp_err_t err = wallet_fetch_keysets(cfg->mint_url);
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, "502 Bad Gateway");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, "{\"error\":\"keyset fetch failed\"}", 29);
+        return ESP_OK;
+    }
+
+    wallet_t *w = wallet_get();
+    err = wallet_swap_proofs(cfg->mint_url, 0, w->proof_count);
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, "502 Bad Gateway");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, "{\"error\":\"swap failed\"}", 21);
+        return ESP_OK;
+    }
+
+    wallet_print_status();
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "balance", (double)wallet_balance());
+    cJSON_AddNumberToObject(root, "proof_count", wallet_get()->proof_count);
+    char *json = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, strlen(json));
+    cJSON_free(json);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static esp_err_t api_post_wallet_send(httpd_req_t *req)
+{
+    int content_len = req->content_len;
+    if (content_len <= 0 || content_len > 32) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_send(req, "invalid amount", 14);
+        return ESP_OK;
+    }
+
+    char body[32];
+    int total = 0;
+    while (total < content_len) {
+        int r = httpd_req_recv(req, body + total, content_len - total);
+        if (r <= 0) { httpd_resp_send_500(req); return ESP_OK; }
+        total += r;
+    }
+    body[total] = '\0';
+
+    uint64_t amount = strtoull(body, NULL, 10);
+    if (amount == 0) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_send(req, "invalid amount", 14);
+        return ESP_OK;
+    }
+
+    const tollgate_config_t *cfg = tollgate_config_get();
+    char token[4096];
+    esp_err_t err = wallet_send(cfg->mint_url, amount, token, sizeof(token));
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, "402 Payment Required");
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "insufficient balance", 20);
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_send(req, token, strlen(token));
+    return ESP_OK;
+}
+
 static const httpd_uri_t uri_discovery = { .uri = "/", .method = HTTP_GET, .handler = api_get_discovery };
 static const httpd_uri_t uri_payment = { .uri = "/", .method = HTTP_POST, .handler = api_post_payment };
 static const httpd_uri_t uri_usage = { .uri = "/usage", .method = HTTP_GET, .handler = api_get_usage };
 static const httpd_uri_t uri_whoami = { .uri = "/whoami", .method = HTTP_GET, .handler = api_get_whoami };
+static const httpd_uri_t uri_wallet = { .uri = "/wallet", .method = HTTP_GET, .handler = api_get_wallet };
+static const httpd_uri_t uri_wallet_swap = { .uri = "/wallet/swap", .method = HTTP_POST, .handler = api_post_wallet_swap };
+static const httpd_uri_t uri_wallet_send = { .uri = "/wallet/send", .method = HTTP_POST, .handler = api_post_wallet_send };
 
 esp_err_t tollgate_api_start(void)
 {
@@ -388,6 +515,9 @@ esp_err_t tollgate_api_start(void)
     httpd_register_uri_handler(s_api_server, &uri_payment);
     httpd_register_uri_handler(s_api_server, &uri_usage);
     httpd_register_uri_handler(s_api_server, &uri_whoami);
+    httpd_register_uri_handler(s_api_server, &uri_wallet);
+    httpd_register_uri_handler(s_api_server, &uri_wallet_swap);
+    httpd_register_uri_handler(s_api_server, &uri_wallet_send);
 
     ESP_LOGI(TAG, "TollGate API started on port 2121");
     return ESP_OK;

@@ -16,6 +16,7 @@
 #include "firewall.h"
 #include "session.h"
 #include "tollgate_api.h"
+#include "wallet.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -88,6 +89,14 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
+static void wallet_init_task(void *pvParameters)
+{
+    const tollgate_config_t *cfg = tollgate_config_get();
+    wallet_init();
+    wallet_fetch_keysets(cfg->mint_url);
+    vTaskDelete(NULL);
+}
+
 static void start_services(void)
 {
     if (s_services_mutex) xSemaphoreTake(s_services_mutex, portMAX_DELAY);
@@ -106,6 +115,8 @@ static void start_services(void)
 
     firewall_init(ap_ip_info.ip);
     session_manager_init();
+
+    xTaskCreate(wallet_init_task, "wallet_init", 32768, NULL, 5, NULL);
 
     const tollgate_config_t *cfg = tollgate_config_get();
     dns_server_start(ap_ip_info.ip, upstream_dns);
