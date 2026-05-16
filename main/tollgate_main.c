@@ -21,6 +21,7 @@
 #include "wifistr.h"
 #include "tollgate_client.h"
 #include "lightning_payout.h"
+#include "cvm_server.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -146,6 +147,12 @@ static void start_services(void)
 
     xTaskCreate(publish_wifistr_task, "wifistr_init", 16384, NULL, 3, NULL);
 
+    const tollgate_config_t *cfg2 = tollgate_config_get();
+    if (cfg2->cvm_enabled) {
+        cvm_server_init();
+        cvm_server_start();
+    }
+
     s_services_running = true;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services started ===");
@@ -162,6 +169,7 @@ static void stop_services(void)
     captive_portal_stop();
     tollgate_api_stop();
     dns_server_stop();
+    cvm_server_stop();
     firewall_disable_nat();
     firewall_revoke_all();
     s_services_running = false;

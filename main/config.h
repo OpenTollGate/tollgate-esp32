@@ -60,6 +60,9 @@ typedef struct {
     int client_retry_interval_ms;
 
     payout_config_t payout;
+
+    bool cvm_enabled;
+    char cvm_relays[256];
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

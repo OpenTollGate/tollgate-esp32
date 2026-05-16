@@ -33,6 +33,8 @@ esp_err_t tollgate_config_init(void)
     g_config.payout.check_interval_s = 60;
     g_config.payout.recipient_count = 0;
     g_config.payout.mint_count = 0;
+    g_config.cvm_enabled = false;
+    strncpy(g_config.cvm_relays, "wss://relay.damus.io", sizeof(g_config.cvm_relays) - 1);
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -232,6 +234,16 @@ esp_err_t tollgate_config_init(void)
                 }
             }
             g_config.payout.mint_count = mcount;
+        }
+    }
+
+    cJSON *cvm = cJSON_GetObjectItem(root, "cvm");
+    if (cvm && cJSON_IsObject(cvm)) {
+        cJSON *cvm_en = cJSON_GetObjectItem(cvm, "enabled");
+        if (cvm_en && cJSON_IsBool(cvm_en)) g_config.cvm_enabled = cJSON_IsTrue(cvm_en);
+        cJSON *cvm_relays = cJSON_GetObjectItem(cvm, "relays");
+        if (cvm_relays && cJSON_IsString(cvm_relays)) {
+            strncpy(g_config.cvm_relays, cvm_relays->valuestring, sizeof(g_config.cvm_relays) - 1);
         }
     }
 

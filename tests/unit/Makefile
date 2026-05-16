@@ -10,6 +10,7 @@ CFLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-sign-com
           -std=gnu17 -g -O0 \
           -DTEST_HOST \
           -DENABLE_MODULE_SCHNORRSIG=1 -DENABLE_MODULE_EXTRAKEYS=1 \
+          -DENABLE_MODULE_ECDH=1 \
           -DECMULT_WINDOW_SIZE=8 -DECMULT_GEN_PREC_BITS=4 \
           -include stubs/esp_err.h \
           -I stubs \
@@ -21,7 +22,7 @@ LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04
 
 .PHONY: all test clean $(TESTS)
 
@@ -70,6 +71,12 @@ test_lnurl_pay: test_lnurl_pay.c
 
 test_lightning_payout: test_lightning_payout.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_mcp_handler: test_mcp_handler.c $(REPO_ROOT)/main/mcp_handler.c
+	$(CC) $(CFLAGS) -I $(REPO_ROOT)/main $< $(REPO_ROOT)/main/mcp_handler.c -o $@ $(LDFLAGS)
+
+test_nip04: test_nip04.c $(REPO_ROOT)/main/nip04.c $(SECP256K1_OBJ)
+	$(CC) $(CFLAGS) -I $(SECP256K1_PRIV_INC) $< $(REPO_ROOT)/main/nip04.c $(SECP256K1_OBJ) -o $@ $(LDFLAGS)
 
 clean:
 	rm -f $(TESTS) $(SECP256K1_OBJ)
