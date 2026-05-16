@@ -53,8 +53,8 @@ test_geohash: test_geohash.c $(REPO_ROOT)/main/geohash.c
 test_identity: test_identity.c $(REPO_ROOT)/main/identity.c $(SECP256K1_OBJ)
 	$(CC) $(CFLAGS) -I $(SECP256K1_PRIV_INC) $< $(REPO_ROOT)/main/identity.c $(SECP256K1_OBJ) -o $@ $(LDFLAGS)
 
-test_nostr_event: test_nostr_event.c $(REPO_ROOT)/main/nostr_event.c $(SECP256K1_OBJ)
-	$(CC) $(CFLAGS) -I $(SECP256K1_PRIV_INC) $< $(REPO_ROOT)/main/nostr_event.c $(SECP256K1_OBJ) -o $@ $(LDFLAGS)
+test_nostr_event: test_nostr_event.c $(REPO_ROOT)/main/nostr_event.c $(REPO_ROOT)/main/identity.c $(SECP256K1_OBJ)
+	$(CC) $(CFLAGS) -I $(SECP256K1_PRIV_INC) $< $(REPO_ROOT)/main/nostr_event.c $(REPO_ROOT)/main/identity.c $(SECP256K1_OBJ) -o $@ $(LDFLAGS)
 
 test_cashu: test_cashu.c $(REPO_ROOT)/main/cashu.c
 	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
