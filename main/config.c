@@ -1,8 +1,12 @@
 #include "config.h"
 #include "esp_log.h"
 #include "esp_spiffs.h"
+#include "esp_system.h"
+#include "esp_mac.h"
+#include "lwip/ip4_addr.h"
 #include "cJSON.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "tollgate_config";
 static tollgate_config_t g_config;
@@ -139,4 +143,26 @@ esp_err_t tollgate_config_get_next_wifi(wifi_config_t *wifi_config)
 {
     g_config.current_network = (g_config.current_network + 1) % g_config.network_count;
     return tollgate_config_get_wifi(wifi_config);
+}
+
+void tollgate_config_derive_unique(tollgate_config_t *cfg)
+{
+    if (cfg->unique_derived) return;
+
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+
+    snprintf(cfg->ap_ssid + strlen(cfg->ap_ssid),
+             TOLLGATE_MAX_AP_SSID_LEN - strlen(cfg->ap_ssid),
+             "-%02X%02X", mac[4], mac[5]);
+
+    uint8_t b5 = mac[4];
+    uint8_t b6 = mac[5];
+    uint8_t subnet = (b5 ^ b6) % 200 + 10;
+    IP4_ADDR(&cfg->ap_ip, 10, b5, subnet, 1);
+    snprintf(cfg->ap_ip_str, sizeof(cfg->ap_ip_str), IPSTR, IP2STR(&cfg->ap_ip));
+
+    cfg->unique_derived = true;
+
+    ESP_LOGI(TAG, "Unique config: SSID='%s', AP_IP=%s", cfg->ap_ssid, cfg->ap_ip_str);
 }

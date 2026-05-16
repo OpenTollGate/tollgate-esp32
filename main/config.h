@@ -3,6 +3,8 @@
 
 #include "esp_err.h"
 #include "esp_wifi.h"
+#include "esp_netif.h"
+#include <stdbool.h>
 
 #define TOLLGATE_MAX_WIFI_NETWORKS 5
 #define TOLLGATE_MAX_MINT_URLS     3
@@ -25,11 +27,18 @@ typedef struct {
     uint8_t ap_channel;
     uint8_t ap_max_conn;
 
+    esp_ip4_addr_t ap_ip;
+    char ap_ip_str[16];
+
     char mint_url[256];
     char lnurl_url[256];
     int price_per_step;
     int step_size_ms;
+
+    bool unique_derived;
 } tollgate_config_t;
+
+void tollgate_config_derive_unique(tollgate_config_t *cfg);
 
 esp_err_t tollgate_config_init(void);
 const tollgate_config_t *tollgate_config_get(void);

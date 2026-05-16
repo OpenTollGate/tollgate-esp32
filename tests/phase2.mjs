@@ -84,9 +84,6 @@ if (TEST_TOKEN) {
   } catch {
     pingOk = false;
   }
-  try {
-    execSync(`echo '${sudoPw}' | sudo -S ip route del default via 192.168.4.1 dev wlp59s0 metric 50 2>/dev/null`, { encoding: 'utf8', timeout: 5000 });
-  } catch {}
   assert(pingOk, 'Internet works');
 
   // Test 20: Spent token

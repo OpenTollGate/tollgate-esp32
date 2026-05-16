@@ -18,9 +18,6 @@
 #include "tollgate_api.h"
 
 #define MAX_STA_RETRY 5
-#define AP_IP_ADDR "192.168.4.1"
-#define AP_SUBNET "255.255.255.0"
-
 static const char *TAG = "tollgate_main";
 
 static EventGroupHandle_t s_wifi_event_group;
@@ -31,6 +28,7 @@ static esp_netif_t *s_ap_netif = NULL;
 static int s_retry_count = 0;
 static bool s_services_running = false;
 static SemaphoreHandle_t s_services_mutex = NULL;
+static char s_ap_ip_str[16] = "10.0.0.1";
 
 static void start_services(void);
 static void stop_services(void);
@@ -109,8 +107,9 @@ static void start_services(void)
     firewall_init(ap_ip_info.ip);
     session_manager_init();
 
+    const tollgate_config_t *cfg = tollgate_config_get();
     dns_server_start(ap_ip_info.ip, upstream_dns);
-    captive_portal_start();
+    captive_portal_start(cfg->ap_ip_str);
     tollgate_api_start();
 
     s_services_running = true;
@@ -140,10 +139,18 @@ static void wifi_create_ap_netif(void)
 {
     s_ap_netif = esp_netif_create_default_wifi_ap();
 
+    const tollgate_config_t *cfg = tollgate_config_get();
+    esp_ip4_addr_t ap_ip = cfg->ap_ip;
+    esp_ip4_addr_t ap_gw = cfg->ap_ip;
+    esp_ip4_addr_t ap_mask;
+    IP4_ADDR(&ap_mask, 255, 255, 255, 0);
+
+    strncpy(s_ap_ip_str, cfg->ap_ip_str, sizeof(s_ap_ip_str) - 1);
+
     esp_netif_ip_info_t ip_info = {
-        .ip.addr = esp_ip4addr_aton(AP_IP_ADDR),
-        .gw.addr = esp_ip4addr_aton(AP_IP_ADDR),
-        .netmask.addr = esp_ip4addr_aton(AP_SUBNET),
+        .ip.addr = ap_ip.addr,
+        .gw.addr = ap_gw.addr,
+        .netmask.addr = ap_mask.addr,
     };
     ESP_ERROR_CHECK(esp_netif_dhcps_stop(s_ap_netif));
     ESP_ERROR_CHECK(esp_netif_set_ip_info(s_ap_netif, &ip_info));
@@ -190,6 +197,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     ESP_ERROR_CHECK(tollgate_config_init());
+    tollgate_config_derive_unique((tollgate_config_t *)tollgate_config_get());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 

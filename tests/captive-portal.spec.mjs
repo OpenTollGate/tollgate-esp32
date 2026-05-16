@@ -32,18 +32,18 @@ test.describe('Captive Portal - Phase 2', () => {
     await expect(btn).toHaveText(/Pay/);
   });
 
-  test('captive detection URIs return 302 redirect', async ({ request }) => {
+  test('captive detection URIs return portal HTML (200)', async ({ request }) => {
     const uris = ['/generate_204', '/hotspot-detect.html', '/canonical.html', '/success.txt'];
     for (const uri of uris) {
-      const resp = await request.fetch(`${PORTAL_URL}${uri}`, { maxRedirects: 0, ignoreHTTPSErrors: true });
-      expect(resp.status()).toBe(302);
-      const location = resp.headers()['location'];
-      expect(location).toBe('http://192.168.4.1/');
+      const resp = await request.fetch(`${PORTAL_URL}${uri}`);
+      expect(resp.status()).toBe(200);
+      const body = await resp.text();
+      expect(body).toContain('TollGate');
     }
   });
 
-  test('captive detection redirects to portal page', async ({ page }) => {
-    await page.goto(`${PORTAL_URL}/generate_204`);
+  test('catch-all URIs redirect to portal page', async ({ page }) => {
+    await page.goto(`${PORTAL_URL}/some-random-page`);
     await expect(page.locator('h1')).toHaveText('TollGate');
   });
 

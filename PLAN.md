@@ -74,10 +74,10 @@ Build a TollGate firmware for two ESP32 devices, following the [TollGate protoco
 | 21 | Wrong mint | Token from unaccepted mint | kind=21023 mint error | PASS |
 | 22 | Session expiry | Wait for allotment | Internet blocked | PASS |
 | 23 | Session renewal | Second payment | Allotment extended | PASS |
-| 24 | Portal payment form | Playwright paste token | Checkmark shown | TODO |
-| 25 | Two clients pay independently | Two POSTs | Both authenticated | TODO |
-| 26 | Client isolation | Only payer gets internet | Non-payer blocked | TODO |
-| 27 | Full e2e: portal→pay→browse | Playwright | Complete flow | TODO |
+| 24 | Portal payment form | Playwright paste token | Checkmark shown | PASS |
+| 25 | Two clients pay independently | Two POSTs | Both authenticated | Phase 3 |
+| 26 | Client isolation | Only payer gets internet | Non-payer blocked | Phase 3 |
+| 27 | Full e2e: portal→pay→browse | Playwright | Complete flow | Phase 3 |
 
 **Captive Portal Fix:** Added DoT reject server on port 853 (TCP RST forces DNS-over-TLS fallback to plain DNS), DNS hijack returns NXDOMAIN for all non-A query types, explicit 302 redirect handlers for all captive detection URIs. Needs verification with actual GrapheneOS phone.
 

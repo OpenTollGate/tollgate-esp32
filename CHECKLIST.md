@@ -63,9 +63,8 @@
 - [x] Test: /whoami returns ip=X.X.X.X mac=XX:XX:XX:XX:XX:XX — PASSING
 - [x] Test: Portal has payment form (Cashu token input + Pay button) — PASSING
 
-### Tests Not Yet Run (need Playwright)
-- [ ] Test 24: Portal payment form visible in browser (Playwright)
-- [ ] Test 25: Two clients pay independently
+### Tests Not Yet Run (deferred to Phase 3 — will use Board B as second client)
+- [ ] Test 25: Two clients pay independently (laptop + Board B)
 - [ ] Test 26: Client isolation (only payer gets internet)
 - [ ] Test 27: Full e2e: portal → pay → browse
 
