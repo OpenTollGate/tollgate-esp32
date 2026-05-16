@@ -22,6 +22,10 @@ esp_err_t tollgate_config_init(void)
     g_config.step_size_ms = 60000;
     g_config.persist_threshold_sats = 1;
     g_config.nostr_publish_interval_s = 21600;
+    g_config.client_enabled = false;
+    g_config.client_steps_to_buy = 1;
+    g_config.client_renewal_threshold_pct = 20;
+    g_config.client_retry_interval_ms = 30000;
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -49,7 +53,11 @@ esp_err_t tollgate_config_init(void)
             "\"step_size_ms\":60000,"
             "\"nostr_geohash\":\"u281w0dfz\","
             "\"nostr_relays\":[\"wss://relay.damus.io\",\"wss://nos.lol\"],"
-            "\"nostr_publish_interval_s\":21600"
+            "\"nostr_publish_interval_s\":21600,"
+            "\"client_enabled\":false,"
+            "\"client_steps_to_buy\":1,"
+            "\"client_renewal_threshold_pct\":20,"
+            "\"client_retry_interval_ms\":30000"
           "}";
         f = fopen("/spiffs/config.json", "w");
         if (f) {
@@ -145,6 +153,18 @@ esp_err_t tollgate_config_init(void)
 
     cJSON *pub_interval = cJSON_GetObjectItem(root, "nostr_publish_interval_s");
     if (pub_interval) g_config.nostr_publish_interval_s = pub_interval->valueint;
+
+    cJSON *client_enabled = cJSON_GetObjectItem(root, "client_enabled");
+    if (client_enabled && cJSON_IsBool(client_enabled)) g_config.client_enabled = cJSON_IsTrue(client_enabled);
+
+    cJSON *client_steps = cJSON_GetObjectItem(root, "client_steps_to_buy");
+    if (client_steps) g_config.client_steps_to_buy = client_steps->valueint;
+
+    cJSON *client_renewal = cJSON_GetObjectItem(root, "client_renewal_threshold_pct");
+    if (client_renewal) g_config.client_renewal_threshold_pct = client_renewal->valueint;
+
+    cJSON *client_retry = cJSON_GetObjectItem(root, "client_retry_interval_ms");
+    if (client_retry) g_config.client_retry_interval_ms = client_retry->valueint;
 
     cJSON_Delete(root);
 

@@ -19,6 +19,7 @@
 #include "tollgate_api.h"
 #include "nucula_wallet.h"
 #include "wifistr.h"
+#include "tollgate_client.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -48,6 +49,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_retry_count++;
         ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d", s_retry_count, MAX_STA_RETRY);
+        tollgate_client_on_sta_disconnected();
         if (s_services_running) stop_services();
         if (s_retry_count < MAX_STA_RETRY) {
             esp_wifi_connect();
@@ -80,9 +82,17 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
 {
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, "Got IP:" IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Got IP:" IPSTR ", GW:" IPSTR, IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.gw));
         s_retry_count = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+        const tollgate_config_t *cfg = tollgate_config_get();
+        nucula_wallet_init(cfg->mint_url);
+
+        char gw_ip_str[16];
+        snprintf(gw_ip_str, sizeof(gw_ip_str), IPSTR, IP2STR(&event->ip_info.gw));
+        tollgate_client_on_sta_connected(gw_ip_str);
+
         start_services();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
         ESP_LOGW(TAG, "Lost IP address");
@@ -125,8 +135,6 @@ static void start_services(void)
 
     firewall_init(ap_ip_info.ip);
     session_manager_init();
-
-    xTaskCreate(wallet_init_task, "wallet_init", 32768, NULL, 5, NULL);
 
     const tollgate_config_t *cfg = tollgate_config_get();
     dns_server_start(ap_ip_info.ip, upstream_dns);
@@ -273,5 +281,6 @@ void app_main(void)
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         session_tick();
+        tollgate_client_tick();
     }
 }

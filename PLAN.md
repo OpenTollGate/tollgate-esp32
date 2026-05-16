@@ -286,103 +286,243 @@ Publishes TollGate node to Nostr as kind 38787 (wifistr):
 | 37 | 5 consecutive payments | Loop | All authenticated | TODO |
 | 38 | Stress: rapid pay/expire | Loop with short sessions | No crash/leak | TODO |
 
-### Phase 4: Mesh Service Discovery + ESP32-to-OpenWRT Interop — NOT STARTED
+### Phase 4: ESP32 TollGate Client Detection + Auto-Payment — IN PROGRESS
 
-**Goal:** Two capabilities: (1) Pre-association price discovery between mesh nodes using Wi-Fi Vendor IE beacons, (2) ESP32-to-OpenWRT TollGate interoperability with Cashu tokens.
+**Goal:** ESP32 detects upstream TollGate when connected as STA, automatically pays for internet access using on-device wallet. Enables ESP32→OpenWRT (Scenario 4) and ESP32→ESP32 (Scenario 5) auto-payment.
 
-#### 4A: Pre-Association Service Discovery via Vendor IE Beacons
+**New files:** `main/tollgate_client.c`, `main/tollgate_client.h`
 
-**Problem:** In a tollgate mesh network, a client router needs to know an upstream gateway's price before investing in Wi-Fi connection setup/teardown. Standard 802.11u ANQP is not supported by ESP-IDF.
+#### Architecture
 
-**Solution: Vendor-Specific Information Elements in Beacon/Probe Response frames**
+The ESP32 already runs `WIFI_MODE_APSTA` — STA connects to upstream WiFi. When STA gets an IP, the client module:
+1. Extracts gateway IP from DHCP info
+2. HTTP GET `http://{gw}:2121/` — check for TollGate (kind=10021)
+3. Parse price/mint/metric from advertisement tags
+4. Check wallet balance ≥ price
+5. `nucula_wallet_send(price_sats)` → cashuA V3 token
+6. POST token to `http://{gw}:2121/`
+7. Parse kind=1022 response — session granted
+8. Monitor: periodic GET `/usage`, auto-renew at 20% remaining
 
-ESP-IDF provides `esp_wifi_set_vendor_ie()` to inject custom data into 802.11 management frames. This allows passive price discovery during normal Wi-Fi scanning — no connection required.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                 Layer 2 (Pre-Association)                    │
-│                                                              │
-│  Gateway AP broadcasts price in every Beacon (~100ms)       │
-│  Client STA scans, reads price from beacon before connect   │
-│                                                              │
-│  ┌─────────────┐                     ┌─────────────┐       │
-│  │ Gateway AP  │  Beacon ──────────► │ Client STA  │       │
-│  │             │  (with price IE)    │             │       │
-│  │ Vendor IE:  │                     │ Scan result │       │
-│  │ OUI:TG      │                     │ includes    │       │
-│  │ price/sats  │                     │ price data  │       │
-│  │ step_ms     │                     └──────┬──────┘       │
-│  │ mint_url    │                            │              │
-│  └─────────────┘                     Decision: connect?     │
-│                                              │              │
-└──────────────────────────────────────────────┼──────────────┘
-                                               │
-                              ┌────────────────▼──────────────┐
-                              │       Layer 3+ (Connected)    │
-                              │  POST / with Cashu token      │
-                              └───────────────────────────────┘
-```
-
-**Beacon IE Payload Format (Vendor-Specific, Element ID 0xDD):**
+#### Client State Machine
 
 ```
-┌──────────┬────────┬─────────────┬──────────────┬──────────────────┐
-│ element_id│ length │ vendor_oui  │ oui_type     │ payload          │
-│ (0xDD)    │        │ (3 bytes)   │ (1 byte)     │ (variable)       │
-├──────────┼────────┼─────────────┼──────────────┼──────────────────┤
-│ 0xDD     │ N      │ "TG"        │ 0x01 (price) │ See below        │
-│          │        │ 0x54:0x47    │              │                  │
-└──────────┴────────┴─────────────┴──────────────┴──────────────────┘
-
-Price Payload (oui_type 0x01):
-┌─────────────┬─────────────┬──────────────┬───────────────┬────────────┐
-│ version (1B)│ price (2B)  │ step_ms (2B) │ fee_ppk (2B)  │ hop_count │
-│ = 0x01      │ sat/step    │ ms/step      │ or 0          │ (1B)       │
-├─────────────┼─────────────┼──────────────┼───────────────┼────────────┤
-│ 0x01        │ uint16_le   │ uint16_le    │ uint16_le     │ uint8      │
-└─────────────┴─────────────┴──────────────┴───────────────┴────────────┘
-Total payload: 9 bytes (fits easily in beacon, typical budget ~200 bytes)
+IDLE → [STA got IP] → DETECTING → [kind=10021 found] → NEEDS_PAY
+                     ↓ [no TollGate]        ↓ [wallet has funds]
+                   NO_TOLLGATE         PAYING → [kind=1022] → PAID
+                                                       ↓ [expiry near]
+                                                  RENEWING → PAID
 ```
 
-**Implementation:**
+#### Design Decisions
+- **Blocking**: upstream payment must succeed before local services start
+- **1 step per payment** (21 sats / 60s) — minimal, renew frequently
+- **No budget cap** — keep paying as long as wallet has balance
+- **Renew at 20% remaining** — re-pay when 80% of session consumed
+- **Wallet init synchronous** — must complete before client can create tokens
 
-**AP Side (Gateway — `beacon_price.c/h`):**
-- `beacon_price_start()` — calls `esp_wifi_set_vendor_ie(true, WIFI_VND_IE_TYPE_BEACON, WIFI_VND_IE_ID_0, &ie_data)` and also for `WIFI_VND_IE_TYPE_PROBE_RESP`
-- `beacon_price_update(uint16_t price_sat, uint16_t step_ms, uint16_t fee_ppk, uint8_t hop_count)` — dynamically updates the IE in-place (no reconnect, no user kick; next beacon frame carries new price)
-- Price derived from `tollgate_config_t` fields (`price_per_step`, `step_size_ms`)
-- Can be called on-the-fly when market conditions change (e.g., upstream price changes)
+#### Config Addition
 
-**STA Side (Client — `beacon_scan.c/h`):**
-- `beacon_scan_prices(wifi_ap_record_t *aps, int count, tollgate_price_t *prices, int *price_count)` — given scan results, extract price IEs
-- Uses `esp_wifi_set_vendor_ie_cb()` to register a callback that fires during scan
-- Or parses `vendor_ie_data_t` from scan results if available in `wifi_ap_record_t`
-- Returns array of `{bssid, ssid, price_sat, step_ms, fee_ppk, hop_count}`
-- Client selects cheapest/upstream gateway from scan results before connecting
+```json
+{
+  "client_enabled": true,
+  "client_steps_to_buy": 1,
+  "client_renewal_threshold_pct": 20,
+  "client_retry_interval_ms": 30000
+}
+```
 
-**Integration with existing config:**
-- OUI: `0x54, 0x47` ("TG" in ASCII) — unique to TollGate
-- oui_type: `0x01` = price advertisement, `0x02` = mesh routing (future)
-- `hop_count`: indicates network depth (0 = directly connected to internet, 1 = one hop away)
-- Price updates are rate-limited to once per 5 seconds to avoid beacon churn
+#### Integration with `tollgate_main.c`
 
-**GL-MT3000 (OpenWrt) Compatibility:**
-- OpenWrt supports vendor IEs via `hostapd_cli -i wlan0 set vendor_elements <hex>` + `hostapd_cli -i wlan0 update_beacon`
-- Client scans via `iw dev wlan0 scan` show vendor elements
-- Requires stock OpenWrt 24 firmware (not GL.iNet default) for mac80211 driver access
-- Same OUI/payload format ensures ESP32 ↔ OpenWrt interop
+| Event | Action |
+|-------|--------|
+| `IP_EVENT_STA_GOT_IP` | Wallet init (sync) → `tollgate_client_on_sta_connected()` → start local services |
+| `WIFI_EVENT_STA_DISCONNECTED` | `tollgate_client_on_sta_disconnected()` — reset state |
+| Main loop (every 1s) | `tollgate_client_tick()` — check usage, renew if needed |
 
-**Key Benefits:**
-- Zero connection overhead for price discovery
-- Works during normal passive/active scanning (no extra frames)
-- Prices update live without disconnecting clients
-- Supports multi-hop mesh routing via `hop_count`
-- Compatible with both ESP32 and Linux (OpenWrt) platforms
+#### Test Cases
 
-#### 4B: ESP32-to-OpenWRT TollGate Interop
+| # | Test | Method | Pass Criteria | Status |
+|---|------|--------|---------------|--------|
+| 39 | Client detection (kind=10021) | Unit test parse | Correct price/mint/metric extracted | TODO |
+| 40 | Client payment flow | Mock HTTP | Token POSTed, kind=1022 parsed | TODO |
+| 41 | Session renewal | Mock usage < 20% | Re-payment triggered | TODO |
+| 42 | ESP32→OpenWRT auto-pay | Integration | NAT works after payment | TODO |
+| 43 | ESP32→ESP32 auto-pay | Cross-board | Board B pays Board A | TODO |
 
-**Goal:** ESP32 can pay OpenWRT TollGate using Cashu tokens. Full interoperability with existing OpenWRT-based TollGate infrastructure.
+#### Vendor IE Beacon (Pre-Association Discovery) — DEFERRED
 
-## Total: 38 + 20 Tests across 4 phases
+Pre-association price discovery via Wi-Fi Vendor IE beacons (OUI `0x54:0x47`) is deferred to a future phase. The client currently uses HTTP-based discovery after connection.
+
+### Phase 5: Lightning Auto-Payout — NOT STARTED
+
+**Goal:** When wallet balance exceeds a configurable threshold, automatically pay out to Lightning addresses via LNURL-pay + Cashu NUT-05 melt.
+
+**New files:** `main/lnurl_pay.c`, `main/lnurl_pay.h`, `main/lightning_payout.c`, `main/lightning_payout.h`
+**Modified files:** `components/nucula_lib/nucula_wallet.h`, `components/nucula_lib/nucula_wallet.cpp`
+
+#### Architecture
+
+Mirrors the Go implementation in `tollgate-module-basic-go/src/merchant/` and `src/lightning/`:
+
+```
+Every 60s (per mint):
+  balance = nucula_wallet_balance()
+  balance >= min_payout_amount? No → skip
+  Yes:
+    payout_pool = balance - min_balance
+    For each recipient (factor):
+      share = payout_pool * factor
+      bolt11 = lnurl_get_invoice(lightning_address, share)
+      nucula_wallet_melt(bolt11, share + fee_tolerance%)
+```
+
+#### LNURL-pay Protocol (`lnurl_pay.c/h`)
+
+Pure HTTP implementation (2 GETs):
+1. `GET https://{domain}/.well-known/lnurlp/{username}` → parse callback URL, min/max amounts
+2. `GET {callback}?amount={millisats}` → extract BOLT11 invoice from response
+
+#### nucula Bridge Extension
+
+Add to `nucula_wallet.h`:
+```c
+esp_err_t nucula_wallet_melt(const char *bolt11_invoice, uint64_t max_fee_sats);
+```
+
+Wraps `Wallet::request_melt_quote()` + `Wallet::melt_tokens()` (NUT-05).
+
+#### Config Addition
+
+```json
+{
+  "payout": {
+    "enabled": true,
+    "min_payout_amount": 128,
+    "min_balance": 64,
+    "fee_tolerance_pct": 10,
+    "check_interval_s": 60,
+    "recipients": [
+      {"lightning_address": "user@domain.com", "factor": 0.79},
+      {"lightning_address": "dev@domain.com", "factor": 0.21}
+    ]
+  }
+}
+```
+
+#### Test Cases
+
+| # | Test | Method | Pass Criteria | Status |
+|---|------|--------|---------------|--------|
+| 44 | LNURL-pay flow | Unit test HTTP parse | Correct BOLT11 extracted | TODO |
+| 45 | Payout threshold | Unit test | Skip when below, trigger when above | TODO |
+| 46 | Multi-recipient split | Unit test | Factors sum to 1.0 | TODO |
+| 47 | Melt with fee tolerance | Integration | Invoice paid, change received | TODO |
+| 48 | Full payout cycle | E2E | Wallet drains to min_balance | TODO |
+
+### Phase 6: Bytes-Based Billing — NOT STARTED
+
+**Goal:** Support both time-based (milliseconds) and data-based (bytes) billing metrics. Mirrors the Go implementation's dual-metric system.
+
+#### lwIP NAPT Byte Counting (Managed Component)
+
+**New component:** `components/lwip_napt_stats/` — patched copy of ESP-IDF's `ip4_napt.c` with per-entry byte counters.
+
+Patch adds to `struct ip_napt_entry`:
+```c
+uint64_t bytes_up;     // bytes uploaded (client → internet)
+uint64_t bytes_down;   // bytes downloaded (internet → client)
+```
+
+Increment in `ip_napt_forward()` (upload) and `ip_napt_recv()` (download).
+
+New public API:
+```c
+void ip_napt_get_client_bytes(uint32_t client_ip, uint64_t *bytes_up, uint64_t *bytes_down);
+```
+
+~30 line patch. Lives in the project repo as a managed component, survives ESP-IDF updates.
+
+#### Session Changes
+
+`session_t` gains dual-metric support:
+```c
+uint64_t allotment_bytes;
+uint64_t bytes_consumed;
+```
+
+`session_is_expired()` dispatches on metric type:
+- `"milliseconds"`: elapsed time ≥ allotment_ms
+- `"bytes"`: bytes_consumed ≥ allotment_bytes
+
+#### Config Addition
+
+```json
+{
+  "metric": "milliseconds",
+  "step_size_bytes": 22020096
+}
+```
+
+#### Test Cases
+
+| # | Test | Method | Pass Criteria | Status |
+|---|------|--------|---------------|--------|
+| 49 | Byte allotment calc | Unit test | Correct bytes per step | TODO |
+| 50 | Byte session expiry | Unit test | Expired when consumed ≥ allotment | TODO |
+| 51 | NAPT byte counting | Integration | Counters match actual traffic | TODO |
+| 52 | Bytes metric end-to-end | E2E | Client disconnected after data cap | TODO |
+
+### Phase 7: ContextVM Server (MCP over Nostr) — NOT STARTED
+
+**Goal:** Remote configuration of ESP32 TollGate via ContextVM — services communicate over Nostr using public keys as addresses. Exposes configuration as MCP tools accessible by both humans and AI agents.
+
+**New files:** `main/cvm_server.c`, `main/cvm_server.h`, `main/nip44.c`, `main/nip44.h`, `main/mcp_handler.c`, `main/mcp_handler.h`
+
+#### Architecture
+
+ContextVM uses MCP (JSON-RPC 2.0) over NIP-44 encrypted Nostr DMs:
+1. ESP32 subscribes to Nostr relays for DMs addressed to its npub
+2. Incoming DMs are NIP-44 decrypted, parsed as MCP JSON-RPC requests
+3. Dispatched to registered tool handlers
+4. Responses sent back via NIP-44 encrypted DM
+
+#### MCP Tools Exposed
+
+| Tool | Input | Output |
+|------|-------|--------|
+| `get_config` | — | Full config JSON |
+| `set_config` | `{key: value}` | Success/error |
+| `get_balance` | — | `{balance, proof_count}` |
+| `get_sessions` | — | Array of active sessions |
+| `get_usage` | — | Upstream usage if client active |
+| `set_payout` | `{recipients: [...]}` | Success/error |
+| `set_metric` | `{"bytes" or "milliseconds"}` | Success/error |
+| `set_price` | `{price_per_step: N}` | Success/error |
+| `wallet_send` | `{amount_sats: N}` | `{token: "cashuA..."}` |
+| `wallet_melt` | `{bolt11: "ln..."}` | `{preimage: "..."}` |
+
+#### Auth
+
+Only accept commands from owner npub (derived from nsec in config.json).
+
+#### Dependencies
+
+- XChaCha20-Poly1305 (from mbedtls or libsodium)
+- Base64url encoding (already in cashu code)
+- WebSocket listener (extends existing wifistr infrastructure)
+- NIP-44 v2 encryption/decryption
+
+#### Test Cases
+
+| # | Test | Method | Pass Criteria | Status |
+|---|------|--------|---------------|--------|
+| 53 | NIP-44 encrypt/decrypt | Unit test | Roundtrip matches | TODO |
+| 54 | MCP JSON-RPC parse | Unit test | Correct dispatch | TODO |
+| 55 | Config change via DM | Integration | ESP32 applies new config | TODO |
+| 56 | Balance query via CVM | Integration | Returns correct balance | TODO |
+
+## Total: 56 Tests across 7 phases
 
 ## Testing Infrastructure
 
@@ -407,6 +547,7 @@ Host-compiled C tests that verify pure-logic functions with known input/output v
 | `test_nostr_event.c` | `nostr_event.c` | NIP-01 event ID (SHA-256 of canonical JSON), Schnorr signature generation + verification, JSON serialization |
 | `test_cashu.c` | `cashu.c` | `cashu_decode_token()`, `cashu_calculate_allotment_ms()`, `cashu_is_mint_accepted()` |
 | `test_session.c` | `session.c` | Session lifecycle: create/find/extend/expire/revoke, spent-secret dedup |
+| `test_tollgate_client.c` | `tollgate_client.c` | Discovery parsing, payment flow, renewal logic, state machine |
 
 **Run:** `make test-unit`
 

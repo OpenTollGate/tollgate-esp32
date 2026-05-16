@@ -21,7 +21,7 @@ LDFLAGS := -lmbedcrypto -lcjson
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client
 
 .PHONY: all test clean $(TESTS)
 
@@ -61,6 +61,9 @@ test_cashu: test_cashu.c $(REPO_ROOT)/main/cashu.c
 
 test_session: test_session.c $(REPO_ROOT)/main/session.c
 	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/session.c -o $@ $(LDFLAGS)
+
+test_tollgate_client: test_tollgate_client.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 clean:
 	rm -f $(TESTS) $(SECP256K1_OBJ)

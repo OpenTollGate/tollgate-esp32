@@ -49,6 +49,11 @@ typedef struct {
     int nostr_publish_interval_s;
 
     bool identity_initialized;
+
+    bool client_enabled;
+    int client_steps_to_buy;
+    int client_renewal_threshold_pct;
+    int client_retry_interval_ms;
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

@@ -189,9 +189,151 @@
 - [ ] Update `package.json` npm scripts for new paths
 - [ ] All `make test-*` targets work
 
-## Phase 4: ESP32-to-OpenWRT TollGate Interop — NOT STARTED
-- [ ] ESP32 pays OpenWRT TollGate using Cashu tokens
-- [ ] Interoperability testing with existing OpenWRT TollGate on enx00e04c683d2d
+## Phase 4: ESP32 TollGate Client Detection + Auto-Payment — IN PROGRESS
+
+### tollgate_client.c/h (New)
+- [ ] Create `tollgate_client.h` — types: `tollgate_discovery_t`, `tollgate_client_state_t` enum (IDLE/DETECTING/NEEDS_PAY/PAYING/PAID/RENEWING)
+- [ ] Create `tollgate_client.c` — detection, payment, monitoring, state machine
+- [ ] `tollgate_client_detect(gw_ip)` — HTTP GET `http://{gw}:2121/`, parse kind=10021, extract price tags
+- [ ] `tollgate_client_pay(gw_ip, amount_sats)` — `nucula_wallet_send()` → POST to upstream → parse kind=1022/21023
+- [ ] `tollgate_client_on_sta_connected()` — extract gw from DHCP, detect, pay (blocking)
+- [ ] `tollgate_client_tick()` — GET `/usage`, renew at 20% remaining
+- [ ] `tollgate_client_on_sta_disconnected()` — reset state
+- [ ] `tollgate_client_get_usage(gw_ip)` — GET `/usage` → parse remaining/total
+
+### Config Changes
+- [ ] Add to `config.h`: `client_enabled`, `client_steps_to_buy`, `client_renewal_threshold_pct`, `client_retry_interval_ms`
+- [ ] Parse new fields in `config.c`
+
+### Integration (tollgate_main.c)
+- [ ] Make wallet init synchronous (call `nucula_wallet_init()` directly, not as task)
+- [ ] Add `tollgate_client_on_sta_connected()` in `ip_event_handler` (blocking, before `start_services()`)
+- [ ] Add `tollgate_client_on_sta_disconnected()` in `wifi_event_handler`
+- [ ] Add `tollgate_client_tick()` in main loop
+- [ ] Update `main/CMakeLists.txt` — add `tollgate_client.c`
+
+### Unit Tests
+- [ ] `tests/unit/test_tollgate_client.c` — discovery parsing, price extraction, state machine, renewal threshold
+- [ ] All unit tests passing
+
+### Integration Tests
+- [ ] ESP32→OpenWRT auto-payment (Scenario 4)
+- [ ] ESP32→ESP32 auto-payment (Scenario 5, needs Board B)
+
+### Test Cases 39-43
+- [ ] Test 39: Client detection (kind=10021 parse)
+- [ ] Test 40: Client payment flow (mock HTTP)
+- [ ] Test 41: Session renewal (20% threshold)
+- [ ] Test 42: ESP32→OpenWRT auto-pay
+- [ ] Test 43: ESP32→ESP32 auto-pay
+
+## Phase 5: Lightning Auto-Payout — NOT STARTED
+
+### lnurl_pay.c/h (New)
+- [ ] Create `lnurl_pay.h` — `lnurl_get_invoice(lightning_address, amount_sats, bolt11_out, out_size)`
+- [ ] Create `lnurl_pay.c` — GET `.well-known/lnurlp/{user}` → parse callback → GET callback with amount → extract BOLT11
+
+### lightning_payout.c/h (New)
+- [ ] Create `lightning_payout.h` — `payout_recipient_t`, config, init/tick API
+- [ ] Create `lightning_payout.c` — periodic balance check, threshold, multi-recipient split, melt with retry
+
+### nucula Bridge Extension
+- [ ] Add `nucula_wallet_melt(bolt11, max_fee_sats)` to `nucula_wallet.h/cpp`
+- [ ] Wraps `Wallet::request_melt_quote()` + `Wallet::melt_tokens()` (NUT-05)
+
+### Config Changes
+- [ ] Add payout config to `config.h`: `payout_enabled`, `min_payout_amount`, `min_balance`, `fee_tolerance_pct`, `check_interval_s`, `recipients[]`
+- [ ] Parse payout config in `config.c`
+
+### Integration (tollgate_main.c)
+- [ ] Add periodic payout timer (60s interval)
+- [ ] Update `main/CMakeLists.txt`
+
+### Unit Tests
+- [ ] `tests/unit/test_lnurl_pay.c` — LNURL-pay URL construction, response parsing
+- [ ] `tests/unit/test_lightning_payout.c` — threshold check, multi-recipient split, fee tolerance
+
+### Test Cases 44-48
+- [ ] Test 44: LNURL-pay flow
+- [ ] Test 45: Payout threshold
+- [ ] Test 46: Multi-recipient split
+- [ ] Test 47: Melt with fee tolerance
+- [ ] Test 48: Full payout cycle
+
+## Phase 6: Bytes-Based Billing — NOT STARTED
+
+### lwIP NAPT Stats Component (New)
+- [ ] Create `components/lwip_napt_stats/` — patched `ip4_napt.c` with byte counters
+- [ ] Add `uint64_t bytes_up/bytes_down` to `struct ip_napt_entry`
+- [ ] Increment in `ip_napt_forward()` and `ip_napt_recv()`
+- [ ] Add public API: `ip_napt_get_client_bytes(client_ip, &up, &down)`
+- [ ] Create component CMakeLists.txt
+
+### Session Changes
+- [ ] Add `allotment_bytes`, `bytes_consumed` to `session_t`
+- [ ] Dual-metric `session_is_expired()` dispatches on metric type
+- [ ] `session_add_bytes(client_ip, byte_count)` called from firewall counting
+
+### Config Changes
+- [ ] Add `metric` field ("milliseconds" or "bytes") to `config.h`
+- [ ] Add `step_size_bytes` to `config.h`
+- [ ] Parse in `config.c`
+
+### TollGate API Changes
+- [ ] Discovery endpoint advertises correct metric
+- [ ] `/usage` returns byte-based or time-based values
+- [ ] Allotment calculation dispatches on metric
+
+### Firewall Changes
+- [ ] `firewall_count_traffic()` — queries NAPT byte counters per active client
+- [ ] Called from `session_tick()` or main loop
+
+### Cashu Changes
+- [ ] Unify `cashu_calculate_allotment()` for both metrics
+
+### Unit Tests
+- [ ] `tests/unit/test_bytes_metric.c` — byte allotment calc, dual-metric session expiry
+
+### Test Cases 49-52
+- [ ] Test 49: Byte allotment calc
+- [ ] Test 50: Byte session expiry
+- [ ] Test 51: NAPT byte counting
+- [ ] Test 52: Bytes metric end-to-end
+
+## Phase 7: ContextVM Server (MCP over Nostr) — NOT STARTED
+
+### NIP-44 Encryption (New)
+- [ ] Create `nip44.h` — encrypt/decrypt API
+- [ ] Create `nip44.c` — XChaCha20-Poly1305 + secp256k1 ECDH + conversation key derivation
+
+### MCP Handler (New)
+- [ ] Create `mcp_handler.h` — tool registration, JSON-RPC parse/dispatch
+- [ ] Create `mcp_handler.c` — register tools, handle requests, build responses
+
+### CVM Server (New)
+- [ ] Create `cvm_server.h` — init/start/stop API
+- [ ] Create `cvm_server.c` — WebSocket listener, DM subscription, NIP-44 decrypt, MCP dispatch
+
+### MCP Tool Registration
+- [ ] `get_config`, `set_config`, `get_balance`, `get_sessions`, `get_usage`
+- [ ] `set_payout`, `set_metric`, `set_price`, `wallet_send`, `wallet_melt`
+
+### Auth
+- [ ] Only accept commands from owner npub
+
+### Integration (tollgate_main.c)
+- [ ] Start CVM server alongside wifistr
+- [ ] Update `main/CMakeLists.txt`
+
+### Unit Tests
+- [ ] `tests/unit/test_nip44.c` — encrypt/decrypt roundtrip
+- [ ] `tests/unit/test_mcp_handler.c` — JSON-RPC parse, tool dispatch
+
+### Test Cases 53-56
+- [ ] Test 53: NIP-44 encrypt/decrypt
+- [ ] Test 54: MCP JSON-RPC parse
+- [ ] Test 55: Config change via DM
+- [ ] Test 56: Balance query via CVM
 
 ## Reminders
 - Do NOT ask for instructions — proceed independently, skip blocked items, work on unblocked ones
