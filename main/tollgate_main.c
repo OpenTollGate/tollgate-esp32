@@ -11,12 +11,14 @@
 #include "lwip/dns.h"
 #include "dhcpserver/dhcpserver.h"
 #include "config.h"
+#include "identity.h"
 #include "dns_server.h"
 #include "captive_portal.h"
 #include "firewall.h"
 #include "session.h"
 #include "tollgate_api.h"
-#include "wallet.h"
+#include "nucula_wallet.h"
+#include "wifistr.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -92,8 +94,16 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
 static void wallet_init_task(void *pvParameters)
 {
     const tollgate_config_t *cfg = tollgate_config_get();
-    wallet_init();
-    wallet_fetch_keysets(cfg->mint_url);
+    nucula_wallet_init(cfg->mint_url);
+    vTaskDelete(NULL);
+}
+
+static void publish_wifistr_task(void *pvParameters)
+{
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    wifistr_publish();
+    const tollgate_config_t *cfg = tollgate_config_get();
+    wifistr_start_periodic(cfg->nostr_publish_interval_s);
     vTaskDelete(NULL);
 }
 
@@ -122,6 +132,8 @@ static void start_services(void)
     dns_server_start(ap_ip_info.ip, upstream_dns);
     captive_portal_start(cfg->ap_ip_str);
     tollgate_api_start();
+
+    xTaskCreate(publish_wifistr_task, "wifistr_init", 16384, NULL, 3, NULL);
 
     s_services_running = true;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
@@ -214,7 +226,11 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     ESP_ERROR_CHECK(tollgate_config_init());
+
+    ESP_ERROR_CHECK(identity_init(tollgate_config_get()->nsec));
+
     tollgate_config_derive_unique((tollgate_config_t *)tollgate_config_get());
+
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
@@ -226,6 +242,11 @@ void app_main(void)
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    const tollgate_config_t *tcfg = tollgate_config_get();
+    ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_STA, tcfg->sta_mac));
+    ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_AP, tcfg->ap_mac));
+    ESP_LOGI(TAG, "MACs set from identity");
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                                          &wifi_event_handler, NULL, NULL));
@@ -241,8 +262,8 @@ void app_main(void)
     wifi_config_t sta_config;
     if (tollgate_config_get_wifi(&sta_config) == ESP_OK) {
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
-        const tollgate_config_t *tcfg = tollgate_config_get();
-        ESP_LOGI(TAG, "STA configured for SSID: %s", tcfg->networks[tcfg->current_network].ssid);
+        const tollgate_config_t *tcfg2 = tollgate_config_get();
+        ESP_LOGI(TAG, "STA configured for SSID: %s", tcfg2->networks[tcfg2->current_network].ssid);
     }
 
     ESP_ERROR_CHECK(esp_wifi_start());

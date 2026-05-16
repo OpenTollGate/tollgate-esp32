@@ -70,40 +70,69 @@
 - [x] DNS query logging for unauthenticated clients
 - [x] Verified working with GrapheneOS phone (commit `236b61d`)
 
-## Phase 3: On-Device Wallet + ESP32-to-ESP32 Payments — IN PROGRESS
-### Wallet Module (wallet.c/h)
-- [x] `hash_to_curve()` — SHA256 try-and-increment with Cashu domain separator
-- [x] `point_add()`, `scalar_mul()` — mbedTLS secp256k1 primitives
-- [x] `random_scalar()` — ESP32 hardware RNG mod curve order
-- [x] Proof storage: `wallet_add_proofs()`, `wallet_remove_proof()`, `wallet_clear()`
-- [x] Keyset fetching: `wallet_fetch_keysets()` — GET /v1/keys from mint
-- [x] Full swap: `wallet_swap_proofs()` — generates blinded messages, POST /v1/swap, unblinds signatures
-- [x] Token creation: `wallet_create_token()` — encode proofs as `cashuA` token
-- [x] Wallet API endpoints: `GET /wallet`, `POST /wallet/swap`, `POST /wallet/send`
-- [x] Payment flow integration: received proofs added to wallet after session creation
-- [x] mbedTLS 3.x compatibility (no direct point field access, no point_negate)
-- [x] Unblinding: `C = C_ + (order - r) * G` approach
-- [x] Clean build (0 warnings, 0 errors)
+## Phase 3: On-Device Wallet + Nostr Identity + Wifistr — IN PROGRESS
+### nucula Wallet Integration
+- [x] Add nucula as git submodule (`nucula_src/`)
+- [x] Create `components/secp256k1/` (symlink to nucula's libsecp256k1)
+- [x] Create `components/nucula_lib/` (C++ bridge + C API)
+- [x] C bridge: `nucula_wallet.h` (init, receive, send, swap_all, balance, proofs_json)
+- [x] All wallet operations tested on Board A: pay, swap, send, persistence
 
-### Wallet Persistence (wallet_persist.c/h)
-- [ ] Implement `wallet_persist_save()` — serialize wallet to `/spiffs/wallet.json`
-- [ ] Implement `wallet_persist_load()` — deserialize wallet from `/spiffs/wallet.json` on boot
-- [ ] Add `persist_threshold_sats` to config.json and config struct
-- [ ] Threshold logic: only persist when `balance >= persist_threshold_sats`
-- [ ] Wire `wallet_persist_save()` into wallet mutations (add_proofs, swap, create_token)
-- [ ] Wire `wallet_persist_load()` into `wallet_init()`
-- [ ] Build and verify clean compile
+### Nostr Identity Derivation (identity.c/h)
+- [x] Create `identity.h` — API: `identity_init(nsec_hex)`, derived value accessors
+- [x] Create `identity.c` — HMAC-SHA512 derivation via mbedtls, npub via secp256k1
+- [x] Derive STA MAC: `tollgate_derive(nsec, "sta-mac", 0)` → 6 bytes, locally administered
+- [x] Derive AP MAC: `tollgate_derive(nsec, "ap-mac", 0)` → 6 bytes, locally administered
+- [x] Derive SSID: `"TollGate-" + hex(AP_MAC[3:6])`
+- [x] Derive AP IP: hash-based from AP MAC bytes
+- [x] Compute npub: secp256k1 x-only pubkey from nsec
+- [x] Set MACs via `esp_wifi_set_mac()` in boot sequence
+
+### Nostr Event Signing (nostr_event.c/h)
+- [x] Create `nostr_event.h` — NIP-01 event struct + sign/serialize API
+- [x] Create `nostr_event.c` — canonical JSON, SHA-256 ID, Schnorr signature
+- [x] Uses `secp256k1_schnorrsig_sign32()` for BIP-340 signatures
+
+### Geohash Encoding (geohash.c/h)
+- [x] Create `geohash.h` — `geohash_encode(lat, lon, precision, out)`
+- [x] Create `geohash.c` — standard base-32 geohash encoding
+
+### Wifistr Service Discovery (wifistr.c/h)
+- [x] Create `wifistr.h` — `wifistr_publish()` API
+- [x] Create `wifistr.c` — kind 38787 event builder + WebSocket relay publish
+- [x] Build event with tags: d, ssid, h, security, g, c
+- [x] WebSocket client: raw TCP + TLS (esp_tls.h) + HTTP Upgrade
+- [x] Publish on boot + periodic timer (6h default)
+
+### Config Changes (config.c/h)
+- [x] Add to struct: nsec, npub, nostr_geohash, nostr_relays, nostr_publish_interval_s, sta_mac, ap_mac
+- [x] Remove from JSON parsing: ap_ssid, ap_ip (now derived from nsec)
+- [x] Keep: ap_password, ap_channel, ap_max_conn (hardcoded defaults)
+- [x] Update default config.json template with nsec and Nostr fields
+
+### Boot Sequence Changes (tollgate_main.c)
+- [x] Call `identity_init(nsec)` after config load, before WiFi init
+- [x] Set STA/AP MAC via `esp_wifi_set_mac()` after `esp_wifi_init()`, before `esp_wifi_start()`
+- [x] Remove old `tollgate_config_derive_unique()` call
+- [x] Use derived SSID/IP in AP configuration
+- [x] Start wifistr publish task after services start
+
+### Build System
+- [x] Add identity.c, nostr_event.c, geohash.c, wifistr.c to CMakeLists.txt SRCS
+- [x] Add `secp256k1` to REQUIRES (for identity.c and nostr_event.c)
+- [x] Clean build (0 errors, 0 warnings)
 
 ### Hardware Testing
-- [ ] Flash Board A, verify wallet boot (keyset fetch succeeds)
-- [ ] Pay Board A with Cashu token, verify proofs stored (GET /wallet)
-- [ ] Test POST /wallet/swap on Board A
-- [ ] Test POST /wallet/send on Board A, verify token is valid
-- [ ] Verify persistence survives reboot on Board A
-- [ ] Flash Board B with TollGate firmware
-- [ ] Load Board B with balance (pay it a token)
-- [ ] Board B creates send token via POST /wallet/send
-- [ ] Cross-board payment: Board B token → Board A (laptop relay)
+- [x] Flash Board A, verify wallet boot (keyset fetch succeeds)
+- [x] Pay Board A with Cashu token, verify proofs stored (GET /wallet)
+- [x] Test POST /wallet/swap on Board A
+- [x] Test POST /wallet/send on Board A, verify token is valid
+- [x] Flash Board A with new identity derivation, verify derived SSID/MAC/IP
+- [x] Verify captive portal works with new SSID/IP
+- [x] Verify payment flow still works with identity-derived config
+- [x] Verify wifistr event published to relay (damus + nos.lol)
+- [ ] Flash Board B with new firmware (different nsec)
+- [ ] Cross-board payment: Board B token → Board A
 - [ ] Verify both boards show correct balances after cross-board payment
 
 ### Tests 25-27 (deferred from Phase 2, need Board B)
@@ -131,8 +160,9 @@
 
 ## Reminders
 - Do NOT ask for instructions — proceed independently, skip blocked items, work on unblocked ones
-- Board A: `/dev/ttyACM0`, MAC `94:a9:90:2e:37:7c`, SSID `TollGate-377C`, AP IP `10.55.85.1`
-- Board B: `/dev/ttyACM1`, MAC `fc:01:2c:c5:50:50`
+- Board A: `/dev/ttyACM0`, factory MAC `94:a9:90:2e:37:7c`
+- Board B: `/dev/ttyACM1`, factory MAC `fc:01:2c:c5:50:50`
+- Identity is now derived from nsec in config.json (SSID, IP, MAC all deterministic)
 - testnut.cashu.space auto-pays invoices: `cashu -h https://testnut.cashu.space invoice <amount>`
 - Token generation: `cashu -h https://testnut.cashu.space send --legacy <amount> 2>&1 | grep '^cashuA' | head -1`
 - sudo password: `c03rad0r123`

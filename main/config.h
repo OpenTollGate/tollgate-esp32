@@ -10,6 +10,7 @@
 #define TOLLGATE_MAX_MINT_URLS     3
 #define TOLLGATE_MAX_AP_SSID_LEN   32
 #define TOLLGATE_MAX_AP_PASS_LEN   64
+#define TOLLGATE_MAX_RELAYS        4
 
 typedef struct {
     char ssid[32];
@@ -22,10 +23,16 @@ typedef struct {
     int current_network;
     int max_retry;
 
+    char nsec[65];
+    char npub[65];
+
     char ap_ssid[TOLLGATE_MAX_AP_SSID_LEN];
     char ap_password[TOLLGATE_MAX_AP_PASS_LEN];
     uint8_t ap_channel;
     uint8_t ap_max_conn;
+
+    uint8_t sta_mac[6];
+    uint8_t ap_mac[6];
 
     esp_ip4_addr_t ap_ip;
     char ap_ip_str[16];
@@ -36,7 +43,12 @@ typedef struct {
     int step_size_ms;
     uint64_t persist_threshold_sats;
 
-    bool unique_derived;
+    char nostr_geohash[16];
+    char nostr_relays[TOLLGATE_MAX_RELAYS][128];
+    int nostr_relay_count;
+    int nostr_publish_interval_s;
+
+    bool identity_initialized;
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

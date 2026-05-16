@@ -1,4 +1,5 @@
 #include "config.h"
+#include "identity.h"
 #include "esp_log.h"
 #include "esp_spiffs.h"
 #include "esp_system.h"
@@ -20,6 +21,7 @@ esp_err_t tollgate_config_init(void)
     g_config.price_per_step = 21;
     g_config.step_size_ms = 60000;
     g_config.persist_threshold_sats = 1;
+    g_config.nostr_publish_interval_s = 21600;
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -37,16 +39,17 @@ esp_err_t tollgate_config_init(void)
     if (!f) {
         ESP_LOGW(TAG, "No config.json found, generating default");
         const char *default_json = "{"
+            "\"nsec\":\"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\","
             "\"wifi_networks\":["
               "{\"ssid\":\"EnterSSID-2.4GHz\",\"password\":\"c03rad0r123!\"}"
             "],"
-            "\"ap_ssid\":\"TollGate\","
             "\"ap_password\":\"\","
-            "\"ap_channel\":1,"
             "\"mint_url\":\"https://testnut.cashu.space\","
-            "\"lnurl_url\":\"https://redeem.cashu.me/.well-known/lnurlp/tollgate\","
             "\"price_per_step\":21,"
-            "\"step_size_ms\":60000"
+            "\"step_size_ms\":60000,"
+            "\"nostr_geohash\":\"u281w0dfz\","
+            "\"nostr_relays\":[\"wss://relay.damus.io\",\"wss://nos.lol\"],"
+            "\"nostr_publish_interval_s\":21600"
           "}";
         f = fopen("/spiffs/config.json", "w");
         if (f) {
@@ -80,6 +83,15 @@ esp_err_t tollgate_config_init(void)
         return ESP_FAIL;
     }
 
+    cJSON *nsec = cJSON_GetObjectItem(root, "nsec");
+    if (nsec && cJSON_IsString(nsec)) {
+        strncpy(g_config.nsec, nsec->valuestring, sizeof(g_config.nsec) - 1);
+    } else {
+        ESP_LOGE(TAG, "Missing 'nsec' in config.json");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
     cJSON *networks = cJSON_GetObjectItem(root, "wifi_networks");
     if (networks && cJSON_IsArray(networks)) {
         int count = cJSON_GetArraySize(networks);
@@ -96,15 +108,8 @@ esp_err_t tollgate_config_init(void)
         }
     }
 
-    cJSON *ap_ssid = cJSON_GetObjectItem(root, "ap_ssid");
-    if (ap_ssid) strncpy(g_config.ap_ssid, ap_ssid->valuestring, sizeof(g_config.ap_ssid) - 1);
-    else strncpy(g_config.ap_ssid, "TollGate", sizeof(g_config.ap_ssid) - 1);
-
     cJSON *ap_pass = cJSON_GetObjectItem(root, "ap_password");
     if (ap_pass) strncpy(g_config.ap_password, ap_pass->valuestring, sizeof(g_config.ap_password) - 1);
-
-    cJSON *ap_ch = cJSON_GetObjectItem(root, "ap_channel");
-    if (ap_ch) g_config.ap_channel = ap_ch->valueint;
 
     cJSON *mint = cJSON_GetObjectItem(root, "mint_url");
     if (mint) strncpy(g_config.mint_url, mint->valuestring, sizeof(g_config.mint_url) - 1);
@@ -121,9 +126,37 @@ esp_err_t tollgate_config_init(void)
     cJSON *persist = cJSON_GetObjectItem(root, "persist_threshold_sats");
     if (persist) g_config.persist_threshold_sats = (uint64_t)persist->valuedouble;
 
+    cJSON *geohash = cJSON_GetObjectItem(root, "nostr_geohash");
+    if (geohash) strncpy(g_config.nostr_geohash, geohash->valuestring, sizeof(g_config.nostr_geohash) - 1);
+    else strncpy(g_config.nostr_geohash, "u281w0dfz", sizeof(g_config.nostr_geohash) - 1);
+
+    cJSON *relays = cJSON_GetObjectItem(root, "nostr_relays");
+    if (relays && cJSON_IsArray(relays)) {
+        int rcount = cJSON_GetArraySize(relays);
+        if (rcount > TOLLGATE_MAX_RELAYS) rcount = TOLLGATE_MAX_RELAYS;
+        for (int i = 0; i < rcount; i++) {
+            cJSON *r = cJSON_GetArrayItem(relays, i);
+            if (r && cJSON_IsString(r)) {
+                strncpy(g_config.nostr_relays[i], r->valuestring, sizeof(g_config.nostr_relays[i]) - 1);
+                g_config.nostr_relay_count++;
+            }
+        }
+    }
+
+    cJSON *pub_interval = cJSON_GetObjectItem(root, "nostr_publish_interval_s");
+    if (pub_interval) g_config.nostr_publish_interval_s = pub_interval->valueint;
+
     cJSON_Delete(root);
-    ESP_LOGI(TAG, "Config loaded: AP='%s', %d WiFi networks, price=%d sats/%dms",
-             g_config.ap_ssid, g_config.network_count, g_config.price_per_step, g_config.step_size_ms);
+
+    if (g_config.nostr_relay_count == 0) {
+        strncpy(g_config.nostr_relays[0], "wss://relay.damus.io", sizeof(g_config.nostr_relays[0]) - 1);
+        strncpy(g_config.nostr_relays[1], "wss://nos.lol", sizeof(g_config.nostr_relays[1]) - 1);
+        g_config.nostr_relay_count = 2;
+    }
+
+    ESP_LOGI(TAG, "Config loaded: nsec=%s...%s, %d WiFi networks, price=%d sats/%dms",
+             g_config.nsec, g_config.nsec + 60, g_config.network_count,
+             g_config.price_per_step, g_config.step_size_ms);
     return ESP_OK;
 }
 
@@ -151,22 +184,23 @@ esp_err_t tollgate_config_get_next_wifi(wifi_config_t *wifi_config)
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg)
 {
-    if (cfg->unique_derived) return;
+    if (cfg->identity_initialized) return;
 
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    const tollgate_identity_t *id = identity_get();
+    if (!id || !id->initialized) {
+        ESP_LOGE(TAG, "Cannot derive unique config: identity not initialized");
+        return;
+    }
 
-    snprintf(cfg->ap_ssid + strlen(cfg->ap_ssid),
-             TOLLGATE_MAX_AP_SSID_LEN - strlen(cfg->ap_ssid),
-             "-%02X%02X", mac[4], mac[5]);
+    strncpy(cfg->ap_ssid, id->ap_ssid, sizeof(cfg->ap_ssid) - 1);
+    memcpy(cfg->sta_mac, id->sta_mac, 6);
+    memcpy(cfg->ap_mac, id->ap_mac, 6);
+    cfg->ap_ip = id->ap_ip;
+    strncpy(cfg->ap_ip_str, id->ap_ip_str, sizeof(cfg->ap_ip_str) - 1);
+    strncpy(cfg->npub, id->npub_hex, sizeof(cfg->npub) - 1);
 
-    uint8_t b5 = mac[4];
-    uint8_t b6 = mac[5];
-    uint8_t subnet = (b5 ^ b6) % 200 + 10;
-    IP4_ADDR(&cfg->ap_ip, 10, b5, subnet, 1);
-    snprintf(cfg->ap_ip_str, sizeof(cfg->ap_ip_str), IPSTR, IP2STR(&cfg->ap_ip));
+    cfg->identity_initialized = true;
 
-    cfg->unique_derived = true;
-
-    ESP_LOGI(TAG, "Unique config: SSID='%s', AP_IP=%s", cfg->ap_ssid, cfg->ap_ip_str);
+    ESP_LOGI(TAG, "Unique config derived from nsec: SSID='%s', AP_IP=%s",
+             cfg->ap_ssid, cfg->ap_ip_str);
 }

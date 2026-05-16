@@ -1,0 +1,3 @@
+[submodule "nucula_src"]
+	path = nucula_src
+	url = https://github.com/zeugmaster/nucula.git

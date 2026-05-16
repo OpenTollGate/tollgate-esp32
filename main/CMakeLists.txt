@@ -6,9 +6,12 @@ idf_component_register(SRCS "tollgate_main.c"
                             "cashu.c"
                             "session.c"
                             "tollgate_api.c"
-                             "wallet.c"
-                            "wallet_persist.c"
-                    INCLUDE_DIRS "." "${IDF_PATH}/components/lwip/include/apps"
+                            "identity.c"
+                            "nostr_event.c"
+                            "geohash.c"
+                            "wifistr.c"
+                    INCLUDE_DIRS "."
                     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_http_server
                              lwip json esp_http_client mbedtls esp-tls log spiffs
+                             nucula_lib secp256k1
                     PRIV_REQUIRES esp-tls)
