@@ -6,6 +6,8 @@
 #include "esp_netif.h"
 #include <stdbool.h>
 
+#include "lightning_payout.h"
+
 #define TOLLGATE_MAX_WIFI_NETWORKS 5
 #define TOLLGATE_MAX_MINT_URLS     3
 #define TOLLGATE_MAX_AP_SSID_LEN   32
@@ -54,6 +56,8 @@ typedef struct {
     int client_steps_to_buy;
     int client_renewal_threshold_pct;
     int client_retry_interval_ms;
+
+    payout_config_t payout;
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

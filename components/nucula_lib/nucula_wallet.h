@@ -22,6 +22,8 @@ char *nucula_wallet_proofs_json(void);
 
 esp_err_t nucula_wallet_swap_all(void);
 
+esp_err_t nucula_wallet_melt(const char *bolt11_invoice, uint64_t max_fee_sats);
+
 void nucula_wallet_print_status(void);
 
 #ifdef __cplusplus

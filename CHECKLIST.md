@@ -192,29 +192,29 @@
 ## Phase 4: ESP32 TollGate Client Detection + Auto-Payment — IN PROGRESS
 
 ### tollgate_client.c/h (New)
-- [ ] Create `tollgate_client.h` — types: `tollgate_discovery_t`, `tollgate_client_state_t` enum (IDLE/DETECTING/NEEDS_PAY/PAYING/PAID/RENEWING)
-- [ ] Create `tollgate_client.c` — detection, payment, monitoring, state machine
-- [ ] `tollgate_client_detect(gw_ip)` — HTTP GET `http://{gw}:2121/`, parse kind=10021, extract price tags
-- [ ] `tollgate_client_pay(gw_ip, amount_sats)` — `nucula_wallet_send()` → POST to upstream → parse kind=1022/21023
-- [ ] `tollgate_client_on_sta_connected()` — extract gw from DHCP, detect, pay (blocking)
-- [ ] `tollgate_client_tick()` — GET `/usage`, renew at 20% remaining
-- [ ] `tollgate_client_on_sta_disconnected()` — reset state
-- [ ] `tollgate_client_get_usage(gw_ip)` — GET `/usage` → parse remaining/total
+- [x] Create `tollgate_client.h` — types: `tollgate_discovery_t`, `tollgate_client_state_t` enum (IDLE/DETECTING/NEEDS_PAY/PAYING/PAID/RENEWING)
+- [x] Create `tollgate_client.c` — detection, payment, monitoring, state machine
+- [x] `tollgate_client_detect(gw_ip)` — HTTP GET `http://{gw}:2121/`, parse kind=10021, extract price tags
+- [x] `tollgate_client_pay(gw_ip, amount_sats)` — `nucula_wallet_send()` → POST to upstream → parse kind=1022/21023
+- [x] `tollgate_client_on_sta_connected()` — extract gw from DHCP, detect, pay (blocking)
+- [x] `tollgate_client_tick()` — GET `/usage`, renew at 20% remaining
+- [x] `tollgate_client_on_sta_disconnected()` — reset state
+- [x] `tollgate_client_get_usage(gw_ip)` — GET `/usage` → parse remaining/total
 
 ### Config Changes
-- [ ] Add to `config.h`: `client_enabled`, `client_steps_to_buy`, `client_renewal_threshold_pct`, `client_retry_interval_ms`
-- [ ] Parse new fields in `config.c`
+- [x] Add to `config.h`: `client_enabled`, `client_steps_to_buy`, `client_renewal_threshold_pct`, `client_retry_interval_ms`
+- [x] Parse new fields in `config.c`
 
 ### Integration (tollgate_main.c)
-- [ ] Make wallet init synchronous (call `nucula_wallet_init()` directly, not as task)
-- [ ] Add `tollgate_client_on_sta_connected()` in `ip_event_handler` (blocking, before `start_services()`)
-- [ ] Add `tollgate_client_on_sta_disconnected()` in `wifi_event_handler`
-- [ ] Add `tollgate_client_tick()` in main loop
-- [ ] Update `main/CMakeLists.txt` — add `tollgate_client.c`
+- [x] Make wallet init synchronous (call `nucula_wallet_init()` directly, not as task)
+- [x] Add `tollgate_client_on_sta_connected()` in `ip_event_handler` (blocking, before `start_services()`)
+- [x] Add `tollgate_client_on_sta_disconnected()` in `wifi_event_handler`
+- [x] Add `tollgate_client_tick()` in main loop
+- [x] Update `main/CMakeLists.txt` — add `tollgate_client.c`
 
 ### Unit Tests
-- [ ] `tests/unit/test_tollgate_client.c` — discovery parsing, price extraction, state machine, renewal threshold
-- [ ] All unit tests passing
+- [x] `tests/unit/test_tollgate_client.c` — discovery parsing, price extraction, state machine, renewal threshold
+- [x] All unit tests passing (30 new, 116 total) — committed at `78dd599`
 
 ### Integration Tests
 - [ ] ESP32→OpenWRT auto-payment (Scenario 4)

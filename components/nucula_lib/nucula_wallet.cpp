@@ -197,3 +197,38 @@ void nucula_wallet_print_status(void)
                  proofs[i].amount, proofs[i].id.c_str());
     }
 }
+
+esp_err_t nucula_wallet_melt(const char *bolt11_invoice, uint64_t max_fee_sats)
+{
+    if (!s_wallet || !bolt11_invoice) return ESP_FAIL;
+
+    cashu::MeltQuote quote;
+    if (!s_wallet->request_melt_quote(std::string(bolt11_invoice), quote)) {
+        ESP_LOGE(TAG, "Melt quote request failed");
+        return ESP_FAIL;
+    }
+
+    uint64_t total_cost = (uint64_t)quote.amount + (uint64_t)quote.fee_reserve;
+    if (total_cost > max_fee_sats) {
+        ESP_LOGE(TAG, "Melt cost %llu exceeds max %llu (amount=%d fee=%d)",
+                 (unsigned long long)total_cost, (unsigned long long)max_fee_sats,
+                 quote.amount, quote.fee_reserve);
+        return ESP_FAIL;
+    }
+
+    int balance_before = s_wallet->balance();
+    if (balance_before < quote.amount) {
+        ESP_LOGE(TAG, "Insufficient balance: %d < %d", balance_before, quote.amount);
+        return ESP_FAIL;
+    }
+
+    int change_amount = 0;
+    if (!s_wallet->melt_tokens(quote, change_amount)) {
+        ESP_LOGE(TAG, "Melt tokens failed");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Melted: %d sats paid, %d change, balance=%d->%d",
+             quote.amount, change_amount, balance_before, s_wallet->balance());
+    return ESP_OK;
+}

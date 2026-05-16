@@ -26,6 +26,11 @@ esp_err_t tollgate_config_init(void)
     g_config.client_steps_to_buy = 1;
     g_config.client_renewal_threshold_pct = 20;
     g_config.client_retry_interval_ms = 30000;
+    g_config.payout.enabled = true;
+    g_config.payout.fee_tolerance_pct = 10;
+    g_config.payout.check_interval_s = 60;
+    g_config.payout.recipient_count = 0;
+    g_config.payout.mint_count = 0;
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -165,6 +170,75 @@ esp_err_t tollgate_config_init(void)
 
     cJSON *client_retry = cJSON_GetObjectItem(root, "client_retry_interval_ms");
     if (client_retry) g_config.client_retry_interval_ms = client_retry->valueint;
+
+    cJSON *payout = cJSON_GetObjectItem(root, "payout");
+    if (payout && cJSON_IsObject(payout)) {
+        cJSON *p_en = cJSON_GetObjectItem(payout, "enabled");
+        if (p_en && cJSON_IsBool(p_en)) g_config.payout.enabled = cJSON_IsTrue(p_en);
+
+        cJSON *p_fee = cJSON_GetObjectItem(payout, "fee_tolerance_pct");
+        if (p_fee) g_config.payout.fee_tolerance_pct = (uint64_t)p_fee->valuedouble;
+
+        cJSON *p_interval = cJSON_GetObjectItem(payout, "check_interval_s");
+        if (p_interval) g_config.payout.check_interval_s = p_interval->valueint;
+
+        cJSON *recipients = cJSON_GetObjectItem(payout, "recipients");
+        if (recipients && cJSON_IsArray(recipients)) {
+            int rcount = cJSON_GetArraySize(recipients);
+            if (rcount > PAYOUT_MAX_RECIPIENTS) rcount = PAYOUT_MAX_RECIPIENTS;
+            for (int i = 0; i < rcount; i++) {
+                cJSON *r = cJSON_GetArrayItem(recipients, i);
+                cJSON *addr = cJSON_GetObjectItem(r, "lightning_address");
+                cJSON *factor = cJSON_GetObjectItem(r, "factor");
+                if (addr && cJSON_IsString(addr)) {
+                    strncpy(g_config.payout.recipients[i].lightning_address, addr->valuestring,
+                            sizeof(g_config.payout.recipients[i].lightning_address) - 1);
+                }
+                if (factor && cJSON_IsNumber(factor)) {
+                    g_config.payout.recipients[i].factor = factor->valuedouble;
+                }
+            }
+            g_config.payout.recipient_count = rcount;
+        }
+
+        cJSON *mints = cJSON_GetObjectItem(payout, "mints");
+        if (mints && cJSON_IsArray(mints)) {
+            int mcount = cJSON_GetArraySize(mints);
+            if (mcount > PAYOUT_MAX_MINTS) mcount = PAYOUT_MAX_MINTS;
+            for (int i = 0; i < mcount; i++) {
+                cJSON *m = cJSON_GetArrayItem(mints, i);
+                cJSON *murl = cJSON_GetObjectItem(m, "url");
+                cJSON *mbal = cJSON_GetObjectItem(m, "min_balance");
+                cJSON *mpay = cJSON_GetObjectItem(m, "min_payout_amount");
+                if (murl && cJSON_IsString(murl)) {
+                    strncpy(g_config.payout.mints[i].url, murl->valuestring,
+                            sizeof(g_config.payout.mints[i].url) - 1);
+                }
+                if (mbal && cJSON_IsNumber(mbal)) {
+                    g_config.payout.mints[i].min_balance = (uint64_t)mbal->valuedouble;
+                }
+                if (mpay && cJSON_IsNumber(mpay)) {
+                    g_config.payout.mints[i].min_payout_amount = (uint64_t)mpay->valuedouble;
+                }
+            }
+            g_config.payout.mint_count = mcount;
+        }
+    }
+
+    if (g_config.payout.mint_count == 0 && g_config.mint_url[0] != '\0') {
+        strncpy(g_config.payout.mints[0].url, g_config.mint_url,
+                sizeof(g_config.payout.mints[0].url) - 1);
+        g_config.payout.mints[0].min_balance = 64;
+        g_config.payout.mints[0].min_payout_amount = 128;
+        g_config.payout.mint_count = 1;
+    }
+
+    if (g_config.payout.recipient_count == 0) {
+        strncpy(g_config.payout.recipients[0].lightning_address, "TollGate@coinos.io",
+                sizeof(g_config.payout.recipients[0].lightning_address) - 1);
+        g_config.payout.recipients[0].factor = 1.0;
+        g_config.payout.recipient_count = 1;
+    }
 
     cJSON_Delete(root);
 

@@ -20,6 +20,7 @@
 #include "nucula_wallet.h"
 #include "wifistr.h"
 #include "tollgate_client.h"
+#include "lightning_payout.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -88,6 +89,8 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
 
         const tollgate_config_t *cfg = tollgate_config_get();
         nucula_wallet_init(cfg->mint_url);
+
+        lightning_payout_init(&cfg->payout);
 
         char gw_ip_str[16];
         snprintf(gw_ip_str, sizeof(gw_ip_str), IPSTR, IP2STR(&event->ip_info.gw));
@@ -282,5 +285,6 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
         session_tick();
         tollgate_client_tick();
+        lightning_payout_tick();
     }
 }

@@ -17,11 +17,11 @@ CFLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-sign-com
           -I $(SECP256K1_CFG) \
           -I /usr/include/cjson
 
-LDFLAGS := -lmbedcrypto -lcjson
+LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout
 
 .PHONY: all test clean $(TESTS)
 
@@ -63,6 +63,12 @@ test_session: test_session.c $(REPO_ROOT)/main/session.c
 	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/session.c -o $@ $(LDFLAGS)
 
 test_tollgate_client: test_tollgate_client.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_lnurl_pay: test_lnurl_pay.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_lightning_payout: test_lightning_payout.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 clean:
