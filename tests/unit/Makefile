@@ -59,8 +59,8 @@ test_nostr_event: test_nostr_event.c $(REPO_ROOT)/main/nostr_event.c $(REPO_ROOT
 test_cashu: test_cashu.c $(REPO_ROOT)/main/cashu.c
 	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
 
-test_session: test_session.c $(REPO_ROOT)/main/session.c
-	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/session.c -o $@ $(LDFLAGS)
+test_session: test_session.c $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c
+	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
 
 test_tollgate_client: test_tollgate_client.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)

@@ -13,6 +13,8 @@ typedef struct {
     char mac[SESSION_MAX_MAC_LEN];
     uint64_t allotment_ms;
     int64_t start_time_ms;
+    uint64_t allotment_bytes;
+    uint64_t bytes_consumed;
     bool active;
     char spent_secrets[5][65];
     int spent_secret_count;
@@ -22,6 +24,11 @@ esp_err_t session_manager_init(void);
 
 session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
                           const char *spent_secrets[], int secret_count);
+
+session_t *session_create_bytes(uint32_t client_ip, uint64_t allotment_bytes,
+                                const char *spent_secrets[], int secret_count);
+
+void session_add_bytes(uint32_t client_ip, uint64_t bytes);
 
 session_t *session_find_by_ip(uint32_t client_ip);
 session_t *session_find_by_mac(const char *mac);

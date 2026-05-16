@@ -78,7 +78,8 @@ static cJSON *create_session_event(uint32_t client_ip, uint64_t allotment_ms)
 
     cJSON *metric_tag = cJSON_CreateArray();
     cJSON_AddItemToArray(metric_tag, cJSON_CreateString("metric"));
-    cJSON_AddItemToArray(metric_tag, cJSON_CreateString("milliseconds"));
+    const tollgate_config_t *mcfg = tollgate_config_get();
+    cJSON_AddItemToArray(metric_tag, cJSON_CreateString(mcfg->metric[0] ? mcfg->metric : "milliseconds"));
     cJSON_AddItemToArray(tags, metric_tag);
 
     cJSON_AddItemToObject(root, "tags", tags);
@@ -98,13 +99,14 @@ static esp_err_t api_get_discovery(httpd_req_t *req)
 
     cJSON *metric_tag = cJSON_CreateArray();
     cJSON_AddItemToArray(metric_tag, cJSON_CreateString("metric"));
-    cJSON_AddItemToArray(metric_tag, cJSON_CreateString("milliseconds"));
+    cJSON_AddItemToArray(metric_tag, cJSON_CreateString(cfg->metric[0] ? cfg->metric : "milliseconds"));
     cJSON_AddItemToArray(tags, metric_tag);
 
     cJSON *step_tag = cJSON_CreateArray();
     cJSON_AddItemToArray(step_tag, cJSON_CreateString("step_size"));
     char step_str[32];
-    snprintf(step_str, sizeof(step_str), "%d", cfg->step_size_ms);
+    bool is_bytes = (strcmp(cfg->metric, "bytes") == 0);
+    snprintf(step_str, sizeof(step_str), "%d", is_bytes ? cfg->step_size_bytes : cfg->step_size_ms);
     cJSON_AddItemToArray(step_tag, cJSON_CreateString(step_str));
     cJSON_AddItemToArray(tags, step_tag);
 
@@ -280,7 +282,10 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     }
 
     const tollgate_config_t *cfg = tollgate_config_get();
-    uint64_t allotment = cashu_calculate_allotment_ms(token->total_amount, cfg->price_per_step, cfg->step_size_ms);
+    bool is_bytes = (strcmp(cfg->metric, "bytes") == 0);
+    uint64_t step_size = is_bytes ? (uint64_t)cfg->step_size_bytes : (uint64_t)cfg->step_size_ms;
+    uint64_t allotment = cashu_calculate_allotment(token->total_amount, cfg->price_per_step,
+                                                    cfg->metric, step_size);
     if (allotment == 0) {
         free(states);
         free(token);
@@ -299,7 +304,12 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     for (int i = 0; i < secret_count; i++) {
         secrets[i] = token->proofs[i].secret;
     }
-    session_t *session = session_create(client_ip, allotment, secrets, secret_count);
+    session_t *session;
+    if (is_bytes) {
+        session = session_create_bytes(client_ip, allotment, secrets, secret_count);
+    } else {
+        session = session_create(client_ip, allotment, secrets, secret_count);
+    }
     if (!session) {
         free(states);
         free(token);
@@ -339,12 +349,20 @@ static esp_err_t api_get_usage(httpd_req_t *req)
         return ESP_OK;
     }
 
-    int64_t elapsed = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS - session->start_time_ms;
-    int64_t remaining = session->allotment_ms - elapsed;
-    if (remaining < 0) remaining = 0;
+    const tollgate_config_t *cfg = tollgate_config_get();
+    bool is_bytes = (strcmp(cfg->metric, "bytes") == 0);
 
     char resp[64];
-    snprintf(resp, sizeof(resp), "%lld/%llu", (long long)remaining, (unsigned long long)session->allotment_ms);
+    if (is_bytes) {
+        int64_t remaining = (int64_t)session->allotment_bytes - (int64_t)session->bytes_consumed;
+        if (remaining < 0) remaining = 0;
+        snprintf(resp, sizeof(resp), "%lld/%llu", (long long)remaining, (unsigned long long)session->allotment_bytes);
+    } else {
+        int64_t elapsed = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS - session->start_time_ms;
+        int64_t remaining = session->allotment_ms - elapsed;
+        if (remaining < 0) remaining = 0;
+        snprintf(resp, sizeof(resp), "%lld/%llu", (long long)remaining, (unsigned long long)session->allotment_ms);
+    }
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, resp, strlen(resp));
     return ESP_OK;

@@ -1,6 +1,7 @@
 #include "session.h"
 #include "firewall.h"
 #include "dns_server.h"
+#include "config.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -103,6 +104,29 @@ session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
     return NULL;
 }
 
+session_t *session_create_bytes(uint32_t client_ip, uint64_t allotment_bytes,
+                                const char *spent_secrets[], int secret_count)
+{
+    session_t *s = session_create(client_ip, 0, spent_secrets, secret_count);
+    if (s) {
+        s->allotment_bytes = allotment_bytes;
+        s->bytes_consumed = 0;
+        s->allotment_ms = INT64_MAX;
+        esp_ip4_addr_t ip = { .addr = client_ip };
+        ESP_LOGI(TAG, "Bytes session created: " IPSTR " allotment=%llu bytes", IP2STR(&ip),
+                 (unsigned long long)allotment_bytes);
+    }
+    return s;
+}
+
+void session_add_bytes(uint32_t client_ip, uint64_t bytes)
+{
+    session_t *s = session_find_by_ip(client_ip);
+    if (s && s->active) {
+        s->bytes_consumed += bytes;
+    }
+}
+
 session_t *session_find_by_ip(uint32_t client_ip)
 {
     for (int i = 0; i < SESSION_MAX_CLIENTS; i++) {
@@ -136,6 +160,12 @@ void session_extend(session_t *session, uint64_t additional_ms)
 bool session_is_expired(const session_t *session)
 {
     if (!session || !session->active) return true;
+
+    const tollgate_config_t *cfg = tollgate_config_get();
+    if (cfg && strcmp(cfg->metric, "bytes") == 0) {
+        return session->bytes_consumed >= session->allotment_bytes;
+    }
+
     int64_t elapsed = get_time_ms() - session->start_time_ms;
     return elapsed >= (int64_t)session->allotment_ms;
 }

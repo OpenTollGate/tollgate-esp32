@@ -43,6 +43,8 @@ typedef struct {
     char lnurl_url[256];
     int price_per_step;
     int step_size_ms;
+    int step_size_bytes;
+    char metric[16];
     uint64_t persist_threshold_sats;
 
     char nostr_geohash[16];

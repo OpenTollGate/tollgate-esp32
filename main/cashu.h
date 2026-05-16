@@ -37,6 +37,9 @@ esp_err_t cashu_check_proof_states(const char *mint_url, const cashu_token_t *to
 uint64_t cashu_calculate_allotment_ms(uint64_t token_amount, uint64_t price_per_step,
                                        uint64_t step_size_ms);
 
+uint64_t cashu_calculate_allotment(uint64_t token_amount, uint64_t price_per_step,
+                                    const char *metric, uint64_t step_size);
+
 bool cashu_is_mint_accepted(const char *mint_url);
 
 #endif

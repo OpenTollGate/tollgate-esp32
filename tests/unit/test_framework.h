@@ -29,6 +29,17 @@ static int g_tests_failed = 0;
     } \
 } while(0)
 
+#define ASSERT_EQ_UINT64(expected, actual, msg) do { \
+    unsigned long long _e = (unsigned long long)(expected), _a = (unsigned long long)(actual); \
+    if (_e == _a) { \
+        printf("  PASS: %s (got %llu)\n", msg, _a); \
+        g_tests_passed++; \
+    } else { \
+        printf("  FAIL: %s (expected %llu, got %llu) at %s:%d\n", msg, _e, _a, __FILE__, __LINE__); \
+        g_tests_failed++; \
+    } \
+} while(0)
+
 #define ASSERT_EQ_STR(expected, actual, msg) do { \
     const char *_e = (expected), *_a = (actual); \
     if (_e && _a && strcmp(_e, _a) == 0) { \

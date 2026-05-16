@@ -1,8 +1,16 @@
 #include "test_framework.h"
 #include "../../main/session.h"
 #include "../../main/firewall.h"
+#include "../../main/config.h"
+#include "../../main/cashu.h"
 #include <string.h>
 #include <stdio.h>
+
+static tollgate_config_t g_test_config;
+
+const tollgate_config_t *tollgate_config_get(void) {
+    return &g_test_config;
+}
 
 static uint32_t g_granted_ips[32];
 static int g_granted_count = 0;
@@ -23,9 +31,11 @@ void firewall_revoke_access(uint32_t ip) {
     if (g_revoked_count < 32) g_revoked_ips[g_revoked_count++] = ip;
 }
 
-int main(void)
+static void test_sessions(void)
 {
     printf("=== test_session ===\n");
+    memset(&g_test_config, 0, sizeof(g_test_config));
+    strncpy(g_test_config.metric, "milliseconds", sizeof(g_test_config.metric) - 1);
 
     g_granted_count = 0;
     g_revoked_count = 0;
@@ -87,6 +97,61 @@ int main(void)
     session_create(0x0A000001, 60000, st, 1);
     session_tick();
     ASSERT_EQ_INT(1, session_active_count(), "Session still active after tick (not expired)");
+}
 
-    TEST_SUMMARY();
+void test_bytes_sessions(void)
+{
+    printf("\n=== Bytes-based sessions ===\n");
+    session_manager_init();
+    memset(&g_test_config, 0, sizeof(g_test_config));
+    strncpy(g_test_config.metric, "bytes", sizeof(g_test_config.metric) - 1);
+
+    const char *sec[] = {"bytes_secret"};
+    uint64_t allotment = 22020096;
+    session_t *s = session_create_bytes(0x0A010001, allotment, sec, 1);
+    ASSERT(s != NULL, "bytes session created");
+    ASSERT_EQ_INT(1, session_active_count(), "1 active bytes session");
+
+    ASSERT(!session_is_expired(s), "not expired at 0 consumed");
+
+    session_add_bytes(0x0A010001, 10000000);
+    ASSERT(!session_is_expired(s), "not expired at 10MB of 21MB");
+    ASSERT_EQ_UINT64(10000000, s->bytes_consumed, "consumed 10MB");
+
+    session_add_bytes(0x0A010001, 12200996);
+    ASSERT(session_is_expired(s), "expired after consuming all allotment");
+    ASSERT_EQ_UINT64(22200996, s->bytes_consumed, "consumed 22.2MB");
+
+    session_add_bytes(0x0A010001, 1000);
+    ASSERT_EQ_UINT64(22201996, s->bytes_consumed, "consumption keeps growing past expiry");
+
+    printf("\n--- Bytes session for unknown IP does nothing ---\n");
+    session_add_bytes(0x0B0B0B0B, 9999);
+    ASSERT_EQ_UINT64(22201996, s->bytes_consumed, "unknown IP no effect");
+
+    printf("\n--- Mixed metric: milliseconds still works ---\n");
+    session_manager_init();
+    memset(&g_test_config, 0, sizeof(g_test_config));
+    strncpy(g_test_config.metric, "milliseconds", sizeof(g_test_config.metric) - 1);
+    const char *ms_sec[] = {"ms_secret"};
+    session_t *ms = session_create(0x0A020001, 60000, ms_sec, 1);
+    ASSERT(ms != NULL, "ms session created");
+    ASSERT(!session_is_expired(ms), "ms session not expired immediately");
+
+    printf("\n--- cashu_calculate_allotment dispatch ---\n");
+    uint64_t a = cashu_calculate_allotment(21, 21, "milliseconds", 60000);
+    ASSERT_EQ_UINT64(60000, a, "21 sats / 21 per step * 60000ms = 60000ms");
+    a = cashu_calculate_allotment(42, 21, "bytes", 22020096);
+    ASSERT_EQ_UINT64(44040192, a, "42 sats / 21 per step * 21MB = 42MB");
+    a = cashu_calculate_allotment(10, 21, "bytes", 22020096);
+    ASSERT_EQ_UINT64(0, a, "10 sats < 21 per step = 0 allotment");
+
+    printf("\n=== ALL BYTES SESSION TESTS PASSED ===\n");
+}
+
+int main(void)
+{
+    test_sessions();
+    test_bytes_sessions();
+    return g_tests_failed > 0 ? 1 : 0;
 }

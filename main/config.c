@@ -20,6 +20,8 @@ esp_err_t tollgate_config_init(void)
     g_config.ap_max_conn = 4;
     g_config.price_per_step = 21;
     g_config.step_size_ms = 60000;
+    g_config.step_size_bytes = 22020096;
+    strncpy(g_config.metric, "bytes", sizeof(g_config.metric) - 1);
     g_config.persist_threshold_sats = 1;
     g_config.nostr_publish_interval_s = 21600;
     g_config.client_enabled = false;
@@ -135,6 +137,14 @@ esp_err_t tollgate_config_init(void)
 
     cJSON *step = cJSON_GetObjectItem(root, "step_size_ms");
     if (step) g_config.step_size_ms = step->valueint;
+
+    cJSON *step_bytes = cJSON_GetObjectItem(root, "step_size_bytes");
+    if (step_bytes) g_config.step_size_bytes = step_bytes->valueint;
+
+    cJSON *metric = cJSON_GetObjectItem(root, "metric");
+    if (metric && cJSON_IsString(metric)) {
+        strncpy(g_config.metric, metric->valuestring, sizeof(g_config.metric) - 1);
+    }
 
     cJSON *persist = cJSON_GetObjectItem(root, "persist_threshold_sats");
     if (persist) g_config.persist_threshold_sats = (uint64_t)persist->valuedouble;

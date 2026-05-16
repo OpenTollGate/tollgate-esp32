@@ -255,6 +255,14 @@ uint64_t cashu_calculate_allotment_ms(uint64_t token_amount, uint64_t price_per_
     return (token_amount / price_per_step) * step_size_ms;
 }
 
+uint64_t cashu_calculate_allotment(uint64_t token_amount, uint64_t price_per_step,
+                                    const char *metric, uint64_t step_size)
+{
+    if (price_per_step == 0) return 0;
+    (void)metric;
+    return (token_amount / price_per_step) * step_size;
+}
+
 bool cashu_is_mint_accepted(const char *mint_url)
 {
     if (!mint_url || mint_url[0] == '\0') return false;
