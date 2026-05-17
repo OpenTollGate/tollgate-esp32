@@ -23,9 +23,10 @@ TOLLGATE_IP ?= 10.192.45.1
 .PHONY: flash flash-a flash-b monitor monitor-a monitor-b
 .PHONY: test test-unit test-integration test-e2e test-all
 .PHONY: test-smoke test-api test-network test-portal test-payment
-.PHONY: test-reset-auth test-session-expiry test-dns-firewall
+.PHONY: test-reset-auth test-session-expiry test-dns-firewall test-cvm
 .PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log bootstrap-config
+.PHONY: cvm-pubkey cvm-test-tool cvm-announce
 
 help:
 	@echo "TollGate ESP32 — Makefile"
@@ -50,6 +51,12 @@ help:
 	@echo "  test-reset-auth   Reset auth + per-client NAT filter test"
 	@echo "  test-dns-firewall DNS hijack + NAT filter test"
 	@echo "  test-session-expiry Session lifecycle with 65s expiry wait"
+	@echo "  test-cvm          ContextVM protocol integration test"
+	@echo ""
+	@echo "ContextVM:"
+	@echo "  cvm-pubkey        Print board's ContextVM npub"
+	@echo "  cvm-announce      Trigger re-publish of CEP-6 announcements"
+	@echo "  cvm-test-tool     Send single MCP tools/call (METHOD=get_config)"
 	@echo ""
 	@echo "Wallet:"
 	@echo "  wallet-setup      Initialize nutshell wallet for test mint"
@@ -153,7 +160,7 @@ test-unit:
 	@echo "=== Running host unit tests ==="
 	$(MAKE) -C tests/unit test
 
-test-integration: test-api test-network test-reset-auth test-dns-firewall
+test-integration: test-api test-network test-reset-auth test-dns-firewall test-cvm
 	@echo "=== Integration tests passed ==="
 
 test-e2e:
@@ -198,6 +205,10 @@ test-dns-firewall:
 	@echo "=== Running DNS + firewall test ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-dns-firewall.mjs
 
+test-cvm:
+	@echo "=== Running CVM integration test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-cvm.mjs
+
 # ──────────────────────────────────────────────
 # Wallet
 # ──────────────────────────────────────────────
@@ -228,6 +239,32 @@ send-token:
 	cashu --env-mint $(TEST_MINT) send --legacy $$AMOUNT
 
 tokens: send-token
+
+# ──────────────────────────────────────────────
+# ContextVM
+# ──────────────────────────────────────────────
+
+cvm-pubkey:
+	@echo "=== Board ContextVM npub ==="
+	@nak key public a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 | xargs -I{} nak encode npub {}
+	@echo ""
+	@echo "Search for this npub on https://contextvm.org/servers"
+
+cvm-announce:
+	@echo "=== Triggering CEP-6 re-announcement ==="
+	curl -s http://$(TOLLGATE_IP):2121/ | head -1 || echo "Board not reachable"
+
+cvm-test-tool:
+	@METHOD=$${METHOD:-get_config}; \
+	PARAMS=$${PARAMS:-{}}; \
+	echo "=== Calling $$METHOD via CVM ==="; \
+	NPUB_HEX=$$(nak key public a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2); \
+	CONTENT="$$(echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$$METHOD\",\"arguments\":$$PARAMS}}" | jq -c .)"; \
+	EVENT_JSON="$$(nak event --kind 25910 --tag p=$$NPUB_HEX --content "$$CONTENT" wss://relay.damus.io 2>/dev/null)"; \
+	echo "Published: $$EVENT_JSON"; \
+	echo "Waiting for response..."; \
+	sleep 3; \
+	nak req -k 25910 -a $$NPUB_HEX -l 5 wss://relay.damus.io
 
 # ──────────────────────────────────────────────
 # Utilities

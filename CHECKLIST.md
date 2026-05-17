@@ -48,10 +48,26 @@
 ## Phase 6: Bytes-Based Billing — COMPLETE (commit `edd125d`)
 - [x] Dual-metric session support (milliseconds + bytes)
 
-## Phase 7: MCP Handler + NIP-04 + CVM Server — COMPLETE (commit `fdf662f`)
+## Phase 7: MCP Handler + NIP-04 + CVM Server — SKELETON (commit `fdf662f`)
 - [x] mcp_handler.c/h (4 tools, 25 unit tests)
 - [x] nip04.c/h (AES-256-CBC + ECDH, 15 unit tests)
-- [x] cvm_server.c/h (Nostr DM listener)
+- [x] cvm_server.c/h (Nostr DM listener skeleton)
+
+## Phase 7b: ContextVM Protocol Rewrite — IN PROGRESS
+- [ ] Add 6 new tools to mcp_handler.c/h (get_sessions, get_usage, set_payout, set_metric, set_price, wallet_melt)
+- [ ] Update test_mcp_handler.c with tests for 6 new tools
+- [ ] Rewrite cvm_server.c: persistent WebSocket listener, kind 25910 subscription
+- [ ] MCP protocol handlers: initialize, notifications/initialized, tools/list, tools/call, ping
+- [ ] Auth check: only accept from owner npub
+- [ ] CEP-6: publish kind 11316 server announcement on startup
+- [ ] CEP-6: publish kind 11317 tools list on startup
+- [ ] CEP-17: publish kind 10002 relay list on startup
+- [ ] Update config.c: default cvm_enabled = true
+- [ ] Create test_cvm_server.c unit test (event parsing, announcement construction, auth)
+- [ ] Update tests/unit/Makefile with test_cvm_server target
+- [ ] Create tests/integration/test-cvm.mjs (nak-based integration test)
+- [ ] Update Makefile with cvm-* targets (test-cvm, cvm-pubkey, cvm-test-tool)
+- [ ] Verify on contextvm.org/servers with board's npub
 
 ## Bug Fixes — COMPLETE (commit `3342c8e`)
 - [x] reset_auth, /usage, metric default, sys_evt stack overflow fixes
@@ -77,6 +93,21 @@
 - [x] Remove local spent-secret check in `tollgate_api.c`
 - [x] Update `tests/unit/test_session.c`
 - [x] 186 unit tests passing
+
+## TFT Display (JC3248W535 / AXS15231B) — IN PROGRESS
+- [x] Create QR code component (port qrcoded from NSD, fix bool/pragma/comparison warnings)
+- [x] Create AXS15231B QSPI display driver component (init sequence, PSRAM framebuffer, chunked flush)
+- [x] Create 8x8 bitmap font (ASCII 32-127)
+- [x] Create display abstraction layer (display.h/c — boot/ready/payment/error states)
+- [x] Integrate display into tollgate_main.c and main/CMakeLists.txt
+- [x] Build succeeds (binary 1.2MB, 71% free in partition)
+- [x] Wi-Fi QR code encoding: `WIFI:S:<escaped_ssid>;T:nopass;;` with special char escaping (`\;:,"`)
+- [x] QR cycling: alternate between Wi-Fi QR and portal URL QR every 5 seconds
+- [ ] Flash to JC3248W535 board at `/dev/ttyACM0` and test
+- [ ] Verify Wi-Fi QR is scannable by Android/iOS camera
+- [ ] Verify portal URL QR is scannable and loads captive portal
+- [ ] Add unit tests for QR generation and escape_wifi_field()
+- [ ] Update AGENTS.md with display module docs
 
 ---
 

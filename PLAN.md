@@ -473,21 +473,48 @@ uint64_t bytes_consumed;
 | 51 | NAPT byte counting | Integration | Counters match actual traffic | TODO |
 | 52 | Bytes metric end-to-end | E2E | Client disconnected after data cap | TODO |
 
-### Phase 7: ContextVM Server (MCP over Nostr) — COMPLETE
+### Phase 7: ContextVM Server (MCP over Nostr) — REWRITE IN PROGRESS
 
-**Goal:** Remote configuration of ESP32 TollGate via ContextVM — services communicate over Nostr using public keys as addresses. Exposes configuration as MCP tools accessible by both humans and AI agents.
+**Goal:** Full ContextVM protocol implementation — ESP32 acts as an MCP server discoverable on the Nostr network via CEP-6 public announcements, communicating via kind 25910 ephemeral events.
 
-**New files:** `main/cvm_server.c`, `main/cvm_server.h`, `main/nip44.c`, `main/nip44.h`, `main/mcp_handler.c`, `main/mcp_handler.h`
+**Protocol:** ContextVM transports MCP JSON-RPC 2.0 messages over Nostr. Server is identified by its npub (derived from nsec). Clients discover the server via kind 11316 announcements, then communicate via kind 25910 ephemeral events.
 
 #### Architecture
 
-ContextVM uses MCP (JSON-RPC 2.0) over NIP-44 encrypted Nostr DMs:
-1. ESP32 subscribes to Nostr relays for DMs addressed to its npub
-2. Incoming DMs are NIP-44 decrypted, parsed as MCP JSON-RPC requests
-3. Dispatched to registered tool handlers
-4. Responses sent back via NIP-44 encrypted DM
+```
+Client (nak/ContextVM SDK)
+  → publishes kind 25910 to relay ({"method":"tools/call","params":{"name":"get_config"}})
+  → ESP32 cvm_server reads from persistent WebSocket subscription
+  → parses MCP JSON-RPC from event content
+  → dispatches to mcp_handler.c
+  → publishes kind 25910 response back to relay
+  → client receives response via subscription
+```
 
-#### MCP Tools Exposed
+#### ContextVM Event Kinds Used
+
+| Kind | Purpose | CEP |
+|------|---------|-----|
+| 25910 | MCP request/response transport (ephemeral) | Draft spec |
+| 11316 | Server announcement (replaceable) | CEP-6 |
+| 11317 | Tools list announcement (replaceable) | CEP-6 |
+| 10002 | Relay list (replaceable) | CEP-17 (NIP-65) |
+
+#### MCP Protocol Flow
+
+1. ESP32 publishes kind 11316 (server announcement) + kind 11317 (tools list) + kind 10002 (relay list) on startup
+2. ESP32 opens persistent WebSocket to relays, subscribes to `{"kinds":[25910],"#p":["<npub>"]}`
+3. Client sends kind 25910 `initialize` request
+4. ESP32 responds with kind 25910 `initialize` result (capabilities, serverInfo)
+5. Client sends `notifications/initialized`
+6. Client calls `tools/list` or `tools/call`
+7. ESP32 dispatches to `mcp_handler.c`, returns result
+
+#### Encryption
+
+Phase 7a ships with **plaintext** kind 25910 events. Encryption (CEP-4: NIP-44 gift wrap) is deferred to Phase 7b. The `support_encryption` tag is NOT included in announcements until Phase 7b.
+
+#### MCP Tools Exposed (10 total)
 
 | Tool | Input | Output |
 |------|-------|--------|
@@ -497,32 +524,60 @@ ContextVM uses MCP (JSON-RPC 2.0) over NIP-44 encrypted Nostr DMs:
 | `get_sessions` | — | Array of active sessions |
 | `get_usage` | — | Upstream usage if client active |
 | `set_payout` | `{recipients: [...]}` | Success/error |
-| `set_metric` | `{"bytes" or "milliseconds"}` | Success/error |
-| `set_price` | `{price_per_step: N}` | Success/error |
-| `wallet_send` | `{amount_sats: N}` | `{token: "cashuA..."}` |
-| `wallet_melt` | `{bolt11: "ln..."}` | `{preimage: "..."}` |
+| `set_metric` | `{"metric": "bytes" or "milliseconds"}` | Success/error |
+| `set_price` | `{"price_per_step": N}` | Success/error |
+| `wallet_send` | `{"amount": N}` | `{token: "cashuA..."}` |
+| `wallet_melt` | `{"bolt11": "ln..."}` | `{preimage: "..."}` |
 
 #### Auth
 
-Only accept commands from owner npub (derived from nsec in config.json).
+Only accept kind 25910 requests from owner npub (derived from nsec in config.json). Non-owner requests are silently dropped.
 
 #### Dependencies
 
-- XChaCha20-Poly1305 (from mbedtls or libsodium)
-- Base64url encoding (already in cashu code)
-- WebSocket listener (extends existing wifistr infrastructure)
-- NIP-44 v2 encryption/decryption
+- WebSocket persistent connection (extends `wifistr.c` TLS + WS pattern)
+- secp256k1 Schnorr signing (existing `nostr_event.c`)
+- cJSON (existing)
+- mbedtls TLS (existing)
+- NIP-04 encryption (existing `nip04.c`) — for future encrypted mode
+
+#### Files
+
+| File | Status | Purpose |
+|------|--------|---------|
+| `main/cvm_server.c` | Rewrite | WS listener, MCP handlers, CEP-6 announcements |
+| `main/cvm_server.h` | Update | New public API |
+| `main/mcp_handler.c` | Extend | 6 new tools |
+| `main/mcp_handler.h` | Update | New tool enums + handlers |
+| `main/config.c` | Minor | Default `cvm_enabled = true` |
+| `tests/unit/test_cvm_server.c` | New | CVM unit tests |
+| `tests/unit/test_mcp_handler.c` | Extend | 6 new tool tests |
+| `tests/integration/test-cvm.mjs` | New | CVM integration test via nak |
+| `Makefile` | Update | `cvm-*` targets |
 
 #### Test Cases
 
 | # | Test | Method | Pass Criteria | Status |
 |---|------|--------|---------------|--------|
-| 53 | NIP-44 encrypt/decrypt | Unit test | Roundtrip matches | TODO |
-| 54 | MCP JSON-RPC parse | Unit test | Correct dispatch | TODO |
-| 55 | Config change via DM | Integration | ESP32 applies new config | TODO |
-| 56 | Balance query via CVM | Integration | Returns correct balance | TODO |
+| 53 | MCP JSON-RPC parse from kind 25910 | Unit test | Correct dispatch to tool handler | TODO |
+| 54 | Kind 11316 announcement construction | Unit test | Valid event with correct tags/capabilities | TODO |
+| 55 | Kind 11317 tools list construction | Unit test | All 10 tools listed with schemas | TODO |
+| 56 | Kind 10002 relay list construction | Unit test | Correct `r` tags | TODO |
+| 57 | Auth rejection for non-owner | Unit test | Non-owner events dropped | TODO |
+| 58 | MCP initialize response | Unit test | Correct capabilities + serverInfo | TODO |
+| 59 | New tool: get_sessions | Unit test | Returns session array | TODO |
+| 60 | New tool: get_usage | Unit test | Returns usage stats | TODO |
+| 61 | New tool: set_payout | Unit test | Updates payout config | TODO |
+| 62 | New tool: set_metric | Unit test | Updates metric field | TODO |
+| 63 | New tool: set_price | Unit test | Updates price_per_step | TODO |
+| 64 | New tool: wallet_melt | Unit test | Calls nucula_wallet_melt | TODO |
+| 65 | Kind 11316 on relay | Integration | Announcement found on relay | TODO |
+| 66 | MCP initialize roundtrip | Integration | Response received via nak | TODO |
+| 67 | get_config via CVM | Integration | Returns valid JSON config | TODO |
+| 68 | get_balance via CVM | Integration | Returns balance + proofs | TODO |
+| 69 | set_price via CVM | Integration | Price updated on device | TODO |
 
-## Total: 56 Tests across 7 phases
+## Total: 78 Tests across 8 phases
 
 ## Post-Phase 7: Bug Fixes & Architecture Improvements
 
@@ -590,6 +645,78 @@ int tollgate_ip4_canforward_filter(struct pbuf *p, u32_t dest_addr_hostorder) {
 - Update unit tests
 
 **Rationale:** The mint's `cashu_check_proof_states()` already catches double-spends over HTTP. `nucula_wallet_receive()` → `swap()` registers proofs as spent and replaces them. After a successful receive, the old token is useless. Local tracking adds no security, wastes 6.5KB RAM, and is lost on reboot anyway.
+
+### Phase 8: TFT Display (JC3248W535 / AXS15231B) — IN PROGRESS
+
+**Goal:** Add TFT display support to the JC3248W535 board for QR code rendering + status text. Display cycles between a Wi-Fi QR code (so customers can connect) and a portal URL QR code (for direct portal access).
+
+**Hardware:** JC3248W535 board — ESP32-S3, AXS15231B 320x480 QSPI TFT, capacitive touch
+**Pin mapping:** CS=45, CLK=47, D0=21, D1=48, D2=40, D3=39, BL=1, Touch SDA=4, Touch SCL=8
+
+#### Components Created
+
+| Component | Path | Purpose |
+|-----------|------|---------|
+| `components/qrcode/` | `qrcoded.c/h` + CMakeLists.txt | QR code generation (ported from NSD, MIT license) |
+| `components/axs15231b/` | `axs15231b.c/h` + CMakeLists.txt | AXS15231B QSPI display driver |
+| `main/display.c/h` | Display abstraction | FreeRTOS display task, state machine, QR cycling |
+| `main/font.c/h` | 8x8 bitmap font | ASCII 32-127 for status text rendering |
+
+#### Display States
+
+| State | Screen | QR Content |
+|-------|--------|------------|
+| `DISPLAY_BOOT` | "TollGate starting..." | None |
+| `DISPLAY_READY` | QR code + SSID label | Cycles: Wi-Fi QR ↔ Portal URL QR every 5s |
+| `DISPLAY_PAYMENT_RECEIVED` | Green "Paid! Access granted" | None (2s, then READY) |
+| `DISPLAY_ERROR` | Red "No upstream" | None |
+
+#### Wi-Fi QR Code Format
+
+Uses the standardized ZXing `WIFI:` URI scheme — natively recognized by Android and iOS camera apps:
+
+```
+WIFI:S:<escaped_ssid>;T:nopass;;
+```
+
+**Special character escaping**: `;`, `:`, `\`, `,`, `"` are backslash-escaped in the SSID field per spec.
+
+**Example:**
+```
+SSID: TollGate-C0E9CA → WIFI:S:TollGate-C0E9CA;T:nopass;;
+SSID: My;WiFi:Test → WIFI:S:My\;WiFi\:Test;T:nopass;;
+```
+
+When scanned, the phone **automatically connects** to the TollGate AP — then the captive portal takes over for payment.
+
+#### QR Cycling
+
+The display alternates between two QR modes every 5 seconds:
+1. **Wi-Fi QR** — `WIFI:S:...;T:nopass;;` — auto-connects phone to AP
+2. **Portal URL QR** — `http://10.x.x.1/` — direct link to captive portal
+
+Label text below QR changes to indicate current mode: "Scan to connect" vs "Portal URL".
+
+#### Display Driver Architecture
+
+- **Interface**: Single-line SPI (MOSI on D0/GPIO21) — simpler than QSPI, reliable for V1
+- **Framebuffer**: 307,200 bytes (480x320x2 RGB565) in PSRAM via `heap_caps_malloc`
+- **Flush**: 10 chunks of 32KB via `spi_device_polling_transmit`
+- **Rotation**: Landscape (MADCTL=0x60, MX|MV)
+- **Backlight**: GPIO1 active-high
+
+#### Test Cases
+
+| # | Test | Method | Pass Criteria | Status |
+|---|------|--------|---------------|--------|
+| 70 | Wi-Fi QR scannable | Android camera scan | Phone connects to AP | TODO |
+| 71 | Portal URL QR scannable | Android camera scan | Browser opens portal | TODO |
+| 72 | QR cycling | Watch display | Mode changes every 5s | TODO |
+| 73 | Boot screen | Visual | "TollGate starting..." shown | TODO |
+| 74 | Payment screen | Trigger payment | Green "Paid!" for 2s | TODO |
+| 75 | Error screen | Disconnect upstream | Red "No upstream" | TODO |
+| 76 | Special char escape | Unit test | `\;:,"` correctly escaped | TODO |
+| 77 | QR generation | Unit test | Valid QR matrix for various string lengths | TODO |
 
 ## Testing Infrastructure
 

@@ -16,8 +16,10 @@ idf_component_register(SRCS "tollgate_main.c"
                             "nip04.c"
                             "mcp_handler.c"
                             "cvm_server.c"
+                            "display.c"
+                            "font.c"
                     INCLUDE_DIRS "."
                     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_http_server
                              lwip json esp_http_client mbedtls esp-tls log spiffs
-                             nucula_lib secp256k1
+                             nucula_lib secp256k1 axs15231b qrcode
                     PRIV_REQUIRES esp-tls)

@@ -1,6 +1,7 @@
 #include "test_framework.h"
 #include "mcp_handler.h"
 #include "config.h"
+#include "session.h"
 #include "nucula_wallet.h"
 #include "cJSON.h"
 #include <string.h>
@@ -11,6 +12,7 @@ static uint64_t g_wallet_balance = 0;
 static int g_wallet_proof_count = 0;
 static int g_wallet_send_rc = 0;
 static char g_wallet_send_token[256] = "cashuA_test_token";
+static esp_err_t g_wallet_melt_rc = ESP_OK;
 
 const tollgate_config_t *tollgate_config_get(void) {
     return &g_test_config;
@@ -33,6 +35,23 @@ int nucula_wallet_send(uint64_t amount, char *token_out, size_t token_max) {
     return g_wallet_send_rc;
 }
 
+esp_err_t nucula_wallet_melt(const char *bolt11, uint64_t max_fee) {
+    (void)bolt11;
+    (void)max_fee;
+    return g_wallet_melt_rc;
+}
+
+static session_t g_test_sessions[SESSION_MAX_CLIENTS];
+static int g_test_session_count = 0;
+
+session_t *cvm_get_sessions_array(void) {
+    return g_test_sessions;
+}
+
+int cvm_get_sessions_count(void) {
+    return SESSION_MAX_CLIENTS;
+}
+
 static void test_mcp_parse_tool(void)
 {
     printf("\n=== MCP tool parsing ===\n");
@@ -40,6 +59,12 @@ static void test_mcp_parse_tool(void)
     ASSERT_EQ_INT(MCP_TOOL_SET_CONFIG, mcp_parse_tool("set_config"), "set_config");
     ASSERT_EQ_INT(MCP_TOOL_GET_BALANCE, mcp_parse_tool("get_balance"), "get_balance");
     ASSERT_EQ_INT(MCP_TOOL_WALLET_SEND, mcp_parse_tool("wallet_send"), "wallet_send");
+    ASSERT_EQ_INT(MCP_TOOL_GET_SESSIONS, mcp_parse_tool("get_sessions"), "get_sessions");
+    ASSERT_EQ_INT(MCP_TOOL_GET_USAGE, mcp_parse_tool("get_usage"), "get_usage");
+    ASSERT_EQ_INT(MCP_TOOL_SET_PAYOUT, mcp_parse_tool("set_payout"), "set_payout");
+    ASSERT_EQ_INT(MCP_TOOL_SET_METRIC, mcp_parse_tool("set_metric"), "set_metric");
+    ASSERT_EQ_INT(MCP_TOOL_SET_PRICE, mcp_parse_tool("set_price"), "set_price");
+    ASSERT_EQ_INT(MCP_TOOL_WALLET_MELT, mcp_parse_tool("wallet_melt"), "wallet_melt");
     ASSERT_EQ_INT(MCP_TOOL_UNKNOWN, mcp_parse_tool("foo"), "unknown tool");
     ASSERT_EQ_INT(MCP_TOOL_UNKNOWN, mcp_parse_tool(NULL), "NULL tool");
 }
@@ -135,6 +160,121 @@ static void test_mcp_dispatch(void)
     ASSERT(!resp.success, "NULL request dispatch fails");
 }
 
+static void test_mcp_get_sessions(void)
+{
+    printf("\n=== MCP get_sessions ===\n");
+    memset(g_test_sessions, 0, sizeof(g_test_sessions));
+
+    mcp_response_t resp = mcp_handle_get_sessions();
+    ASSERT(resp.success, "get_sessions succeeds");
+    cJSON *result = cJSON_Parse(resp.result_json);
+    ASSERT(result != NULL, "result is valid JSON array");
+    ASSERT(cJSON_IsArray(result), "result is an array");
+    ASSERT_EQ_INT(0, cJSON_GetArraySize(result), "empty sessions");
+    cJSON_Delete(result);
+
+    g_test_sessions[0].active = true;
+    g_test_sessions[0].client_ip = 0x0100000A;
+    strncpy(g_test_sessions[0].mac, "AA:BB:CC:DD:EE:FF", sizeof(g_test_sessions[0].mac) - 1);
+    g_test_sessions[0].allotment_ms = 60000;
+
+    resp = mcp_handle_get_sessions();
+    ASSERT(resp.success, "get_sessions with data succeeds");
+    result = cJSON_Parse(resp.result_json);
+    ASSERT_EQ_INT(1, cJSON_GetArraySize(result), "one active session");
+    cJSON *s = cJSON_GetArrayItem(result, 0);
+    ASSERT_EQ_STR("AA:BB:CC:DD:EE:FF", cJSON_GetObjectItem(s, "mac")->valuestring, "mac matches");
+    cJSON_Delete(result);
+    g_test_sessions[0].active = false;
+}
+
+static void test_mcp_get_usage(void)
+{
+    printf("\n=== MCP get_usage ===\n");
+    memset(&g_test_config, 0, sizeof(g_test_config));
+    strncpy(g_test_config.metric, "milliseconds", sizeof(g_test_config.metric) - 1);
+    g_test_config.price_per_step = 21;
+    g_test_config.step_size_ms = 60000;
+    g_test_config.step_size_bytes = 22020096;
+
+    mcp_response_t resp = mcp_handle_get_usage();
+    ASSERT(resp.success, "get_usage succeeds");
+    cJSON *result = cJSON_Parse(resp.result_json);
+    ASSERT(result != NULL, "result is valid JSON");
+    ASSERT_EQ_STR("milliseconds", cJSON_GetObjectItem(result, "metric")->valuestring, "metric matches");
+    ASSERT_EQ_INT(21, cJSON_GetObjectItem(result, "price_per_step")->valueint, "price matches");
+    cJSON_Delete(result);
+}
+
+static void test_mcp_set_payout(void)
+{
+    printf("\n=== MCP set_payout ===\n");
+    memset(&g_test_config, 0, sizeof(g_test_config));
+
+    const char *params = "{\"enabled\":true,\"recipients\":[{\"lightning_address\":\"test@coinos.io\",\"factor\":0.5}]}";
+    mcp_response_t resp = mcp_handle_set_payout(params);
+    ASSERT(resp.success, "set_payout succeeds");
+    ASSERT(g_test_config.payout.enabled, "payout enabled");
+    ASSERT_EQ_INT(1, g_test_config.payout.recipient_count, "1 recipient");
+    ASSERT_EQ_STR("test@coinos.io", g_test_config.payout.recipients[0].lightning_address, "address matches");
+
+    resp = mcp_handle_set_payout("not json");
+    ASSERT(!resp.success, "invalid JSON fails");
+}
+
+static void test_mcp_set_metric(void)
+{
+    printf("\n=== MCP set_metric ===\n");
+    memset(&g_test_config, 0, sizeof(g_test_config));
+
+    mcp_response_t resp = mcp_handle_set_metric("{\"metric\":\"bytes\"}");
+    ASSERT(resp.success, "set_metric bytes succeeds");
+    ASSERT_EQ_STR("bytes", g_test_config.metric, "metric updated to bytes");
+
+    resp = mcp_handle_set_metric("{\"metric\":\"milliseconds\"}");
+    ASSERT(resp.success, "set_metric milliseconds succeeds");
+    ASSERT_EQ_STR("milliseconds", g_test_config.metric, "metric updated to milliseconds");
+
+    resp = mcp_handle_set_metric("{\"metric\":\"invalid\"}");
+    ASSERT(!resp.success, "invalid metric rejected");
+
+    resp = mcp_handle_set_metric("{}");
+    ASSERT(!resp.success, "missing metric rejected");
+}
+
+static void test_mcp_set_price(void)
+{
+    printf("\n=== MCP set_price ===\n");
+    memset(&g_test_config, 0, sizeof(g_test_config));
+    g_test_config.price_per_step = 21;
+
+    mcp_response_t resp = mcp_handle_set_price("{\"price_per_step\":50}");
+    ASSERT(resp.success, "set_price succeeds");
+    ASSERT_EQ_INT(50, g_test_config.price_per_step, "price updated to 50");
+
+    resp = mcp_handle_set_price("{\"price_per_step\":0}");
+    ASSERT(!resp.success, "zero price rejected");
+
+    resp = mcp_handle_set_price("{}");
+    ASSERT(!resp.success, "missing price rejected");
+}
+
+static void test_mcp_wallet_melt(void)
+{
+    printf("\n=== MCP wallet_melt ===\n");
+    g_wallet_melt_rc = ESP_OK;
+
+    mcp_response_t resp = mcp_handle_wallet_melt("{\"bolt11\":\"lnbc100n1...\"}");
+    ASSERT(resp.success, "wallet_melt succeeds");
+
+    g_wallet_melt_rc = ESP_FAIL;
+    resp = mcp_handle_wallet_melt("{\"bolt11\":\"lnbc100n1...\"}");
+    ASSERT(!resp.success, "melt failure reported");
+
+    resp = mcp_handle_wallet_melt("{}");
+    ASSERT(!resp.success, "missing bolt11 fails");
+}
+
 int main(void)
 {
     printf("=== test_mcp_handler ===\n");
@@ -143,6 +283,12 @@ int main(void)
     test_mcp_set_config();
     test_mcp_get_balance();
     test_mcp_wallet_send();
+    test_mcp_get_sessions();
+    test_mcp_get_usage();
+    test_mcp_set_payout();
+    test_mcp_set_metric();
+    test_mcp_set_price();
+    test_mcp_wallet_melt();
     test_mcp_dispatch();
     TEST_SUMMARY();
 }

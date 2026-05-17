@@ -9,6 +9,7 @@
 #include "esp_netif.h"
 #include "lwip/netif.h"
 #include "lwip/dns.h"
+#include "esp_sntp.h"
 #include "dhcpserver/dhcpserver.h"
 #include "config.h"
 #include "identity.h"
@@ -22,6 +23,7 @@
 #include "tollgate_client.h"
 #include "lightning_payout.h"
 #include "cvm_server.h"
+#include "display.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -94,6 +96,13 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         s_retry_count = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
+        esp_sntp_stop();
+        esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        esp_sntp_setservername(0, "pool.ntp.org");
+        esp_sntp_setservername(1, "time.google.com");
+        esp_sntp_init();
+        ESP_LOGI(TAG, "SNTP time sync started");
+
         char gw_ip_str[16];
         snprintf(gw_ip_str, sizeof(gw_ip_str), IPSTR, IP2STR(&event->ip_info.gw));
         tollgate_client_on_sta_connected(gw_ip_str);
@@ -160,6 +169,11 @@ static void start_services(void)
     s_services_running = true;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services started ===");
+
+    display_set_state(DISPLAY_READY);
+    char portal_url[128];
+    snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
+    display_update(cfg->ap_ssid, 0, 0, portal_url);
 }
 
 static void stop_services(void)
@@ -239,6 +253,9 @@ static void wifi_init_sta(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "=== TollGate ESP32 Starting ===");
+
+    display_init();
+    display_set_state(DISPLAY_BOOT);
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
