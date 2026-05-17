@@ -51,8 +51,8 @@ nvs_flash_init()
 - `wifistr.c/h` — kind 38787 event builder + WebSocket relay publish
 - `captive_portal.c/h` — HTTP :80 portal, captive detection, grant/reset
 - `dns_server.c/h` — DNS hijack/forward per-client, DoT reject
-- `firewall.c/h` — NAPT on/off per-client, MAC resolution
-- `session.c/h` — time-based sessions, spent-secret tracking
+- `firewall.c/h` — per-client NAT filter via LWIP_HOOK_IP4_CANFORWARD, MAC resolution
+- `session.c/h` — time-based sessions, MAC tracking
 - `cashu.c/h` — Cashu token decode, checkstate, allotment calc
 - `tollgate_api.c/h` — HTTP :2121, payment endpoints, wallet endpoints
 

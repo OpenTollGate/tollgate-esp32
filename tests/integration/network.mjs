@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-const IP = process.env.TOLLGATE_IP || '192.168.4.1';
+const IP = process.env.TOLLGATE_IP || '10.192.45.1';
 let passed = 0, failed = 0;
 
 function assert(condition, test) {

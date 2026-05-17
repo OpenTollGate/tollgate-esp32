@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 
 const PORT = process.argv[2] || '/dev/ttyACM0';
-const IP = process.env.TOLLGATE_IP || '192.168.4.1';
+const IP = process.env.TOLLGATE_IP || '10.192.45.1';
 const SSID = process.env.AP_SSID || 'TollGate';
 
 console.log(`\n=== Smoke Test (30s) ===`);

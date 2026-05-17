@@ -17,12 +17,15 @@ NODE ?= node
 NPM ?= npm
 PYTHON ?= python3
 
+TOLLGATE_IP ?= 10.192.45.1
+
 .PHONY: help setup detect-ports detect-chip detect-all
 .PHONY: flash flash-a flash-b monitor monitor-a monitor-b
-.PHONY: test smoke test-api test-portal test-network test-full
-.PHONY: tokens test-payment wallet-setup wallet-info wallet-balance mint-token send-token
-.PHONY: clean erase-nvs reset serial-log
-.PHONY: bootstrap-config
+.PHONY: test test-unit test-integration test-e2e test-all
+.PHONY: test-smoke test-api test-network test-portal test-payment
+.PHONY: test-reset-auth test-session-expiry test-dns-firewall
+.PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
+.PHONY: clean erase-nvs reset serial-log bootstrap-config
 
 help:
 	@echo "TollGate ESP32 — Makefile"
@@ -38,25 +41,24 @@ help:
 	@echo "  flash-b           Flash to PORT_B"
 	@echo "  monitor           Serial monitor on PORT"
 	@echo ""
-	@echo "Test (Phase 1):"
-	@echo "  test              Run all Phase 1 tests"
-	@echo "  smoke             Quick 30s smoke test"
-	@echo "  test-api          curl API endpoint tests"
-	@echo "  test-portal       Playwright captive portal tests"
-	@echo "  test-network      DNS/NAT connectivity tests"
-	@echo "  test-full         All 14 Phase 1 tests"
+	@echo "Testing:"
+	@echo "  test-unit         Host C unit tests (no hardware)"
+	@echo "  test-integration  Node.js integration tests (live board)"
+	@echo "  test-e2e          Playwright browser E2E tests"
+	@echo "  test-all          Run all three test layers"
+	@echo "  test-smoke        Quick 30s smoke test"
+	@echo "  test-reset-auth   Reset auth + per-client NAT filter test"
+	@echo "  test-dns-firewall DNS hijack + NAT filter test"
+	@echo "  test-session-expiry Session lifecycle with 65s expiry wait"
 	@echo ""
-	@echo "Test (Phase 2):"
+	@echo "Wallet:"
 	@echo "  wallet-setup      Initialize nutshell wallet for test mint"
 	@echo "  wallet-info       Show mint info"
 	@echo "  wallet-balance    Show wallet balance"
 	@echo "  mint-token        Invoice + send test token (AMOUNT=21)"
 	@echo "  send-token        Send cashuA token (AMOUNT=21)"
-	@echo "  tokens            Alias for send-token"
-	@echo "  test-payment      Payment flow tests"
 	@echo ""
 	@echo "Utilities:"
-	@echo "  setup             One-time: install esptool, deps"
 	@echo "  clean             Clean build"
 	@echo "  erase-nvs         Erase NVS partition on PORT"
 	@echo "  reset             Hardware reset on PORT"
@@ -144,33 +146,60 @@ monitor-b: PORT=$(PORT_B)
 monitor-b: monitor
 
 # ──────────────────────────────────────────────
-# Test Infrastructure
+# Testing
 # ──────────────────────────────────────────────
 
-test: test-api test-network
-	@echo "=== All tests passed ==="
+test-unit:
+	@echo "=== Running host unit tests ==="
+	$(MAKE) -C tests/unit test
 
-smoke:
+test-integration: test-api test-network test-reset-auth test-dns-firewall
+	@echo "=== Integration tests passed ==="
+
+test-e2e:
+	@echo "=== Running Playwright E2E tests ==="
+	cd tests/e2e && npx playwright test
+
+test-all: test-unit test-integration test-e2e
+	@echo "=== All test layers passed ==="
+
+test: test-unit test-integration
+	@echo "=== Tests passed ==="
+
+test-smoke:
 	@echo "=== Running smoke test (30s) ==="
-	$(NODE) tests/smoke.mjs $(PORT)
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/smoke.mjs
 
 test-api:
 	@echo "=== Running API tests ==="
-	$(NODE) tests/api.mjs
-
-test-portal:
-	@echo "=== Running Playwright portal tests ==="
-	npx playwright test tests/captive-portal.spec.mjs
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/api.mjs
 
 test-network:
 	@echo "=== Running network tests ==="
-	$(NODE) tests/network.mjs
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/network.mjs
 
-test-full: test-api test-portal test-network
-	@echo "=== Full test suite passed ==="
+test-portal:
+	@echo "=== Running Playwright portal tests ==="
+	cd tests/e2e && npx playwright test captive-portal.spec.mjs
+
+test-payment:
+	@echo "=== Running payment tests ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/phase2.mjs
+
+test-reset-auth:
+	@echo "=== Running reset auth test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-reset-auth.mjs
+
+test-session-expiry:
+	@echo "=== Running session expiry test (65s wait, ~80s total) ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-session-expiry.mjs
+
+test-dns-firewall:
+	@echo "=== Running DNS + firewall test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-dns-firewall.mjs
 
 # ──────────────────────────────────────────────
-# Phase 2: Payment Testing (Nutshell wallet)
+# Wallet
 # ──────────────────────────────────────────────
 
 wallet-setup:
@@ -187,8 +216,8 @@ wallet-balance:
 	cashu --env-mint $(TEST_MINT) balance
 
 mint-token:
-	@echo "=== Minting test token (AMOUNT=$(or $(AMOUNT),21)) ==="
 	@AMOUNT=$${AMOUNT:-21}; \
+	echo "=== Minting test token ($$AMOUNT sats) ==="; \
 	cashu --env-mint $(TEST_MINT) invoice $$AMOUNT && \
 	echo "--- Token (cashuA legacy) ---" && \
 	cashu --env-mint $(TEST_MINT) send --legacy $$AMOUNT
@@ -199,10 +228,6 @@ send-token:
 	cashu --env-mint $(TEST_MINT) send --legacy $$AMOUNT
 
 tokens: send-token
-
-test-payment:
-	@echo "=== Running payment tests ==="
-	$(NODE) tests/phase2.mjs
 
 # ──────────────────────────────────────────────
 # Utilities

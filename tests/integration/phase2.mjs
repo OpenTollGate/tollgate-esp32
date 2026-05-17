@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-const IP = process.env.TOLLGATE_IP || '192.168.4.1';
+const IP = process.env.TOLLGATE_IP || '10.192.45.1';
 const API = `http://${IP}:2121`;
 let passed = 0, failed = 0;
 

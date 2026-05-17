@@ -9,7 +9,7 @@ export default defineConfig({
     headless: true,
     viewport: { width: 1280, height: 900 },
     screenshot: 'on',
-    video: 'on',
+    video: 'retain-on-failure',
     trace: 'on-first-retry',
   },
   reporter: [['list'], ['html', { open: 'never' }]],

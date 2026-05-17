@@ -3,14 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "node tests/api.mjs && node tests/network.mjs",
-    "test:api": "node tests/api.mjs",
-    "test:network": "node tests/network.mjs",
-    "test:portal": "npx playwright test tests/captive-portal.spec.mjs",
-    "test:happy-path": "npx playwright test tests/interop-happy-path.spec.mjs",
-    "test:interop": "npx playwright test tests/interop-esp32-openwrt.spec.mjs",
-    "test:smoke": "node tests/smoke.mjs",
-    "test:playwright": "npx playwright test"
+    "test": "node tests/integration/api.mjs && node tests/integration/network.mjs",
+    "test:api": "node tests/integration/api.mjs",
+    "test:network": "node tests/integration/network.mjs",
+    "test:smoke": "node tests/integration/smoke.mjs",
+    "test:payment": "node tests/integration/phase2.mjs",
+    "test:reset-auth": "node tests/integration/test-reset-auth.mjs",
+    "test:session-expiry": "node tests/integration/test-session-expiry.mjs",
+    "test:dns-firewall": "node tests/integration/test-dns-firewall.mjs",
+    "test:portal": "npx playwright test -c tests/e2e/playwright.config.mjs captive-portal.spec.mjs",
+    "test:happy-path": "npx playwright test -c tests/e2e/playwright.config.mjs interop-happy-path.spec.mjs",
+    "test:e2e": "npx playwright test -c tests/e2e/playwright.config.mjs",
+    "test:playwright": "npx playwright test -c tests/e2e/playwright.config.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0"
