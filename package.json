@@ -7,7 +7,10 @@
     "test:api": "node tests/api.mjs",
     "test:network": "node tests/network.mjs",
     "test:portal": "npx playwright test tests/captive-portal.spec.mjs",
-    "test:smoke": "node tests/smoke.mjs"
+    "test:happy-path": "npx playwright test tests/interop-happy-path.spec.mjs",
+    "test:interop": "npx playwright test tests/interop-esp32-openwrt.spec.mjs",
+    "test:smoke": "node tests/smoke.mjs",
+    "test:playwright": "npx playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0"
