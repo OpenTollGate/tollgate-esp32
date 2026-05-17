@@ -7,14 +7,9 @@
 #include "freertos/task.h"
 #include <string.h>
 
-#define SPENT_SECRETS_MAX 100
-
 static const char *TAG = "session";
 static session_t s_sessions[SESSION_MAX_CLIENTS];
 static int s_session_count = 0;
-
-static char s_spent_secrets[SPENT_SECRETS_MAX][65];
-static int s_spent_count = 0;
 
 static int64_t get_time_ms(void)
 {
@@ -25,7 +20,6 @@ esp_err_t session_manager_init(void)
 {
     memset(s_sessions, 0, sizeof(s_sessions));
     s_session_count = 0;
-    s_spent_count = 0;
     ESP_LOGI(TAG, "Session manager initialized");
     return ESP_OK;
 }
@@ -37,25 +31,12 @@ static void populate_mac(session_t *session, uint32_t client_ip)
     }
 }
 
-session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
-                          const char *spent_secrets[], int secret_count)
+session_t *session_create(uint32_t client_ip, uint64_t allotment_ms)
 {
     session_t *existing = session_find_by_ip(client_ip);
     if (existing) {
         session_extend(existing, allotment_ms);
-        for (int i = 0; i < secret_count && s_spent_count < SPENT_SECRETS_MAX; i++) {
-            strncpy(s_spent_secrets[s_spent_count], spent_secrets[i], 64);
-            s_spent_secrets[s_spent_count][64] = '\0';
-            s_spent_count++;
-        }
         return existing;
-    }
-
-    for (int i = 0; i < secret_count; i++) {
-        if (session_is_secret_spent(spent_secrets[i])) {
-            ESP_LOGW(TAG, "Duplicate secret rejected");
-            return NULL;
-        }
     }
 
     if (s_session_count >= SESSION_MAX_CLIENTS) {
@@ -73,21 +54,7 @@ session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
             s_sessions[i].allotment_ms = allotment_ms;
             s_sessions[i].start_time_ms = get_time_ms();
             s_sessions[i].active = true;
-            s_sessions[i].spent_secret_count = 0;
             populate_mac(&s_sessions[i], client_ip);
-
-            for (int j = 0; j < secret_count && j < 5; j++) {
-                strncpy(s_sessions[i].spent_secrets[s_sessions[i].spent_secret_count],
-                        spent_secrets[j], 64);
-                s_sessions[i].spent_secrets[s_sessions[i].spent_secret_count][64] = '\0';
-                s_sessions[i].spent_secret_count++;
-            }
-
-            for (int j = 0; j < secret_count && s_spent_count < SPENT_SECRETS_MAX; j++) {
-                strncpy(s_spent_secrets[s_spent_count], spent_secrets[j], 64);
-                s_spent_secrets[s_spent_count][64] = '\0';
-                s_spent_count++;
-            }
 
             s_session_count++;
             firewall_grant_access(client_ip);
@@ -104,10 +71,9 @@ session_t *session_create(uint32_t client_ip, uint64_t allotment_ms,
     return NULL;
 }
 
-session_t *session_create_bytes(uint32_t client_ip, uint64_t allotment_bytes,
-                                const char *spent_secrets[], int secret_count)
+session_t *session_create_bytes(uint32_t client_ip, uint64_t allotment_bytes)
 {
-    session_t *s = session_create(client_ip, 0, spent_secrets, secret_count);
+    session_t *s = session_create(client_ip, 0);
     if (s) {
         s->allotment_bytes = allotment_bytes;
         s->bytes_consumed = 0;
@@ -168,14 +134,6 @@ bool session_is_expired(const session_t *session)
 
     int64_t elapsed = get_time_ms() - session->start_time_ms;
     return elapsed >= (int64_t)session->allotment_ms;
-}
-
-bool session_is_secret_spent(const char *secret)
-{
-    for (int i = 0; i < s_spent_count; i++) {
-        if (strncmp(s_spent_secrets[i], secret, 64) == 0) return true;
-    }
-    return false;
 }
 
 void session_check_expiry(void)

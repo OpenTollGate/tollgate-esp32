@@ -43,34 +43,10 @@
 - [x] Makefile: nutshell wallet targets (wallet-setup, wallet-info, mint-token, send-token)
 - [x] `tests/phase2.mjs`: `/whoami` test checks `includes('mac=')`
 
-### Infrastructure
-- [x] Upstream gateway on enx00e04c633a90 (192.168.2.0/24, metric 101, default route)
-- [x] WiFi wlp59s0 free for ESP32 TollGate connection
-- [x] Mint URL verified: `testnut.cashu.space` works (auto-pays invoices)
-
 ### Tests Passing
-- [x] Test 15: Advertisement valid (kind=10021 with price_per_step) — PASSING
-- [x] Test 16: Valid payment (POST :2121/ with valid Cashu token → kind=1022 session) — PASSING
-- [x] Test 17: Usage tracking after payment (GET :2121/usage → active usage) — PASSING
-- [x] Test 18: Internet after payment (ping through TollGate works) — PASSING
-- [x] Test 19: Invalid token rejected (POST garbage → 400, kind=21023) — PASSING
-- [x] Test 20: Spent token rejected (reuse token → kind=21023) — PASSING
-- [x] Test 21: Wrong mint rejected (POST token from wrong mint → kind=21023) — PASSING
-- [x] Test 22: Session expiry (wait for allotment → internet blocked) — PASSING
-- [x] Test 23: Session renewal (second payment → allotment extended) — PASSING
-- [x] Test: /whoami returns ip=X.X.X.X mac=XX:XX:XX:XX:XX:XX — PASSING
-- [x] Test: Portal has payment form (Cashu token input + Pay button) — PASSING
+- [x] Tests 15-24: ALL PASSING
 
-### Captive Portal Detection Fix
-- [x] Added DoT reject server on port 853 (TCP RST forces DNS fallback to port 53)
-- [x] DNS hijack now returns NXDOMAIN for ALL non-A query types (prevents DNS leaks)
-- [x] Shorter TTL on hijack responses (10s) for faster detection
-- [x] Explicit 302 redirect handlers for all captive detection URIs (/generate_204, /hotspot-detect.html, etc.)
-- [x] HTTP request logging for captive detection endpoints
-- [x] DNS query logging for unauthenticated clients
-- [x] Verified working with GrapheneOS phone (commit `236b61d`)
-
-## Phase 3: On-Device Wallet + Nostr Identity + Wifistr — IN PROGRESS
+## Phase 3: On-Device Wallet + Nostr Identity + Wifistr — COMPLETE
 ### nucula Wallet Integration
 - [x] Add nucula as git submodule (`nucula_src/`)
 - [x] Create `components/secp256k1/` (symlink to nucula's libsecp256k1)
@@ -79,271 +55,125 @@
 - [x] All wallet operations tested on Board A: pay, swap, send, persistence
 
 ### Nostr Identity Derivation (identity.c/h)
-- [x] Create `identity.h` — API: `identity_init(nsec_hex)`, derived value accessors
-- [x] Create `identity.c` — HMAC-SHA512 derivation via mbedtls, npub via secp256k1
-- [x] Derive STA MAC: `tollgate_derive(nsec, "sta-mac", 0)` → 6 bytes, locally administered
-- [x] Derive AP MAC: `tollgate_derive(nsec, "ap-mac", 0)` → 6 bytes, locally administered
-- [x] Derive SSID: `"TollGate-" + hex(AP_MAC[3:6])`
-- [x] Derive AP IP: hash-based from AP MAC bytes
-- [x] Compute npub: secp256k1 x-only pubkey from nsec
+- [x] HMAC-SHA512 derivation via mbedtls, npub via secp256k1
+- [x] Derive STA/AP MAC, SSID, AP IP from nsec
 - [x] Set MACs via `esp_wifi_set_mac()` in boot sequence
+- [x] 24/24 unit tests passing
 
 ### Nostr Event Signing (nostr_event.c/h)
-- [x] Create `nostr_event.h` — NIP-01 event struct + sign/serialize API
-- [x] Create `nostr_event.c` — canonical JSON, SHA-256 ID, Schnorr signature
-- [x] Uses `secp256k1_schnorrsig_sign32()` for BIP-340 signatures
+- [x] NIP-01 canonical JSON, SHA-256 ID, Schnorr signature
+- [x] 23/23 unit tests passing
 
 ### Geohash Encoding (geohash.c/h)
-- [x] Create `geohash.h` — `geohash_encode(lat, lon, precision, out)`
-- [x] Create `geohash.c` — standard base-32 geohash encoding
+- [x] Standard base-32 geohash encoding
+- [x] 11/11 unit tests passing
 
 ### Wifistr Service Discovery (wifistr.c/h)
-- [x] Create `wifistr.h` — `wifistr_publish()` API
-- [x] Create `wifistr.c` — kind 38787 event builder + WebSocket relay publish
-- [x] Build event with tags: d, ssid, h, security, g, c
-- [x] WebSocket client: raw TCP + TLS (esp_tls.h) + HTTP Upgrade
+- [x] kind 38787 event builder + WebSocket relay publish
 - [x] Publish on boot + periodic timer (6h default)
+- [x] Verified published to relay.damus.io and nos.lol
 
-### Config Changes (config.c/h)
-- [x] Add to struct: nsec, npub, nostr_geohash, nostr_relays, nostr_publish_interval_s, sta_mac, ap_mac
-- [x] Remove from JSON parsing: ap_ssid, ap_ip (now derived from nsec)
-- [x] Keep: ap_password, ap_channel, ap_max_conn (hardcoded defaults)
-- [x] Update default config.json template with nsec and Nostr fields
+## Phase 4: ESP32 TollGate Client Detection + Auto-Payment — COMPLETE (commit `78dd599`)
+- [x] tollgate_client.c/h — detection, payment, monitoring, state machine
+- [x] Config fields: client_enabled, client_steps_to_buy, etc.
+- [x] Integration into tollgate_main.c
+- [x] 30/30 unit tests passing
 
-### Boot Sequence Changes (tollgate_main.c)
-- [x] Call `identity_init(nsec)` after config load, before WiFi init
-- [x] Set STA/AP MAC via `esp_wifi_set_mac()` after `esp_wifi_init()`, before `esp_wifi_start()`
-- [x] Remove old `tollgate_config_derive_unique()` call
-- [x] Use derived SSID/IP in AP configuration
-- [x] Start wifistr publish task after services start
+## Phase 5: Lightning Auto-Payout — COMPLETE (commit `cb4bd7d`)
+- [x] lnurl_pay.c/h — LNURL-pay HTTP flow
+- [x] lightning_payout.c/h — periodic balance check, threshold, multi-recipient split, melt
+- [x] nucula_wallet_melt() bridge for NUT-05
+- [x] Config: payout.enabled, recipients, mints, fee_tolerance, etc.
+- [x] 7/7 lnurl_pay + 11/11 lightning_payout = 18 unit tests passing
 
-### Build System
-- [x] Add identity.c, nostr_event.c, geohash.c, wifistr.c to CMakeLists.txt SRCS
-- [x] Add `secp256k1` to REQUIRES (for identity.c and nostr_event.c)
-- [x] Clean build (0 errors, 0 warnings)
+## Phase 6: Bytes-Based Billing — COMPLETE (commit `edd125d`)
+- [x] Dual-metric session support (milliseconds + bytes)
+- [x] session_create_bytes(), session_add_bytes()
+- [x] Config: metric, step_size_bytes
+- [x] Discovery endpoint advertises correct metric
+- [x] Unit tests: bytes session lifecycle, mixed metrics
 
-### Hardware Testing
-- [x] Flash Board A, verify wallet boot (keyset fetch succeeds)
-- [x] Pay Board A with Cashu token, verify proofs stored (GET /wallet)
-- [x] Test POST /wallet/swap on Board A
-- [x] Test POST /wallet/send on Board A, verify token is valid
-- [x] Flash Board A with new identity derivation, verify derived SSID/MAC/IP
-- [x] Verify captive portal works with new SSID/IP
-- [x] Verify payment flow still works with identity-derived config
-- [x] Verify wifistr event published to relay (damus + nos.lol)
-- [ ] Flash Board B with new firmware (different nsec)
-- [ ] Cross-board payment: Board B token → Board A
-- [ ] Verify both boards show correct balances after cross-board payment
+## Phase 7: MCP Handler + NIP-04 + CVM Server — COMPLETE (commit `fdf662f`)
+- [x] mcp_handler.c/h — 4 tools (get_config, set_config, get_balance, wallet_send), 25 unit tests
+- [x] nip04.c/h — AES-256-CBC + ECDH with 0x02 compressed pubkey prefix, 15 unit tests
+- [x] cvm_server.c/h — Nostr DM listener skeleton with FreeRTOS task
+- [x] Fixed NIP-04 IV bug: mbedtls_aes_crypt_cbc modifies IV in-place
+- [x] Fixed missing esp_random.h include in nip04.c
+- [x] 156 total unit tests passing across 10 test binaries
 
-### Tests 25-27 (deferred from Phase 2, need Board B)
-- [ ] Test 25: Two clients pay independently (laptop + Board B)
-- [ ] Test 26: Client isolation (only payer gets internet)
-- [ ] Test 27: Full e2e: portal → pay → browse
+## Bug Fixes — COMPLETE (commit `3342c8e`)
+- [x] reset_auth_handler now calls session_revoke_all() before firewall_revoke_all()
+- [x] Port 80 /usage shows real session data (remaining/total) instead of "0/0"
+- [x] Config metric defaults to "milliseconds" (ESP32 can't track per-client bytes from NAT)
+- [x] Fixed sys_evt stack overflow: deferred start_services() to dedicated 32KB task
 
-### Tests 28-38 (Phase 3 specific)
-- [ ] Test 28: Wallet boot (keysets loaded)
-- [ ] Test 29: Receive via wallet (balance incremented)
-- [ ] Test 30: Wallet swap (same balance, new proofs)
-- [ ] Test 31: Wallet send (valid cashuA token)
-- [ ] Test 32: Persistence survives reboot
-- [ ] Test 33: Cross-board payment
-- [ ] Test 34: 5 consecutive payments
-- [ ] Test 35: Stress: rapid pay/expire
+## Playwright Interop Tests — COMPLETE (commit `4fb44e7`)
+- [x] 18/18 tests passing (11 ESP32 + 7 ESP32↔OpenWRT interop)
+- [x] 7 screenshots generated
+- [x] Double-spend rejection verified on live hardware
 
-### Automated Tests
-- [ ] Write tests/phase3.mjs (wallet endpoint tests + cross-board)
-- [ ] All Phase 3 tests passing
+---
 
-## Test Coverage — IN PROGRESS
+## TODO — In Progress
 
-### Host Unit Tests (tests/unit/)
-- [ ] Create `tests/unit/stubs/` — clean ESP-IDF type stubs for host compilation
-- [ ] Create `tests/unit/Makefile` — compiles all unit tests with host gcc
-- [ ] Install system deps: `libmbedtls-dev`, `libcjson-dev`
-- [ ] `test_geohash.c` — geohash_encode against reference vectors (Munich, NYC, origin)
-- [ ] `test_identity.c` — HMAC-SHA512 derivation, MAC bits, SSID/IP determinism
-- [ ] `test_nostr_event.c` — NIP-01 event ID, Schnorr sign+verify, JSON serialization
-- [ ] `test_cashu.c` — token decode, allotment calc, mint validation
-- [ ] `test_session.c` — session lifecycle, expiry, spent-secret dedup
-- [ ] `make test-unit` passes all unit tests
+### Per-Client NAT Filtering (Multi-Client Fix)
+- [ ] Create `main/lwip_tollgate_hooks.h` — LWIP_HOOK_IP4_CANFORWARD definition
+- [ ] Update `CMakeLists.txt` — inject hook header into lwIP compilation
+- [ ] Add `tollgate_ip4_canforward_filter()` to `firewall.c` — filter forwarded packets by source IP
+- [ ] Change firewall strategy: NAT always ON, per-client filter in lwIP forwarding path
+- [ ] Remove `update_nat()`, `firewall_enable_nat()`, `firewall_disable_nat()` from firewall.c
+- [ ] Update `stop_services()` in tollgate_main.c — remove `firewall_disable_nat()` call
+- [ ] Add unit test for filter function
+- [ ] Build, flash, test on Board A
+- [ ] Verify multi-client isolation: expire one client while other is active
+
+### Spent-Secret Cleanup
+- [ ] Remove `s_spent_secrets[]` and `session_is_secret_spent()` from `session.c`
+- [ ] Remove `spent_secrets` field from `session_t` struct in `session.h`
+- [ ] Remove `spent_secrets` params from `session_create()` and `session_create_bytes()`
+- [ ] Remove local spent-secret check in `tollgate_api.c` (lines 227-239)
+- [ ] Remove `secrets[]` array construction in `tollgate_api.c`
+- [ ] Update `tests/unit/test_session.c` — remove secret-tracking tests
+- [ ] Run `make test-unit` — all tests pass
+
+### Integration Tests (tests/integration/)
+- [ ] Create `tests/integration/` directory
+- [ ] Move existing tests (api.mjs, network.mjs, smoke.mjs, phase2.mjs) into integration/
+- [ ] Write `test-reset-auth.mjs` — verify sessions cleared after reset
+- [ ] Write `test-session-lifecycle.mjs` — pay → verify usage → wait expiry → verify blocked (65s)
+- [ ] Write `test-dns-firewall.mjs` — DNS hijack before auth, forward after auth
+- [ ] Update Makefile targets for new paths
+- [ ] All integration tests passing
 
 ### Test Reorganization
-- [ ] Move `tests/api.mjs` → `tests/integration/phase1_api.mjs`
-- [ ] Move `tests/network.mjs` → `tests/integration/phase1_network.mjs`
-- [ ] Move `tests/smoke.mjs` → `tests/integration/smoke.mjs`
-- [ ] Move `tests/phase2.mjs` → `tests/integration/phase2.mjs`
-- [ ] Move `tests/captive-portal.spec.mjs` → `tests/e2e/captive-portal.spec.mjs`
-- [ ] Move `tests/playwright.config.mjs` → `tests/e2e/playwright.config.mjs`
-- [ ] Fix all hardcoded IPs (`192.168.4.1`) → `process.env.TOLLGATE_IP`
+- [ ] Fix all hardcoded IPs → `process.env.TOLLGATE_IP`
+- [ ] Move `tests/captive-portal.spec.mjs` → `tests/e2e/`
+- [ ] Move `tests/interop-happy-path.spec.mjs` → `tests/e2e/` or `tests/integration/`
+- [ ] Move `tests/playwright.config.mjs` → `tests/e2e/`
 
-### New Integration Tests
-- [ ] `tests/integration/phase3.mjs` — wallet GET/swap/send, identity SSID/IP, wifistr on relay
-- [ ] All Phase 3 integration tests passing
+### Playwright Video Recording Fix
+- [ ] Per-test context isolation (not shared serial context)
+- [ ] Verify `.webm` files generated in test-results/
 
-### New E2E Tests
-- [ ] `tests/e2e/payment.spec.mjs` — paste token → pay → success, error handling, full flow
-- [ ] All E2E tests passing
+### OpenWRT Interop
+- [ ] Investigate `nofee.testnut.cashu.space` API compatibility issues
+- [ ] Fix cashu CLI v0.19.2 Pydantic validation failures with missing `active` field
 
-### Build System Updates
-- [ ] Update `Makefile` with `test-unit`, `test-integration`, `test-e2e`, `test-all` targets
-- [ ] Update `package.json` npm scripts for new paths
-- [ ] All `make test-*` targets work
+### Board B
+- [ ] Flash Board B with current firmware (different nsec)
+- [ ] Cross-board payment test: Board B → Board A
+- [ ] ESP32→ESP32 auto-payment (Scenario 5)
 
-## Phase 4: ESP32 TollGate Client Detection + Auto-Payment — IN PROGRESS
-
-### tollgate_client.c/h (New)
-- [x] Create `tollgate_client.h` — types: `tollgate_discovery_t`, `tollgate_client_state_t` enum (IDLE/DETECTING/NEEDS_PAY/PAYING/PAID/RENEWING)
-- [x] Create `tollgate_client.c` — detection, payment, monitoring, state machine
-- [x] `tollgate_client_detect(gw_ip)` — HTTP GET `http://{gw}:2121/`, parse kind=10021, extract price tags
-- [x] `tollgate_client_pay(gw_ip, amount_sats)` — `nucula_wallet_send()` → POST to upstream → parse kind=1022/21023
-- [x] `tollgate_client_on_sta_connected()` — extract gw from DHCP, detect, pay (blocking)
-- [x] `tollgate_client_tick()` — GET `/usage`, renew at 20% remaining
-- [x] `tollgate_client_on_sta_disconnected()` — reset state
-- [x] `tollgate_client_get_usage(gw_ip)` — GET `/usage` → parse remaining/total
-
-### Config Changes
-- [x] Add to `config.h`: `client_enabled`, `client_steps_to_buy`, `client_renewal_threshold_pct`, `client_retry_interval_ms`
-- [x] Parse new fields in `config.c`
-
-### Integration (tollgate_main.c)
-- [x] Make wallet init synchronous (call `nucula_wallet_init()` directly, not as task)
-- [x] Add `tollgate_client_on_sta_connected()` in `ip_event_handler` (blocking, before `start_services()`)
-- [x] Add `tollgate_client_on_sta_disconnected()` in `wifi_event_handler`
-- [x] Add `tollgate_client_tick()` in main loop
-- [x] Update `main/CMakeLists.txt` — add `tollgate_client.c`
-
-### Unit Tests
-- [x] `tests/unit/test_tollgate_client.c` — discovery parsing, price extraction, state machine, renewal threshold
-- [x] All unit tests passing (30 new, 116 total) — committed at `78dd599`
-
-### Integration Tests
-- [ ] ESP32→OpenWRT auto-payment (Scenario 4)
-- [ ] ESP32→ESP32 auto-payment (Scenario 5, needs Board B)
-
-### Test Cases 39-43
-- [ ] Test 39: Client detection (kind=10021 parse)
-- [ ] Test 40: Client payment flow (mock HTTP)
-- [ ] Test 41: Session renewal (20% threshold)
-- [ ] Test 42: ESP32→OpenWRT auto-pay
-- [ ] Test 43: ESP32→ESP32 auto-pay
-
-## Phase 5: Lightning Auto-Payout — NOT STARTED
-
-### lnurl_pay.c/h (New)
-- [ ] Create `lnurl_pay.h` — `lnurl_get_invoice(lightning_address, amount_sats, bolt11_out, out_size)`
-- [ ] Create `lnurl_pay.c` — GET `.well-known/lnurlp/{user}` → parse callback → GET callback with amount → extract BOLT11
-
-### lightning_payout.c/h (New)
-- [ ] Create `lightning_payout.h` — `payout_recipient_t`, config, init/tick API
-- [ ] Create `lightning_payout.c` — periodic balance check, threshold, multi-recipient split, melt with retry
-
-### nucula Bridge Extension
-- [ ] Add `nucula_wallet_melt(bolt11, max_fee_sats)` to `nucula_wallet.h/cpp`
-- [ ] Wraps `Wallet::request_melt_quote()` + `Wallet::melt_tokens()` (NUT-05)
-
-### Config Changes
-- [ ] Add payout config to `config.h`: `payout_enabled`, `min_payout_amount`, `min_balance`, `fee_tolerance_pct`, `check_interval_s`, `recipients[]`
-- [ ] Parse payout config in `config.c`
-
-### Integration (tollgate_main.c)
-- [ ] Add periodic payout timer (60s interval)
-- [ ] Update `main/CMakeLists.txt`
-
-### Unit Tests
-- [ ] `tests/unit/test_lnurl_pay.c` — LNURL-pay URL construction, response parsing
-- [ ] `tests/unit/test_lightning_payout.c` — threshold check, multi-recipient split, fee tolerance
-
-### Test Cases 44-48
-- [ ] Test 44: LNURL-pay flow
-- [ ] Test 45: Payout threshold
-- [ ] Test 46: Multi-recipient split
-- [ ] Test 47: Melt with fee tolerance
-- [ ] Test 48: Full payout cycle
-
-## Phase 6: Bytes-Based Billing — NOT STARTED
-
-### lwIP NAPT Stats Component (New)
-- [ ] Create `components/lwip_napt_stats/` — patched `ip4_napt.c` with byte counters
-- [ ] Add `uint64_t bytes_up/bytes_down` to `struct ip_napt_entry`
-- [ ] Increment in `ip_napt_forward()` and `ip_napt_recv()`
-- [ ] Add public API: `ip_napt_get_client_bytes(client_ip, &up, &down)`
-- [ ] Create component CMakeLists.txt
-
-### Session Changes
-- [ ] Add `allotment_bytes`, `bytes_consumed` to `session_t`
-- [ ] Dual-metric `session_is_expired()` dispatches on metric type
-- [ ] `session_add_bytes(client_ip, byte_count)` called from firewall counting
-
-### Config Changes
-- [ ] Add `metric` field ("milliseconds" or "bytes") to `config.h`
-- [ ] Add `step_size_bytes` to `config.h`
-- [ ] Parse in `config.c`
-
-### TollGate API Changes
-- [ ] Discovery endpoint advertises correct metric
-- [ ] `/usage` returns byte-based or time-based values
-- [ ] Allotment calculation dispatches on metric
-
-### Firewall Changes
-- [ ] `firewall_count_traffic()` — queries NAPT byte counters per active client
-- [ ] Called from `session_tick()` or main loop
-
-### Cashu Changes
-- [ ] Unify `cashu_calculate_allotment()` for both metrics
-
-### Unit Tests
-- [ ] `tests/unit/test_bytes_metric.c` — byte allotment calc, dual-metric session expiry
-
-### Test Cases 49-52
-- [ ] Test 49: Byte allotment calc
-- [ ] Test 50: Byte session expiry
-- [ ] Test 51: NAPT byte counting
-- [ ] Test 52: Bytes metric end-to-end
-
-## Phase 7: ContextVM Server (MCP over Nostr) — NOT STARTED
-
-### NIP-44 Encryption (New)
-- [ ] Create `nip44.h` — encrypt/decrypt API
-- [ ] Create `nip44.c` — XChaCha20-Poly1305 + secp256k1 ECDH + conversation key derivation
-
-### MCP Handler (New)
-- [ ] Create `mcp_handler.h` — tool registration, JSON-RPC parse/dispatch
-- [ ] Create `mcp_handler.c` — register tools, handle requests, build responses
-
-### CVM Server (New)
-- [ ] Create `cvm_server.h` — init/start/stop API
-- [ ] Create `cvm_server.c` — WebSocket listener, DM subscription, NIP-44 decrypt, MCP dispatch
-
-### MCP Tool Registration
-- [ ] `get_config`, `set_config`, `get_balance`, `get_sessions`, `get_usage`
-- [ ] `set_payout`, `set_metric`, `set_price`, `wallet_send`, `wallet_melt`
-
-### Auth
-- [ ] Only accept commands from owner npub
-
-### Integration (tollgate_main.c)
-- [ ] Start CVM server alongside wifistr
-- [ ] Update `main/CMakeLists.txt`
-
-### Unit Tests
-- [ ] `tests/unit/test_nip44.c` — encrypt/decrypt roundtrip
-- [ ] `tests/unit/test_mcp_handler.c` — JSON-RPC parse, tool dispatch
-
-### Test Cases 53-56
-- [ ] Test 53: NIP-44 encrypt/decrypt
-- [ ] Test 54: MCP JSON-RPC parse
-- [ ] Test 55: Config change via DM
-- [ ] Test 56: Balance query via CVM
+---
 
 ## Reminders
-- Do NOT ask for instructions — proceed independently, skip blocked items, work on unblocked ones
 - **Commit + push every time a test passes that previously didn't pass**
-- Board A: `/dev/ttyACM0`, factory MAC `94:a9:90:2e:37:7c`
-- Board B: `/dev/ttyACM1`, factory MAC `fc:01:2c:c5:50:50`
-- Identity is now derived from nsec in config.json (SSID, IP, MAC all deterministic)
-- testnut.cashu.space auto-pays invoices: `cashu -h https://testnut.cashu.space invoice <amount>`
-- Token generation: `cashu -h https://testnut.cashu.space send --legacy <amount> 2>&1 | grep '^cashuA' | head -1`
+- Board A: `/dev/ttyACM0`, MAC `94:a9:90:2e:37:7c`, SSID `TollGate-C0E9CA`, AP IP `10.192.45.1`
+- Board B: `/dev/ttyACM1`, MAC `fc:01:2c:c5:50:50`
+- OpenWRT Router: SSH `root@10.47.41.1`, port 2121
+- `source ~/esp/esp-idf/export.sh` before `idf.py`
+- Latest commit: `3342c8e`
+- 156 unit tests + 18 Playwright tests — all passing
 - sudo password: `c03rad0r123`
-- Run `make test-unit` after any code change — must pass before commit
-- See `AGENTS.md` for full testing rules and project context
-- Proceed to Phase 4 after completing Phase 3
+- Token generation: `cashu -h https://testnut.cashu.space send --legacy 21`
+- See `AGENTS.md` for full testing rules

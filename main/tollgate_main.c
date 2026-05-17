@@ -174,7 +174,6 @@ static void stop_services(void)
     tollgate_api_stop();
     dns_server_stop();
     cvm_server_stop();
-    firewall_disable_nat();
     firewall_revoke_all();
     s_services_running = false;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);

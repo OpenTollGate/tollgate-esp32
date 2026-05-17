@@ -46,8 +46,7 @@ static void test_sessions(void)
     ASSERT_EQ_INT(0, session_active_count(), "No sessions after init");
 
     printf("\n--- session_create ---\n");
-    const char *secrets[] = {"secret1", "secret2"};
-    session_t *s = session_create(0x0A01A8C0, 60000, secrets, 2);
+    session_t *s = session_create(0x0A01A8C0, 60000);
     ASSERT(s != NULL, "session_create returns non-NULL");
     ASSERT_EQ_INT(1, session_active_count(), "1 session after create");
     ASSERT_EQ_INT(1, g_granted_count, "firewall_grant_access was called");
@@ -57,22 +56,17 @@ static void test_sessions(void)
     ASSERT(found == s, "session_find_by_ip returns the created session");
     ASSERT(session_find_by_ip(0x01020304) == NULL, "session_find_by_ip returns NULL for unknown IP");
 
-    printf("\n--- session_is_secret_spent ---\n");
-    ASSERT(session_is_secret_spent("secret1"), "secret1 is marked spent");
-    ASSERT(session_is_secret_spent("secret2"), "secret2 is marked spent");
-    ASSERT(!session_is_secret_spent("secret_unknown"), "unknown secret is not spent");
-
-    printf("\n--- Duplicate secret rejected ---\n");
-    const char *dup_secrets[] = {"secret1"};
-    g_granted_count = 0;
-    session_t *dup = session_create(0x0B01A8C0, 60000, dup_secrets, 1);
-    ASSERT(dup == NULL, "Duplicate secret returns NULL");
-    ASSERT_EQ_INT(0, g_granted_count, "No new firewall grant for duplicate");
-
     printf("\n--- session_extend ---\n");
     uint64_t old_allotment = s->allotment_ms;
     session_extend(s, 30000);
     ASSERT(s->allotment_ms == old_allotment + 30000, "Allotment extended by 30000ms");
+
+    printf("\n--- session_extend for existing client ---\n");
+    g_granted_count = 0;
+    session_t *s2 = session_create(0x0A01A8C0, 30000);
+    ASSERT(s2 == s, "same IP returns existing session");
+    ASSERT_EQ_INT(0, g_granted_count, "no new firewall grant for extension");
+    ASSERT(s->allotment_ms == old_allotment + 60000, "allotment extended by 30000ms on re-pay");
 
     printf("\n--- session_revoke ---\n");
     g_revoked_count = 0;
@@ -81,10 +75,8 @@ static void test_sessions(void)
     ASSERT_EQ_INT(0, session_active_count(), "No active sessions after revoke");
 
     printf("\n--- session_revoke_all ---\n");
-    const char *s1[] = {"s1"};
-    const char *s2[] = {"s2"};
-    session_create(0x01000001, 60000, s1, 1);
-    session_create(0x01000002, 60000, s2, 1);
+    session_create(0x01000001, 60000);
+    session_create(0x01000002, 60000);
     ASSERT_EQ_INT(2, session_active_count(), "2 sessions created");
 
     g_revoked_count = 0;
@@ -93,8 +85,7 @@ static void test_sessions(void)
 
     printf("\n--- session_tick does not crash ---\n");
     session_manager_init();
-    const char *st[] = {"tick_secret"};
-    session_create(0x0A000001, 60000, st, 1);
+    session_create(0x0A000001, 60000);
     session_tick();
     ASSERT_EQ_INT(1, session_active_count(), "Session still active after tick (not expired)");
 }
@@ -106,9 +97,8 @@ void test_bytes_sessions(void)
     memset(&g_test_config, 0, sizeof(g_test_config));
     strncpy(g_test_config.metric, "bytes", sizeof(g_test_config.metric) - 1);
 
-    const char *sec[] = {"bytes_secret"};
     uint64_t allotment = 22020096;
-    session_t *s = session_create_bytes(0x0A010001, allotment, sec, 1);
+    session_t *s = session_create_bytes(0x0A010001, allotment);
     ASSERT(s != NULL, "bytes session created");
     ASSERT_EQ_INT(1, session_active_count(), "1 active bytes session");
 
@@ -133,8 +123,7 @@ void test_bytes_sessions(void)
     session_manager_init();
     memset(&g_test_config, 0, sizeof(g_test_config));
     strncpy(g_test_config.metric, "milliseconds", sizeof(g_test_config.metric) - 1);
-    const char *ms_sec[] = {"ms_secret"};
-    session_t *ms = session_create(0x0A020001, 60000, ms_sec, 1);
+    session_t *ms = session_create(0x0A020001, 60000);
     ASSERT(ms != NULL, "ms session created");
     ASSERT(!session_is_expired(ms), "ms session not expired immediately");
 

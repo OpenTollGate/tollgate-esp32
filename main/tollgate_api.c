@@ -224,20 +224,6 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         return ESP_OK;
     }
 
-    for (int i = 0; i < token->proof_count; i++) {
-        if (session_is_secret_spent(token->proofs[i].secret)) {
-            free(token);
-            cJSON *notice = create_notice("error", "payment-error-token-spent", "Token already spent");
-            char *json = cJSON_PrintUnformatted(notice);
-            httpd_resp_set_status(req, "402 Payment Required");
-            httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(req, json, strlen(json));
-            cJSON_free(json);
-            cJSON_Delete(notice);
-            return ESP_OK;
-        }
-    }
-
     cashu_proof_state_t *states = malloc(CASHU_MAX_PROOFS * sizeof(cashu_proof_state_t));
     if (!states) {
         free(token);
@@ -299,16 +285,11 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         return ESP_OK;
     }
 
-    int secret_count = token->proof_count > 5 ? 5 : token->proof_count;
-    const char *secrets[5];
-    for (int i = 0; i < secret_count; i++) {
-        secrets[i] = token->proofs[i].secret;
-    }
     session_t *session;
     if (is_bytes) {
-        session = session_create_bytes(client_ip, allotment, secrets, secret_count);
+        session = session_create_bytes(client_ip, allotment);
     } else {
-        session = session_create(client_ip, allotment, secrets, secret_count);
+        session = session_create(client_ip, allotment);
     }
     if (!session) {
         free(states);
@@ -498,7 +479,7 @@ esp_err_t tollgate_api_start(void)
     config.server_port = 2121;
     config.ctrl_port = 32769;
     config.max_uri_handlers = 10;
-    config.stack_size = 32768;
+    config.stack_size = 16384;
 
     esp_err_t ret = httpd_start(&s_api_server, &config);
     if (ret != ESP_OK) {

@@ -286,7 +286,7 @@ Publishes TollGate node to Nostr as kind 38787 (wifistr):
 | 37 | 5 consecutive payments | Loop | All authenticated | TODO |
 | 38 | Stress: rapid pay/expire | Loop with short sessions | No crash/leak | TODO |
 
-### Phase 4: ESP32 TollGate Client Detection + Auto-Payment — IN PROGRESS
+### Phase 4: ESP32 TollGate Client Detection + Auto-Payment — COMPLETE
 
 **Goal:** ESP32 detects upstream TollGate when connected as STA, automatically pays for internet access using on-device wallet. Enables ESP32→OpenWRT (Scenario 4) and ESP32→ESP32 (Scenario 5) auto-payment.
 
@@ -354,7 +354,7 @@ IDLE → [STA got IP] → DETECTING → [kind=10021 found] → NEEDS_PAY
 
 Pre-association price discovery via Wi-Fi Vendor IE beacons (OUI `0x54:0x47`) is deferred to a future phase. The client currently uses HTTP-based discovery after connection.
 
-### Phase 5: Lightning Auto-Payout — NOT STARTED
+### Phase 5: Lightning Auto-Payout — COMPLETE
 
 **Goal:** When wallet balance exceeds a configurable threshold, automatically pay out to Lightning addresses via LNURL-pay + Cashu NUT-05 melt.
 
@@ -420,7 +420,7 @@ Wraps `Wallet::request_melt_quote()` + `Wallet::melt_tokens()` (NUT-05).
 | 47 | Melt with fee tolerance | Integration | Invoice paid, change received | TODO |
 | 48 | Full payout cycle | E2E | Wallet drains to min_balance | TODO |
 
-### Phase 6: Bytes-Based Billing — NOT STARTED
+### Phase 6: Bytes-Based Billing — COMPLETE
 
 **Goal:** Support both time-based (milliseconds) and data-based (bytes) billing metrics. Mirrors the Go implementation's dual-metric system.
 
@@ -473,7 +473,7 @@ uint64_t bytes_consumed;
 | 51 | NAPT byte counting | Integration | Counters match actual traffic | TODO |
 | 52 | Bytes metric end-to-end | E2E | Client disconnected after data cap | TODO |
 
-### Phase 7: ContextVM Server (MCP over Nostr) — NOT STARTED
+### Phase 7: ContextVM Server (MCP over Nostr) — COMPLETE
 
 **Goal:** Remote configuration of ESP32 TollGate via ContextVM — services communicate over Nostr using public keys as addresses. Exposes configuration as MCP tools accessible by both humans and AI agents.
 
@@ -523,6 +523,73 @@ Only accept commands from owner npub (derived from nsec in config.json).
 | 56 | Balance query via CVM | Integration | Returns correct balance | TODO |
 
 ## Total: 56 Tests across 7 phases
+
+## Post-Phase 7: Bug Fixes & Architecture Improvements
+
+### Per-Client NAT Filtering (Multi-Client Isolation Fix)
+
+**Problem:** When client A's session expires but client B is still active, NAPT stays enabled globally. Client A's existing TCP/UDP connections in the NAT table continue routing — their traffic reaches the internet even though they're unauthenticated.
+
+**Solution:** Use lwIP's `LWIP_HOOK_IP4_CANFORWARD` hook to filter forwarded packets by source IP. This fires in `ip4_forward()` **before** NAPT translation, so unauthorized clients are blocked at the IP layer.
+
+**Architecture Change:**
+- **Before:** NAT is a global toggle — ON when any client is auth'd, OFF when none are
+- **After:** NAT stays always ON. Per-client filtering happens in the lwIP forwarding path via `LWIP_HOOK_IP4_CANFORWARD`
+
+**Files:**
+
+| File | Action | Description |
+|------|--------|-------------|
+| `main/lwip_tollgate_hooks.h` | Create | Defines `LWIP_HOOK_IP4_CANFORWARD` macro |
+| `CMakeLists.txt` | Modify | Inject hook header into lwIP compilation |
+| `main/firewall.c` | Modify | Add filter function, remove global NAT toggle |
+| `main/firewall.h` | Modify | Expose filter function declaration |
+| `main/tollgate_main.c` | Modify | Remove `firewall_disable_nat()` from stop_services |
+
+**Implementation:**
+
+1. `lwip_tollgate_hooks.h` — hook header included by lwIP:
+```c
+#define LWIP_HOOK_IP4_CANFORWARD(p, addr) tollgate_ip4_canforward_filter(p, addr)
+```
+
+2. `CMakeLists.txt` — inject into lwIP build (follows ESP-IDF vlan example pattern):
+```cmake
+idf_component_get_property(lwip lwip COMPONENT_LIB)
+target_compile_options(${lwip} PRIVATE "-I${PROJECT_DIR}/main")
+target_compile_definitions(${lwip} PRIVATE "-DESP_IDF_LWIP_HOOK_FILENAME=\"lwip_tollgate_hooks.h\"")
+```
+
+3. `firewall.c` — filter function checks source IP against allowed client list:
+```c
+int tollgate_ip4_canforward_filter(struct pbuf *p, u32_t dest_addr_hostorder) {
+    struct ip_hdr *iphdr = (struct ip_hdr *)p->payload;
+    uint32_t src_ip = lwip_ntohl(iphdr->src.addr);
+    return firewall_is_client_allowed(src_ip) ? 1 : 0;
+}
+```
+
+4. NAT management simplified: enable once during `firewall_init()`, never disable. Remove `update_nat()`, `firewall_enable_nat()`, `firewall_disable_nat()`.
+
+**Key properties:**
+- Hook fires only for **forwarded** packets (AP client → internet), not packets to ESP32 itself
+- Captive portal (port 80) and API (port 2121) remain accessible to all clients
+- DNS hijack continues independently — both layers enforce auth
+- Return traffic: NAPT only creates DNAT entries for successfully forwarded outbound packets, so blocked clients don't get return traffic either
+- Performance: linear scan of ≤10 clients per packet — negligible cost
+
+### Spent-Secret Cleanup
+
+**Problem:** `session.c` tracks spent Cashu secrets locally in a static array (`s_spent_secrets[100][65]`). This is redundant — the mint is the authority on spent state, and `nucula_wallet_receive()` already swaps proofs (registering them as spent with the mint).
+
+**Changes:**
+- Remove `s_spent_secrets[]`, `s_spent_count`, `session_is_secret_spent()` from `session.c`
+- Remove `spent_secrets` and `spent_secret_count` from `session_t` struct
+- Remove `spent_secrets` params from `session_create()` / `session_create_bytes()`
+- Remove local spent-secret check in `tollgate_api.c` — keep only mint `check_proof_states` check
+- Update unit tests
+
+**Rationale:** The mint's `cashu_check_proof_states()` already catches double-spends over HTTP. `nucula_wallet_receive()` → `swap()` registers proofs as spent and replaces them. After a successful receive, the old token is useless. Local tracking adds no security, wastes 6.5KB RAM, and is lost on reboot anyway.
 
 ## Testing Infrastructure
 

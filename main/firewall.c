@@ -6,13 +6,13 @@
 #include "lwip/lwip_napt.h"
 #include "lwip/etharp.h"
 #include "lwip/netif.h"
+#include "lwip/prot/ip4.h"
 #include <string.h>
 
 #define MAX_CLIENTS 10
 
 static const char *TAG = "firewall";
 static esp_ip4_addr_t s_ap_ip;
-static bool s_nat_enabled = false;
 
 typedef struct {
     uint32_t ip;
@@ -21,11 +21,6 @@ typedef struct {
 
 static fw_client_t s_clients[MAX_CLIENTS];
 static int s_client_count = 0;
-
-static struct netif *get_ap_netif(void)
-{
-    return netif_get_by_index(NETIF_NO_INDEX);
-}
 
 esp_err_t firewall_get_mac_for_ip(uint32_t client_ip, char *mac_out, size_t mac_out_size)
 {
@@ -66,38 +61,25 @@ esp_err_t firewall_init(esp_ip4_addr_t ap_ip)
     s_ap_ip = ap_ip;
     memset(s_clients, 0, sizeof(s_clients));
     s_client_count = 0;
-    ESP_LOGI(TAG, "Firewall initialized with AP IP=" IPSTR, IP2STR(&s_ap_ip));
+    ip_napt_enable(s_ap_ip.addr, 1);
+    ESP_LOGI(TAG, "Firewall initialized with AP IP=" IPSTR " (NAT always on, per-client filter)", IP2STR(&s_ap_ip));
     return ESP_OK;
 }
 
-static void update_nat(void)
+int tollgate_ip4_canforward_filter(struct pbuf *p, u32_t dest_addr_hostorder)
 {
-    bool should_enable = (s_client_count > 0);
-    if (should_enable && !s_nat_enabled) {
-        ip_napt_enable(s_ap_ip.addr, 1);
-        s_nat_enabled = true;
-        ESP_LOGI(TAG, "NAT enabled (client authenticated)");
-    } else if (!should_enable && s_nat_enabled) {
-        ip_napt_enable(s_ap_ip.addr, 0);
-        s_nat_enabled = false;
-        ESP_LOGI(TAG, "NAT disabled (no authenticated clients)");
+    (void)dest_addr_hostorder;
+    if (p->len < IP_HLEN) return -1;
+    struct ip_hdr *iphdr = (struct ip_hdr *)p->payload;
+    uint32_t src_ip_h = lwip_ntohl(iphdr->src.addr);
+    uint32_t ap_subnet = lwip_ntohl(s_ap_ip.addr) & 0xFFFFFF00;
+    if ((src_ip_h & 0xFFFFFF00) != ap_subnet) {
+        return 1;
     }
-}
-
-void firewall_enable_nat(void)
-{
-    if (s_nat_enabled) return;
-    ip_napt_enable(s_ap_ip.addr, 1);
-    s_nat_enabled = true;
-    ESP_LOGI(TAG, "NAT enabled");
-}
-
-void firewall_disable_nat(void)
-{
-    if (!s_nat_enabled) return;
-    ip_napt_enable(s_ap_ip.addr, 0);
-    s_nat_enabled = false;
-    ESP_LOGI(TAG, "NAT disabled");
+    if (firewall_is_client_allowed(iphdr->src.addr)) {
+        return 1;
+    }
+    return 0;
 }
 
 static fw_client_t *find_client_by_ip(uint32_t client_ip)
@@ -137,7 +119,6 @@ void firewall_grant_access(uint32_t client_ip)
     s_client_count++;
 
     dns_server_set_client_authenticated(client_ip, true);
-    update_nat();
 
     esp_ip4_addr_t ip_addr = { .addr = client_ip };
     ESP_LOGI(TAG, "Access granted to " IPSTR " mac=%s", IP2STR(&ip_addr),
@@ -154,7 +135,6 @@ void firewall_revoke_access(uint32_t client_ip)
             s_clients[i] = s_clients[s_client_count - 1];
             s_client_count--;
             dns_server_set_client_authenticated(client_ip, false);
-            update_nat();
             return;
         }
     }
@@ -166,7 +146,6 @@ void firewall_revoke_all(void)
         dns_server_set_client_authenticated(s_clients[i].ip, false);
     }
     s_client_count = 0;
-    update_nat();
     ESP_LOGI(TAG, "All client access revoked");
 }
 
