@@ -79,6 +79,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
+static void services_start_task(void *pvParameters)
+{
+    start_services();
+    vTaskDelete(NULL);
+}
+
 static void ip_event_handler(void *arg, esp_event_base_t event_base,
                               int32_t event_id, void *event_data)
 {
@@ -88,16 +94,11 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         s_retry_count = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
-        const tollgate_config_t *cfg = tollgate_config_get();
-        nucula_wallet_init(cfg->mint_url);
-
-        lightning_payout_init(&cfg->payout);
-
         char gw_ip_str[16];
         snprintf(gw_ip_str, sizeof(gw_ip_str), IPSTR, IP2STR(&event->ip_info.gw));
         tollgate_client_on_sta_connected(gw_ip_str);
 
-        start_services();
+        xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
         ESP_LOGW(TAG, "Lost IP address");
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
@@ -141,6 +142,9 @@ static void start_services(void)
     session_manager_init();
 
     const tollgate_config_t *cfg = tollgate_config_get();
+    nucula_wallet_init(cfg->mint_url);
+    lightning_payout_init(&cfg->payout);
+
     dns_server_start(ap_ip_info.ip, upstream_dns);
     captive_portal_start(cfg->ap_ip_str);
     tollgate_api_start();

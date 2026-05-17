@@ -1,11 +1,14 @@
 #include "captive_portal.h"
 #include "firewall.h"
+#include "session.h"
 #include "config.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "cJSON.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 #include <sys/param.h>
 
@@ -224,11 +227,32 @@ static esp_err_t whoami_handler(httpd_req_t *req)
 static esp_err_t usage_handler(httpd_req_t *req)
 {
     uint32_t client_ip;
-    char resp[32];
-    if (get_client_ip(req, &client_ip) == ESP_OK && firewall_is_client_allowed(client_ip)) {
-        snprintf(resp, sizeof(resp), "0/0");
+    if (get_client_ip(req, &client_ip) != ESP_OK) {
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "-1/-1", 5);
+        return ESP_OK;
+    }
+
+    session_t *session = session_find_by_ip(client_ip);
+    if (!session || !session->active) {
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "-1/-1", 5);
+        return ESP_OK;
+    }
+
+    const tollgate_config_t *cfg = tollgate_config_get();
+    bool is_bytes = (strcmp(cfg->metric, "bytes") == 0);
+
+    char resp[64];
+    if (is_bytes) {
+        int64_t remaining = (int64_t)session->allotment_bytes - (int64_t)session->bytes_consumed;
+        if (remaining < 0) remaining = 0;
+        snprintf(resp, sizeof(resp), "%lld/%llu", (long long)remaining, (unsigned long long)session->allotment_bytes);
     } else {
-        snprintf(resp, sizeof(resp), "-1/-1");
+        int64_t elapsed = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS - session->start_time_ms;
+        int64_t remaining = session->allotment_ms - elapsed;
+        if (remaining < 0) remaining = 0;
+        snprintf(resp, sizeof(resp), "%lld/%llu", (long long)remaining, (unsigned long long)session->allotment_ms);
     }
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, resp, strlen(resp));
@@ -237,6 +261,7 @@ static esp_err_t usage_handler(httpd_req_t *req)
 
 static esp_err_t reset_auth_handler(httpd_req_t *req)
 {
+    session_revoke_all();
     firewall_revoke_all();
     const char *resp = "{\"status\":\"reset\"}";
     httpd_resp_set_type(req, "application/json");

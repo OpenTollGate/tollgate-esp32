@@ -21,7 +21,7 @@ esp_err_t tollgate_config_init(void)
     g_config.price_per_step = 21;
     g_config.step_size_ms = 60000;
     g_config.step_size_bytes = 22020096;
-    strncpy(g_config.metric, "bytes", sizeof(g_config.metric) - 1);
+    strncpy(g_config.metric, "milliseconds", sizeof(g_config.metric) - 1);
     g_config.persist_threshold_sats = 1;
     g_config.nostr_publish_interval_s = 21600;
     g_config.client_enabled = false;
