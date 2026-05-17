@@ -265,11 +265,6 @@ void app_main(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    const tollgate_config_t *tcfg = tollgate_config_get();
-    ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_STA, tcfg->sta_mac));
-    ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_AP, tcfg->ap_mac));
-    ESP_LOGI(TAG, "MACs set from identity");
-
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                                          &wifi_event_handler, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
@@ -278,6 +273,11 @@ void app_main(void)
                                                          &ip_event_handler, NULL, NULL));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+
+    const tollgate_config_t *tcfg = tollgate_config_get();
+    ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_STA, tcfg->sta_mac));
+    ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_AP, tcfg->ap_mac));
+    ESP_LOGI(TAG, "MACs set from identity");
 
     wifi_configure_ap();
 
@@ -291,6 +291,11 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "WiFi AP+STA started, waiting for connection...");
+
+    if (tollgate_config_get_wifi(&(wifi_config_t){0}) != ESP_OK) {
+        ESP_LOGI(TAG, "No STA network configured, starting services immediately");
+        xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
+    }
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
