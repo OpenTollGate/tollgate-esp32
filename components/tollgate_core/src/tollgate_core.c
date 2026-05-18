@@ -45,11 +45,6 @@ esp_err_t tollgate_core_dns_start(esp_ip4_addr_t upstream_dns)
     return tollgate_core_dns_start_internal(s_ap_ip, upstream_dns);
 }
 
-void tollgate_core_dns_stop(void)
-{
-    tollgate_core_dns_stop_internal();
-}
-
 esp_err_t tollgate_core_process_payment(uint32_t client_ip, const char *token_str)
 {
     if (!s_platform || !token_str) return ESP_FAIL;

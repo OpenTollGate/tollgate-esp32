@@ -2,7 +2,6 @@
 #include "tollgate_core.h"
 #include "config.h"
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 

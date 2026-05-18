@@ -2,6 +2,7 @@
 #define TOLLGATE_CORE_SESSION_H
 
 #include "esp_err.h"
+#include "tollgate_platform.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -19,6 +20,7 @@ typedef struct {
 } tg_session_t;
 
 esp_err_t tollgate_core_session_init(void);
+void tollgate_core_session_set_platform(const tollgate_platform_t *platform);
 
 tg_session_t *tollgate_core_session_create(uint32_t client_ip, uint64_t allotment_ms);
 tg_session_t *tollgate_core_session_create_bytes(uint32_t client_ip, uint64_t allotment_bytes);

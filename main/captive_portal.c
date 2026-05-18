@@ -1,6 +1,7 @@
 #include "captive_portal.h"
-#include "firewall.h"
-#include "session.h"
+#include "tollgate_core.h"
+#include "tollgate_core_firewall.h"
+#include "tollgate_core_session.h"
 #include "config.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -182,7 +183,7 @@ static esp_err_t grant_access_handler(httpd_req_t *req)
 {
     uint32_t client_ip;
     if (get_client_ip(req, &client_ip) == ESP_OK) {
-        firewall_grant_access(client_ip);
+        tollgate_core_fw_grant(client_ip);
     }
     const char *resp = "{\"status\":\"granted\"}";
     httpd_resp_set_type(req, "application/json");
@@ -211,7 +212,7 @@ static esp_err_t whoami_handler(httpd_req_t *req)
     if (get_client_ip(req, &client_ip) == ESP_OK) {
         char mac[18] = {0};
         esp_ip4_addr_t ip = { .addr = client_ip };
-        if (firewall_get_mac_for_ip(client_ip, mac, sizeof(mac)) == ESP_OK) {
+        if (tollgate_core_fw_get_mac_for_ip(client_ip, mac, sizeof(mac)) == ESP_OK) {
             snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=%s", IP2STR(&ip), mac);
         } else {
             snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=unknown", IP2STR(&ip));
@@ -233,7 +234,7 @@ static esp_err_t usage_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    session_t *session = session_find_by_ip(client_ip);
+    tg_session_t *session = tollgate_core_session_find_by_ip(client_ip);
     if (!session || !session->active) {
         httpd_resp_set_type(req, "text/plain");
         httpd_resp_send(req, "-1/-1", 5);
@@ -261,8 +262,8 @@ static esp_err_t usage_handler(httpd_req_t *req)
 
 static esp_err_t reset_auth_handler(httpd_req_t *req)
 {
-    session_revoke_all();
-    firewall_revoke_all();
+    tollgate_core_session_revoke_all();
+    tollgate_core_fw_revoke_all();
     const char *resp = "{\"status\":\"reset\"}";
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, resp, strlen(resp));

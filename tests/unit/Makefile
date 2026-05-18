@@ -14,6 +14,9 @@ CFLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-sign-com
           -DECMULT_WINDOW_SIZE=8 -DECMULT_GEN_PREC_BITS=4 \
           -include stubs/esp_err.h \
           -I stubs \
+          -I $(REPO_ROOT)/components/tollgate_core/include \
+          -I $(REPO_ROOT)/components/tollgate_core/src \
+          -I $(REPO_ROOT)/main \
           -I $(SECP256K1_INC) \
           -I $(SECP256K1_CFG) \
           -I /usr/include/cjson

@@ -4,6 +4,7 @@
 #include "esp_err.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
+#include "tollgate_platform.h"
 #include <stdbool.h>
 
 #include "lightning_payout.h"
@@ -71,5 +72,7 @@ esp_err_t tollgate_config_init(void);
 const tollgate_config_t *tollgate_config_get(void);
 esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config);
 esp_err_t tollgate_config_get_next_wifi(wifi_config_t *wifi_config);
+
+const tollgate_platform_t *tollgate_get_platform(void);
 
 #endif
