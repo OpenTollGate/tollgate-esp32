@@ -572,9 +572,9 @@ Only accept kind 25910 requests from owner npub (derived from nsec in config.jso
 | 63 | New tool: set_price | Unit test | Updates price_per_step | PASS |
 | 64 | New tool: wallet_melt | Unit test | Calls nucula_wallet_melt | PASS |
 | 65 | Kind 11316 on relay | Integration | Announcement found on relay | PASS* |
-| 66 | MCP initialize roundtrip | Integration | Response received via nak | TODO |
-| 67 | get_config via CVM | Integration | Returns valid JSON config | TODO |
-| 68 | get_balance via CVM | Integration | Returns balance + proofs | TODO |
+| 66 | MCP initialize roundtrip | Integration | Response received via nak | PASS |
+| 67 | get_config via CVM | Integration | Returns valid JSON config | PASS |
+| 68 | get_balance via CVM | Integration | Returns balance + proofs | PASS |
 | 69 | set_price via CVM | Integration | Price updated on device | TODO |
 | 70 | Kind 11317 on relay | Integration | Tools list found on relay | PASS* |
 | 71 | Kind 10002 on relay | Integration | Relay list found on relay | PASS* |

@@ -89,9 +89,17 @@
 - [x] Board B connects to WiFi successfully with country code DE
 - [x] Board A confirmed as hardware WiFi issue (auth fails on all APs, Board B works fine)
 - [x] Board B CEP-6 announcements confirmed on relay.primal.net
-- [ ] Verify kind 11316 announcement on relay.primal.net (Board B — DONE via Board B)
-- [ ] Verify kind 11317 tools list on relay.primal.net (Board B — DONE via Board B)
-- [ ] Verify kind 10002 relay list on relay.primal.net (Board B — DONE via Board B)
+- [x] Verify kind 11316 announcement on relay.primal.net — PASS
+- [x] Verify kind 11317 tools list on relay.primal.net — PASS
+- [x] Verify kind 10002 relay list on relay.primal.net — PASS
+- [x] Fix subscription #p filter (must be array, not string) — relay rejected as 'bad req'
+- [x] Fix MCP response publishing (use existing WS instead of new TLS connection)
+- [x] Fix use-after-free bug (tags_str freed before nostr_event_to_json)
+- [x] MCP initialize roundtrip via kind 25910 — PASS
+- [x] tools/call get_config via kind 25910 — PASS
+- [x] tools/call get_balance via kind 25910 — PASS
+- [ ] tools/call set_price via kind 25910
+- [ ] End-to-end CVM test: full initialize → tools/list → tools/call sequence
 - [ ] End-to-end MCP tools/call roundtrip via kind 25910
 - [ ] Verify board npub on contextvm.org/servers
 
