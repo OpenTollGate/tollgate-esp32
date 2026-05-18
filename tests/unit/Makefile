@@ -22,7 +22,7 @@ LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_touch
 
 .PHONY: all test clean $(TESTS)
 
@@ -80,6 +80,9 @@ test_nip04: test_nip04.c $(REPO_ROOT)/main/nip04.c $(SECP256K1_OBJ)
 
 test_cvm_server: test_cvm_server.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_touch: test_touch.c $(REPO_ROOT)/main/touch.c
+	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/touch.c -o $@ $(LDFLAGS)
 
 clean:
 	rm -f $(TESTS) $(SECP256K1_OBJ)
