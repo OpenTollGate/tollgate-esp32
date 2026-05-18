@@ -327,7 +327,7 @@ This refactoring **must not proceed** until these branches land on master:
 - [x] Implement `tollgate_core_tick()` — session expiry check
 - [x] Implement `tollgate_core_get_status_json()` — JSON status
 - [x] Implement `tollgate_core_get_config_json()` — JSON config (via platform)
-- [ ] Build and verify standalone
+- [x] Build and verify standalone
 
 ### Phase 4: Standalone Platform Implementation
 
@@ -344,7 +344,26 @@ This refactoring **must not proceed** until these branches land on master:
 - [x] Remove old `main/cashu.c`, `main/dns_server.c`, `main/firewall.c`, `main/session.c` from CMakeLists.txt
 - [x] Update `main/CMakeLists.txt` (remove old SRCS, add `tollgate_platform.c`, add `tollgate_core` to REQUIRES)
 - [x] Update `main/lwip_tollgate_hooks.h` to call `tollgate_core_ip4_canforward_filter`
-- [ ] Full standalone build + test
+- [x] Full standalone build + test (verified: `c8c68dc` — build passes, 61/61 unit tests pass)
+
+### Phase 4.5: Physical Board E2E Testing (Board A)
+
+- [x] Create `tests/integration/helpers/network.mjs` (shared test utilities)
+- [x] Add arch test Makefile targets with mutex protection to `physical-router-test-automation/esp32/Makefile`
+- [x] Add top-level Makefile wrappers for arch tests
+- [ ] Acquire Board A mutex lock
+- [ ] Flash arch firmware to Board A
+- [ ] Verify boot via serial (no panics, services started)
+- [ ] Connect WiFi to Board A AP
+- [ ] Run smoke test (`arch-test-smoke`)
+- [ ] Run network test (`arch-test-network`)
+- [ ] Run API test (`arch-test-api`)
+- [ ] Run DNS + firewall test (`arch-test-dns-fw`)
+- [ ] Run reset auth test (`arch-test-reset`)
+- [ ] Run session expiry test (`arch-test-session`)
+- [ ] Run phase 2 API test (`arch-test-phase2`)
+- [ ] Commit and push test results
+- [ ] Release Board A mutex lock
 
 ### Phase 5: ESP-Miner Integration
 
