@@ -75,11 +75,21 @@ All use identical pin assignments and bus configuration.
 - [x] Identified PSRAM cache coherency issue (in-place swap = black screen)
 - [x] Studied 3 reference implementations + ArduinoGFX source
 - [x] Text positions adjusted for 320x480 portrait centering
+- [x] Internal DMA byte-swap buffer (MALLOC_CAP_DMA, 4KB chunks)
+- [x] **CRITICAL FIX: Added RAMWR (0x2C) before pixel data** — fixed wrapping/double-vision
+- [x] Display shows correct colors: cyan TollGate + yellow starting... centered on black
+- [x] Reduced font scale to 2/1 for clean readability
+- [x] Implemented full UI: BOOT, READY (QR cycling), PAYMENT, ERROR screens
+- [x] WiFi events trigger display state transitions (READY ↔ ERROR)
+- [x] Color-coded wallet balance (green/yellow/red)
+- [x] **ALL SCREENS VERIFIED WORKING ON HARDWARE**
 
 ### In Progress
-- [ ] Implement byte-swap using internal DMA buffer (like ArduinoGFX)
+- [ ] (nothing)
 
 ### TODO
+- [ ] Run `make test-unit` to check for regressions
+- [ ] Commit, push, and prepare for merge to master
 - [ ] Restore render-on-change logic (proven correct, black screen was from swap not logic)
 - [ ] Use saturated colors: cyan `0x07FF`, yellow `0xFFE0`, white `0xFFFF`
 - [ ] Build, flash, verify correct colors and stable text
