@@ -316,6 +316,7 @@ void axs15231b_flush(void) {
 
     qspi_write_cmd_d16d16(CASET, 0, s_width - 1);
     qspi_write_cmd_d16d16(RASET, 0, s_height - 1);
+    qspi_write_command(RAMWR);
 
     int total_pixels = s_width * s_height;
     int pixel_offset = 0;

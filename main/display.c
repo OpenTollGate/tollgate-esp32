@@ -148,8 +148,8 @@ void display_render_qr(const char *text) {
 
 static void render_boot_screen(void) {
     axs15231b_fill_screen(0x0000);
-    display_render_text(64, 210, "TollGate", 0x07FF, 0x0000, 3);
-    display_render_text(72, 250, "starting...", 0xFFE0, 0x0000, 2);
+    display_render_text(96, 220, "TollGate", 0x07FF, 0x0000, 2);
+    display_render_text(116, 245, "starting...", 0xFFE0, 0x0000, 1);
     axs15231b_flush();
 }
 
@@ -185,15 +185,15 @@ static void render_ready_screen(void) {
 
 static void render_payment_screen(void) {
     axs15231b_fill_screen(0x07E0);
-    display_render_text(100, 220, "Paid!", 0x0000, 0x07E0, 3);
-    display_render_text(48, 260, "Access granted", 0x0000, 0x07E0, 2);
+    display_render_text(128, 225, "Paid!", 0x0000, 0x07E0, 2);
+    display_render_text(104, 245, "Access granted", 0x0000, 0x07E0, 1);
     axs15231b_flush();
 }
 
 static void render_error_screen(void) {
     axs15231b_fill_screen(0xF800);
-    display_render_text(28, 220, "No upstream", 0xFFFF, 0xF800, 3);
-    display_render_text(64, 260, "Check config", 0xFFFF, 0xF800, 2);
+    display_render_text(104, 225, "No upstream", 0xFFFF, 0xF800, 2);
+    display_render_text(120, 245, "Check config", 0xFFFF, 0xF800, 1);
     axs15231b_flush();
 }
 
@@ -203,43 +203,32 @@ static void display_task(void *pvParameters) {
     while (1) {
         display_state_t state = s_state;
 
-        bool qr_changed = false;
         if (state == DISPLAY_READY) {
             int64_t now = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
             if ((now - s_last_qr_switch) >= QR_CYCLE_MS) {
                 s_qr_mode = (s_qr_mode == DISPLAY_QR_WIFI) ? DISPLAY_QR_PORTAL : DISPLAY_QR_WIFI;
                 s_last_qr_switch = now;
-                qr_changed = true;
             }
         }
 
-        if (s_force_render || state != s_rendered_state ||
-            (state == DISPLAY_READY && qr_changed)) {
-            s_force_render = false;
-
-            switch (state) {
-                case DISPLAY_BOOT:
-                    render_boot_screen();
-                    break;
-                case DISPLAY_READY:
-                    render_ready_screen();
-                    break;
-                case DISPLAY_PAYMENT_RECEIVED:
-                    render_payment_screen();
-                    vTaskDelay(pdMS_TO_TICKS(2000));
-                    s_state = DISPLAY_READY;
-                    s_force_render = true;
-                    break;
-                case DISPLAY_ERROR:
-                    render_error_screen();
-                    break;
-            }
-
-            s_rendered_state = state;
-            s_rendered_qr_mode = s_qr_mode;
+        switch (state) {
+            case DISPLAY_BOOT:
+                render_boot_screen();
+                break;
+            case DISPLAY_READY:
+                render_ready_screen();
+                break;
+            case DISPLAY_PAYMENT_RECEIVED:
+                render_payment_screen();
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                s_state = DISPLAY_READY;
+                break;
+            case DISPLAY_ERROR:
+                render_error_screen();
+                break;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
