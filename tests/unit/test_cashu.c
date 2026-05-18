@@ -20,6 +20,18 @@ int main(void)
     g_test_config.price_per_step = 21;
     g_test_config.step_size_ms = 60000;
 
+    const char *mints[] = {
+        "https://testnut.cashu.space",
+        "https://mint.minibits.cash/Bitcoin",
+        "https://mint.coinos.io",
+        "https://21mint.me",
+    };
+    for (int i = 0; i < 4; i++) {
+        strncpy(g_test_config.accepted_mints[i], mints[i],
+                sizeof(g_test_config.accepted_mints[i]) - 1);
+    }
+    g_test_config.accepted_mint_count = 4;
+
     printf("\n--- cashu_calculate_allotment_ms ---\n");
     uint64_t a1 = cashu_calculate_allotment_ms(21, 21, 60000);
     ASSERT_EQ_INT(60000, (int)a1, "21 sats at 21 sats/min = 60000ms");
@@ -33,10 +45,14 @@ int main(void)
     uint64_t a4 = cashu_calculate_allotment_ms(100, 10, 30000);
     ASSERT_EQ_INT(300000, (int)a4, "100 sats at 10 sats/30s = 300000ms");
 
-    printf("\n--- cashu_is_mint_accepted ---\n");
+    printf("\n--- cashu_is_mint_accepted (multi-mint) ---\n");
     ASSERT(cashu_is_mint_accepted("https://testnut.cashu.space"), "testnut.cashu.space accepted");
+    ASSERT(cashu_is_mint_accepted("https://mint.minibits.cash/Bitcoin"), "minibits accepted");
+    ASSERT(cashu_is_mint_accepted("https://mint.coinos.io"), "coinos accepted");
+    ASSERT(cashu_is_mint_accepted("https://21mint.me"), "21mint accepted");
     ASSERT(!cashu_is_mint_accepted("https://evil.mint.example.com"), "evil mint rejected");
     ASSERT(!cashu_is_mint_accepted(""), "empty string rejected");
+    ASSERT(!cashu_is_mint_accepted(NULL), "NULL rejected");
 
     printf("\n--- cashu_decode_token with garbage ---\n");
     cashu_token_t token;
