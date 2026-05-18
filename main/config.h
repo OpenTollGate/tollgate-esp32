@@ -9,7 +9,7 @@
 #include "lightning_payout.h"
 
 #define TOLLGATE_MAX_WIFI_NETWORKS 5
-#define TOLLGATE_MAX_MINT_URLS     3
+#define TOLLGATE_MAX_MINT_URLS     8
 #define TOLLGATE_MAX_AP_SSID_LEN   32
 #define TOLLGATE_MAX_AP_PASS_LEN   64
 #define TOLLGATE_MAX_RELAYS        4
@@ -40,6 +40,8 @@ typedef struct {
     char ap_ip_str[16];
 
     char mint_url[256];
+    char accepted_mints[TOLLGATE_MAX_MINT_URLS][256];
+    int accepted_mint_count;
     char lnurl_url[256];
     int price_per_step;
     int step_size_ms;

@@ -267,6 +267,9 @@ bool cashu_is_mint_accepted(const char *mint_url)
 {
     if (!mint_url || mint_url[0] == '\0') return false;
     const tollgate_config_t *cfg = tollgate_config_get();
-    if (strstr(mint_url, cfg->mint_url) != NULL) return true;
-    return (strcmp(mint_url, cfg->mint_url) == 0);
+    for (int i = 0; i < cfg->accepted_mint_count; i++) {
+        if (strstr(mint_url, cfg->accepted_mints[i]) != NULL) return true;
+        if (strcmp(mint_url, cfg->accepted_mints[i]) == 0) return true;
+    }
+    return false;
 }

@@ -58,6 +58,7 @@ esp_err_t tollgate_config_init(void)
             "],"
             "\"ap_password\":\"\","
             "\"mint_url\":\"https://testnut.cashu.space\","
+            "\"accepted_mints\":[\"https://testnut.cashu.space\"],"
             "\"price_per_step\":21,"
             "\"step_size_ms\":60000,"
             "\"nostr_geohash\":\"u281w0dfz\","
@@ -130,6 +131,20 @@ esp_err_t tollgate_config_init(void)
 
     cJSON *mint = cJSON_GetObjectItem(root, "mint_url");
     if (mint) strncpy(g_config.mint_url, mint->valuestring, sizeof(g_config.mint_url) - 1);
+
+    cJSON *acc_mints = cJSON_GetObjectItem(root, "accepted_mints");
+    if (acc_mints && cJSON_IsArray(acc_mints)) {
+        int mcount = cJSON_GetArraySize(acc_mints);
+        if (mcount > TOLLGATE_MAX_MINT_URLS) mcount = TOLLGATE_MAX_MINT_URLS;
+        for (int i = 0; i < mcount; i++) {
+            cJSON *m = cJSON_GetArrayItem(acc_mints, i);
+            if (m && cJSON_IsString(m)) {
+                strncpy(g_config.accepted_mints[i], m->valuestring,
+                        sizeof(g_config.accepted_mints[i]) - 1);
+                g_config.accepted_mint_count++;
+            }
+        }
+    }
 
     cJSON *lnurl = cJSON_GetObjectItem(root, "lnurl_url");
     if (lnurl) strncpy(g_config.lnurl_url, lnurl->valuestring, sizeof(g_config.lnurl_url) - 1);
@@ -264,15 +279,21 @@ esp_err_t tollgate_config_init(void)
 
     cJSON_Delete(root);
 
+    if (g_config.accepted_mint_count == 0 && g_config.mint_url[0] != '\0') {
+        strncpy(g_config.accepted_mints[0], g_config.mint_url,
+                sizeof(g_config.accepted_mints[0]) - 1);
+        g_config.accepted_mint_count = 1;
+    }
+
     if (g_config.nostr_relay_count == 0) {
         strncpy(g_config.nostr_relays[0], "wss://relay.damus.io", sizeof(g_config.nostr_relays[0]) - 1);
         strncpy(g_config.nostr_relays[1], "wss://nos.lol", sizeof(g_config.nostr_relays[1]) - 1);
         g_config.nostr_relay_count = 2;
     }
 
-    ESP_LOGI(TAG, "Config loaded: nsec=%s...%s, %d WiFi networks, price=%d sats/%dms",
+    ESP_LOGI(TAG, "Config loaded: nsec=%s...%s, %d WiFi networks, %d accepted mints, price=%d sats/%dms",
              g_config.nsec, g_config.nsec + 60, g_config.network_count,
-             g_config.price_per_step, g_config.step_size_ms);
+             g_config.accepted_mint_count, g_config.price_per_step, g_config.step_size_ms);
     return ESP_OK;
 }
 
