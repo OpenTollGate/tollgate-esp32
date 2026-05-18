@@ -290,7 +290,7 @@ esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config)
     memset(wifi_config, 0, sizeof(wifi_config_t));
     strncpy((char *)wifi_config->sta.ssid, g_config.networks[idx].ssid, sizeof(wifi_config->sta.ssid) - 1);
     strncpy((char *)wifi_config->sta.password, g_config.networks[idx].password, sizeof(wifi_config->sta.password) - 1);
-    wifi_config->sta.threshold.authmode = WIFI_AUTH_OPEN;
+    wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     wifi_config->sta.pmf_cfg.capable = true;
     wifi_config->sta.pmf_cfg.required = false;
     wifi_config->sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
