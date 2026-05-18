@@ -4,6 +4,7 @@
 #include "session.h"
 #include "firewall.h"
 #include "nucula_wallet.h"
+#include "mint_health.h"
 #include "esp_log.h"
 #include "cJSON.h"
 #include "lwip/sockets.h"
@@ -110,16 +111,36 @@ static esp_err_t api_get_discovery(httpd_req_t *req)
     cJSON_AddItemToArray(step_tag, cJSON_CreateString(step_str));
     cJSON_AddItemToArray(tags, step_tag);
 
-    cJSON *price_tag = cJSON_CreateArray();
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString("price_per_step"));
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString("cashu"));
     char price_str[32];
     snprintf(price_str, sizeof(price_str), "%d", cfg->price_per_step);
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString(price_str));
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString("sat"));
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString(cfg->mint_url));
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString("1"));
-    cJSON_AddItemToArray(tags, price_tag);
+
+    int mint_count = 0;
+    const mint_status_t *mints = mint_health_get_all(&mint_count);
+    bool any_reachable = false;
+
+    for (int i = 0; i < mint_count; i++) {
+        if (!mints[i].reachable) continue;
+        any_reachable = true;
+        cJSON *price_tag = cJSON_CreateArray();
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("price_per_step"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("cashu"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(price_str));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("sat"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(mints[i].url));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("1"));
+        cJSON_AddItemToArray(tags, price_tag);
+    }
+
+    if (!any_reachable) {
+        cJSON *price_tag = cJSON_CreateArray();
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("price_per_step"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("cashu"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(price_str));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("sat"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(cfg->mint_url));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("1"));
+        cJSON_AddItemToArray(tags, price_tag);
+    }
 
     cJSON *tips_tag = cJSON_CreateArray();
     cJSON_AddItemToArray(tips_tag, cJSON_CreateString("tips"));

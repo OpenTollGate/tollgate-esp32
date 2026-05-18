@@ -2,6 +2,7 @@
 #include "firewall.h"
 #include "session.h"
 #include "config.h"
+#include "mint_health.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "cJSON.h"
@@ -42,9 +43,14 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 ".btn:disabled{background:#333;color:#666;cursor:not-allowed}"
 ".mints{background:#252525;border-radius:12px;padding:12px;margin-top:16px;text-align:left}"
 ".mints-title{color:#888;font-size:12px;margin-bottom:8px}"
-".mint-url{font-family:monospace;font-size:11px;color:#f7931a;word-break:break-all;"
-"background:#1a1a1a;padding:8px;border-radius:6px;cursor:pointer}"
-".mint-url:active{opacity:0.7}"
+".mint-item{display:flex;align-items:center;padding:6px 8px;margin-bottom:4px;"
+"background:#1a1a1a;border-radius:6px;cursor:pointer}"
+".mint-item:active{opacity:0.7}"
+".mint-dot{width:8px;height:8px;border-radius:50%;margin-right:8px;flex-shrink:0}"
+".mint-dot.green{background:#4caf50}"
+".mint-dot.grey{background:#666}"
+".mint-url{font-family:monospace;font-size:11px;color:#f7931a;word-break:break-all}"
+".mint-url.dim{color:#666}"
 ".mint-hint{color:#666;font-size:10px;margin-top:4px}"
 "#status{margin-top:16px;padding:12px;border-radius:8px;display:none;font-size:14px}"
 "#status.success{display:block;background:#1a472a;color:#4caf50}"
@@ -63,20 +69,21 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 "<button class='btn' id='payBtn' onclick='payToken()'>Pay & Connect</button>"
 "<div class='mints'>"
 "<div class='mints-title'>SUPPORTED MINTS</div>"
-"<div class='mint-url' id='mintUrl' onclick='copyMint()'>__MINT_URL__</div>"
-"<div class='mint-hint'>Tap to copy &bull; Mint tokens at this URL before paying</div>"
+"<div id='mintList'>__MINT_LIST__</div>"
+"<div class='mint-hint'>Tap to copy &bull; Green = reachable</div>"
 "</div>"
 "<div id='status'></div>"
 "</div>"
 "<script>"
-"const mintUrlEl=document.getElementById('mintUrl');"
-"const mintUrl=mintUrlEl.textContent;"
+"const mintListEl=document.getElementById('mintList');"
 "const statusEl=document.getElementById('status');"
 "const payBtn=document.getElementById('payBtn');"
 "const tokenInput=document.getElementById('tokenInput');"
-"function copyMint(){"
-"if(navigator.clipboard){navigator.clipboard.writeText(mintUrl);"
-"mintUrlEl.textContent='Copied!';setTimeout(()=>{mintUrlEl.textContent=mintUrl;},1000);}"
+"function copyMint(url){"
+"if(navigator.clipboard){navigator.clipboard.writeText(url);"
+"const el=event.currentTarget;const u=el.querySelector('.mint-url');"
+"const orig=u.textContent;u.textContent='Copied!';"
+"setTimeout(()=>{u.textContent=orig;},1000);}"
 "}"
 "function showStatus(msg,type){statusEl.textContent=msg;statusEl.className=type;}"
 "function payToken(){"
@@ -93,6 +100,20 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 "else if(d.kind===21023){showStatus('Error: '+(d.content||'Unknown error'),'error');payBtn.disabled=false;}"
 "}).catch(e=>{showStatus(e.message||'Connection error','error');payBtn.disabled=false;});"
 "}"
+"function refreshMints(){"
+"fetch('http://__AP_IP__:2121/mints').then(r=>r.json()).then(data=>{"
+"let html='';"
+"for(const m of data){"
+"const cls=m.reachable?'green':'grey';"
+"const urlCls=m.reachable?'mint-url':'mint-url dim';"
+"html+='<div class=\"mint-item\" onclick=\"copyMint(\\''+m.url+'\\')\">';"
+"html+='<span class=\"mint-dot '+cls+'\"></span>';"
+"html+='<span class=\"'+urlCls+'\">'+m.url+'</span></div>';"
+"}"
+"if(html)mintListEl.innerHTML=html;"
+"}).catch(()=>{});"
+"}"
+"setInterval(refreshMints,30000);"
 "</script>"
 "</body></html>";
 
@@ -122,10 +143,32 @@ static esp_err_t portal_handler(httpd_req_t *req)
     const char *tpl = PORTAL_HTML_TEMPLATE;
     size_t tpl_len = strlen(tpl);
 
+    char mint_list_html[4096];
+    mint_list_html[0] = '\0';
+    int mint_count = 0;
+    const mint_status_t *mints = mint_health_get_all(&mint_count);
+    for (int i = 0; i < mint_count; i++) {
+        const char *cls = mints[i].reachable ? "green" : "grey";
+        const char *url_cls = mints[i].reachable ? "mint-url" : "mint-url dim";
+        char item[512];
+        snprintf(item, sizeof(item),
+                 "<div class='mint-item' onclick='copyMint(\"%s\")'>"
+                 "<span class='mint-dot %s'></span>"
+                 "<span class='%s'>%s</span></div>",
+                 mints[i].url, cls, url_cls, mints[i].url);
+        strncat(mint_list_html, item, sizeof(mint_list_html) - strlen(mint_list_html) - 1);
+    }
+    if (mint_count == 0) {
+        const tollgate_config_t *cfg = tollgate_config_get();
+        snprintf(mint_list_html, sizeof(mint_list_html),
+                 "<div class='mint-item'><span class='mint-dot grey'></span>"
+                 "<span class='mint-url dim'>%s</span></div>", cfg->mint_url);
+    }
+
     struct { const char *key; const char *val; } subs[] = {
         { "__AP_IP__", s_ap_ip_str },
         { "__PRICE__", price_str },
-        { "__MINT_URL__", cfg->mint_url },
+        { "__MINT_LIST__", mint_list_html },
     };
     int nsubs = sizeof(subs) / sizeof(subs[0]);
 
@@ -187,6 +230,25 @@ static esp_err_t grant_access_handler(httpd_req_t *req)
     const char *resp = "{\"status\":\"granted\"}";
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, resp, strlen(resp));
+    return ESP_OK;
+}
+
+static esp_err_t mints_handler(httpd_req_t *req)
+{
+    int mint_count = 0;
+    const mint_status_t *mints = mint_health_get_all(&mint_count);
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < mint_count; i++) {
+        cJSON *obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(obj, "url", mints[i].url);
+        cJSON_AddBoolToObject(obj, "reachable", mints[i].reachable);
+        cJSON_AddItemToArray(arr, obj);
+    }
+    char *json = cJSON_PrintUnformatted(arr);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, strlen(json));
+    cJSON_free(json);
+    cJSON_Delete(arr);
     return ESP_OK;
 }
 
@@ -290,6 +352,7 @@ static esp_err_t catchall_handler(httpd_req_t *req)
 
 static const httpd_uri_t uri_portal = { .uri = "/", .method = HTTP_GET, .handler = portal_handler };
 static const httpd_uri_t uri_grant = { .uri = "/grant_access", .method = HTTP_GET, .handler = grant_access_handler };
+static const httpd_uri_t uri_mints = { .uri = "/mints", .method = HTTP_GET, .handler = mints_handler };
 static const httpd_uri_t uri_status = { .uri = "/api/status", .method = HTTP_GET, .handler = status_handler };
 static const httpd_uri_t uri_whoami = { .uri = "/whoami", .method = HTTP_GET, .handler = whoami_handler };
 static const httpd_uri_t uri_usage = { .uri = "/usage", .method = HTTP_GET, .handler = usage_handler };
@@ -320,6 +383,7 @@ esp_err_t captive_portal_start(const char *ap_ip_str)
 
     httpd_register_uri_handler(s_server, &uri_portal);
     httpd_register_uri_handler(s_server, &uri_grant);
+    httpd_register_uri_handler(s_server, &uri_mints);
     httpd_register_uri_handler(s_server, &uri_status);
     httpd_register_uri_handler(s_server, &uri_whoami);
     httpd_register_uri_handler(s_server, &uri_usage);

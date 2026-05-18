@@ -1,5 +1,6 @@
 #include "cashu.h"
 #include "config.h"
+#include "mint_health.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
 #include "cJSON.h"
@@ -268,8 +269,10 @@ bool cashu_is_mint_accepted(const char *mint_url)
     if (!mint_url || mint_url[0] == '\0') return false;
     const tollgate_config_t *cfg = tollgate_config_get();
     for (int i = 0; i < cfg->accepted_mint_count; i++) {
-        if (strstr(mint_url, cfg->accepted_mints[i]) != NULL) return true;
-        if (strcmp(mint_url, cfg->accepted_mints[i]) == 0) return true;
+        if (strstr(mint_url, cfg->accepted_mints[i]) != NULL ||
+            strcmp(mint_url, cfg->accepted_mints[i]) == 0) {
+            return mint_health_is_reachable(mint_url);
+        }
     }
     return false;
 }

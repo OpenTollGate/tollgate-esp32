@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 esp_err_t nucula_wallet_init(const char *mint_url);
+esp_err_t nucula_wallet_init_multi(const char mint_urls[][256], int count);
 
 esp_err_t nucula_wallet_receive(const char *token_str);
 

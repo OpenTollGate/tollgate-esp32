@@ -22,6 +22,7 @@
 #include "wifistr.h"
 #include "tollgate_client.h"
 #include "lightning_payout.h"
+#include "mint_health.h"
 #include "cvm_server.h"
 #include "display.h"
 
@@ -151,7 +152,15 @@ static void start_services(void)
     session_manager_init();
 
     const tollgate_config_t *cfg = tollgate_config_get();
-    nucula_wallet_init(cfg->mint_url);
+
+    mint_health_init(cfg->accepted_mints, cfg->accepted_mint_count);
+    mint_health_start();
+
+    if (cfg->accepted_mint_count > 1) {
+        nucula_wallet_init_multi(cfg->accepted_mints, cfg->accepted_mint_count);
+    } else {
+        nucula_wallet_init(cfg->mint_url);
+    }
     lightning_payout_init(&cfg->payout);
 
     dns_server_start(ap_ip_info.ip, upstream_dns);
@@ -187,6 +196,7 @@ static void stop_services(void)
     captive_portal_stop();
     tollgate_api_stop();
     dns_server_stop();
+    mint_health_stop();
     cvm_server_stop();
     firewall_revoke_all();
     s_services_running = false;
