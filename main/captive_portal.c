@@ -144,19 +144,22 @@ static esp_err_t portal_handler(httpd_req_t *req)
     size_t tpl_len = strlen(tpl);
 
     char mint_list_html[4096];
+    size_t mint_list_cap = sizeof(mint_list_html);
+    size_t mint_list_len = 0;
     mint_list_html[0] = '\0';
     int mint_count = 0;
     const mint_status_t *mints = mint_health_get_all(&mint_count);
     for (int i = 0; i < mint_count; i++) {
         const char *cls = mints[i].reachable ? "green" : "grey";
         const char *url_cls = mints[i].reachable ? "mint-url" : "mint-url dim";
-        char item[512];
-        snprintf(item, sizeof(item),
+        int written = snprintf(mint_list_html + mint_list_len, mint_list_cap - mint_list_len,
                  "<div class='mint-item' onclick='copyMint(\"%s\")'>"
                  "<span class='mint-dot %s'></span>"
                  "<span class='%s'>%s</span></div>",
                  mints[i].url, cls, url_cls, mints[i].url);
-        strncat(mint_list_html, item, sizeof(mint_list_html) - strlen(mint_list_html) - 1);
+        if (written > 0 && (size_t)written < mint_list_cap - mint_list_len) {
+            mint_list_len += (size_t)written;
+        }
     }
     if (mint_count == 0) {
         const tollgate_config_t *cfg = tollgate_config_get();
