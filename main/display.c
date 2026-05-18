@@ -2,6 +2,7 @@
 #include "axs15231b.h"
 #include "qrcoded.h"
 #include "font.h"
+#include "nucula_wallet.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -34,6 +35,8 @@ static int s_price_per_step = 0;
 static bool s_initialized = false;
 static int64_t s_last_qr_switch = 0;
 static display_qr_mode_t s_qr_mode = DISPLAY_QR_WIFI;
+static int s_last_payment_sats = 0;
+static int64_t s_last_allotment_ms = 0;
 
 static int qr_version_from_strlen(int len) {
     if (len <= 17) return 1;
@@ -251,13 +254,18 @@ static void render_payment_screen(void) {
 
     char line[48];
 
-    snprintf(line, sizeof(line), "Paid: %d sats", s_price_per_step);
+    snprintf(line, sizeof(line), "Paid: %d sats", s_last_payment_sats);
     int lw = strlen(line) * 8;
     display_render_text((screen_w - lw) / 2, 270, line, COLOR_WHITE, COLOR_BG, 1);
 
-    const char *time_msg = "Time: 1 min";
-    int tw = strlen(time_msg) * 8;
-    display_render_text((screen_w - tw) / 2, 290, time_msg, COLOR_WHITE, COLOR_BG, 1);
+    int64_t secs = s_last_allotment_ms / 1000;
+    if (secs >= 60) {
+        snprintf(line, sizeof(line), "Time: %lld min", (long long)(secs / 60));
+    } else {
+        snprintf(line, sizeof(line), "Time: %lld sec", (long long)secs);
+    }
+    lw = strlen(line) * 8;
+    display_render_text((screen_w - lw) / 2, 290, line, COLOR_WHITE, COLOR_BG, 1);
 
     snprintf(line, sizeof(line), "Wallet: %llu sats", (unsigned long long)s_wallet_balance);
     lw = strlen(line) * 8;
@@ -377,4 +385,11 @@ void display_update(const char *ap_ssid, int active_clients,
     if (price_per_step > 0) s_price_per_step = price_per_step;
     s_active_clients = active_clients;
     s_wallet_balance = wallet_balance;
+}
+
+void display_notify_payment(int amount_sats, int64_t allotment_ms) {
+    s_last_payment_sats = amount_sats;
+    s_last_allotment_ms = allotment_ms;
+    s_wallet_balance = nucula_wallet_balance();
+    display_set_state(DISPLAY_PAYMENT_RECEIVED);
 }

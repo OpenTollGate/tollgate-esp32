@@ -18,7 +18,6 @@
 | Orange | `0xFD20` | Accent (Bitcoin orange) |
 | Red | `0xF800` | Errors, alerts |
 | Dim gray | `0x8410` | Secondary info |
-| Dark bg | `0x2104` | Card backgrounds |
 
 ## Screen States
 
@@ -26,111 +25,141 @@
 Shown during startup until WiFi connects and services start.
 
 ```
-┌──────────────────────────┐  0
-│                          │
-│        TollGate          │  y=180, cyan, scale 2
-│      connecting...       │  y=205, yellow, scale 1
-│                          │
-│    WiFi: trying...       │  y=260, dim, scale 1
-│                          │
-└──────────────────────────┘  479
+┌──────────────────────────┐
+│        TollGate          │  cyan, scale 2
+│      connecting...       │  yellow, scale 1
+│    WiFi: trying...       │  dim, scale 1
+└──────────────────────────┘
 ```
 
-WiFi status line shows: "trying...", "connected!", "failed (retry)"
-
-### 2. READY — QR Cycling (primary screen)
+### 2. READY — QR Cycling
 Cycles every 5 seconds between WiFi QR and Portal QR.
 
 **View A — WiFi QR:**
 ```
-┌──────────────────────────┐  0
+┌──────────────────────────┐
 │         ┌──────┐         │
-│         │  QR  │         │  QR: WIFI:S:<ssid>;T:nopass;;
-│         │      │         │  Centered in top 2/3 of screen
+│         │  QR  │         │  WIFI:S:<ssid>;T:nopass;;
 │         └──────┘         │
-│                          │  ~y=320
-│   Scan to connect        │  cyan, scale 1
-│   SSID: TollGate-XXXX   │  white, scale 1
-│   21 sats/min            │  orange, scale 1
-│   Wallet: 420 sats       │  green, scale 1
-└──────────────────────────┘  479
+│   Scan to connect        │  cyan
+│   SSID: TollGate-XXXX   │  white
+│   21 sats/min            │  orange
+│   Wallet: 420 sats       │  green/yellow/red
+└──────────────────────────┘
 ```
 
 **View B — Portal QR:**
 ```
-┌──────────────────────────┐  0
+┌──────────────────────────┐
 │         ┌──────┐         │
-│         │  QR  │         │  QR: http://10.x.x.x/
-│         │      │         │
+│         │  QR  │         │  http://10.x.x.x/
 │         └──────┘         │
-│                          │  ~y=320
-│   Portal URL             │  cyan, scale 1
-│   testnut.cashu.space    │  orange, scale 1 (mint domain)
-│   21 sats/min            │  yellow, scale 1
-│   Clients: 3             │  green, scale 1
-└──────────────────────────┘  479
+│   Portal URL             │  cyan
+│   Mint: testnut...       │  orange
+│   21 sats/min            │  orange
+│   Clients: 3             │  green
+└──────────────────────────┘
 ```
 
 ### 3. PAYMENT_RECEIVED
 Shows for 3 seconds after payment, then returns to READY.
 
 ```
-┌──────────────────────────┐  0
-│                          │
-│   ████████████████████   │  green filled bar, y=190..230
+┌──────────────────────────┐
+│   ████████████████████   │  green bar
 │      ACCESS GRANTED      │  white on green, scale 2
 │   ████████████████████   │
-│                          │
-│      Paid: 21 sats       │  white, scale 1
-│      Time: 1 min         │  white, scale 1
-│                          │
-│   Wallet: 441 sats       │  green, scale 1
-└──────────────────────────┘  479
+│      Paid: 42 sats       │  white
+│      Time: 2 min         │  white
+│   Wallet: 462 sats       │  green
+└──────────────────────────┘
 ```
 
 ### 4. ERROR
 Shown when upstream WiFi is disconnected.
 
 ```
-┌──────────────────────────┐  0
-│   ████████████████████   │  red filled bar, y=190..230
+┌──────────────────────────┐
+│   ████████████████████   │  red bar
 │     NO UPSTREAM          │  white on red, scale 2
 │   ████████████████████   │
-│                          │
-│   Internet unavailable   │  white, scale 1
-│   Check WiFi config      │  yellow, scale 1
-│                          │
-│   AP still active        │  green, scale 1
-│   SSID: TollGate-XXXX   │  dim, scale 1
-└──────────────────────────┘  479
+│   Internet unavailable   │  white
+│   Check WiFi config      │  yellow
+│   AP still active        │  green
+│   SSID: TollGate-XXXX   │  dim
+└──────────────────────────┘
 ```
 
-## Data Flow
+## State Synchronization
 
-### display_update() receives:
+### Data sources and update triggers
+
+| Display data | Source function | Update trigger |
+|-------------|----------------|----------------|
+| SSID | `config.ap_ssid` | Once at `start_services()` |
+| Portal URL | `config.ap_ip_str` | Once at `start_services()` |
+| Mint URL | `config.mint_url` | Once at `start_services()` |
+| Price | `config.price_per_step` | Once at `start_services()` |
+| **Wallet balance** | `nucula_wallet_balance()` | **Every 5s in main loop** |
+| **Client count** | `session_active_count()` | **Every 5s in main loop + AP events** |
+| **Last payment** | `display_notify_payment()` | **On each payment in API handler** |
+| WiFi status | Event handler | On STA connect/disconnect |
+
+### State transitions
+
+```
+app_main()
+  └─ display_set_state(BOOT)
+  └─ display_update(price, mint, ssid)   ← config data available after config_init
+
+wifi_event_handler(STA_DISCONNECTED)
+  └─ display_set_state(ERROR)
+  └─ display_update(wifi_status="retrying...")
+
+ip_event_handler(STA_GOT_IP)
+  └─ start_services()
+       └─ display_set_state(READY)
+       └─ display_update(ssid, portal_url, mint, price)
+
+tollgate_api (POST / payment)
+  └─ session_create()
+  └─ nucula_wallet_receive()
+  └─ display_notify_payment(amount_sats, allotment)   ← NEW
+  └─ display_set_state(PAYMENT_RECEIVED)
+
+display_task (3s timeout)
+  └─ auto-return PAYMENT_RECEIVED → READY
+
+app_main() main loop (every 5s)
+  └─ display_update(wallet_balance, client_count)     ← NEW periodic refresh
+```
+
+### New API: `display_notify_payment()`
+
 ```c
-void display_update(const char *ap_ssid, int active_clients,
-                    uint64_t wallet_balance, const char *portal_url);
+void display_notify_payment(int amount_sats, int64_t allotment_ms);
 ```
 
-### Enhanced to also receive:
-```c
-void display_update(const char *ap_ssid, int active_clients,
-                    uint64_t wallet_balance, const char *portal_url,
-                    const char *mint_url, int price_per_step,
-                    const char *wifi_status);
-```
+Stores the last payment amount and time purchased for the PAYMENT screen to display.
 
-### display_set_state() triggers:
-- `DISPLAY_BOOT` → at startup
-- `DISPLAY_READY` → when services start (WiFi connected)
-- `DISPLAY_PAYMENT_RECEIVED` → on successful payment (auto-returns to READY)
-- `DISPLAY_ERROR` → when upstream WiFi disconnects
+## Implementation Checklist
 
-## Implementation Notes
+### Done
+- [x] QSPI driver working with correct colors (DMA byte-swap + RAMWR)
+- [x] BOOT screen with title and WiFi status
+- [x] READY screen with QR cycling, price, mint, balance, clients
+- [x] PAYMENT screen layout (green banner, amount, time, wallet)
+- [x] ERROR screen layout (red banner, guidance, AP status)
+- [x] WiFi disconnect → ERROR state transition
+- [x] WiFi connect → READY state transition
 
-- Render every 2 seconds (reduces SPI bus load vs 1 second)
-- QR codes: auto-size based on string length, centered in top portion
-- Mint URL: show only domain part (truncate at first `/`)
-- Wallet balance: color-coded (green > 100, yellow > 0, red = 0)
-- Client count: "Clients: N" or empty string if 0
+### TODO — State Sync
+- [ ] Periodic display data refresh in main loop (wallet balance, client count every 5s)
+- [ ] `display_notify_payment()` API to pass payment amount and allotment
+- [ ] Call `display_set_state(PAYMENT_RECEIVED)` from tollgate_api.c after payment
+- [ ] Pass config data (price, mint) to display during boot phase
+- [ ] Update client count on AP station connect/disconnect events
+
+### TODO — Polish
+- [ ] Run `make test-unit` to check for regressions
+- [ ] Commit, push, prepare for merge

@@ -77,11 +77,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Station connected: MAC=%02x:%02x:%02x:%02x:%02x:%02x",
                  event->mac[0], event->mac[1], event->mac[2],
                  event->mac[3], event->mac[4], event->mac[5]);
+        display_update(NULL, session_active_count(), 0, NULL, NULL, 0, NULL);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STADISCONNECTED) {
         wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
         ESP_LOGI(TAG, "Station disconnected: MAC=%02x:%02x:%02x:%02x:%02x:%02x",
                  event->mac[0], event->mac[1], event->mac[2],
                  event->mac[3], event->mac[4], event->mac[5]);
+        display_update(NULL, session_active_count(), 0, NULL, NULL, 0, NULL);
     }
 }
 
@@ -314,6 +316,9 @@ void app_main(void)
 
     ESP_LOGI(TAG, "WiFi AP+STA started, waiting for connection...");
 
+    display_update(tcfg->ap_ssid, 0, 0, NULL,
+                   tcfg->mint_url, tcfg->price_per_step, "connecting...");
+
     if (tollgate_config_get_wifi(&(wifi_config_t){0}) != ESP_OK) {
         ESP_LOGI(TAG, "No STA network configured, starting services immediately");
         xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
@@ -324,5 +329,13 @@ void app_main(void)
         session_tick();
         tollgate_client_tick();
         lightning_payout_tick();
+
+        static int display_tick = 0;
+        if (++display_tick >= 5) {
+            display_tick = 0;
+            display_update(NULL, session_active_count(),
+                           nucula_wallet_balance(), NULL,
+                           NULL, 0, NULL);
+        }
     }
 }

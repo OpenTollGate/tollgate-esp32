@@ -4,6 +4,7 @@
 #include "session.h"
 #include "firewall.h"
 #include "nucula_wallet.h"
+#include "display.h"
 #include "esp_log.h"
 #include "cJSON.h"
 #include "lwip/sockets.h"
@@ -312,6 +313,8 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     cJSON_Delete(session_event);
 
     nucula_wallet_receive(body_copy);
+
+    display_notify_payment(token->total_amount, allotment);
 
     free(states);
     free(token);
