@@ -65,6 +65,8 @@ typedef struct {
 
     bool cvm_enabled;
     char cvm_relays[256];
+
+    char wifi_auth_mode[16];
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

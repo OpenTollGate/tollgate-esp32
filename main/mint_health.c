@@ -155,7 +155,8 @@ static void run_initial_probes(void)
 
 static void health_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Health probe task started");
+    ESP_LOGI(TAG, "Health probe task started, waiting for DNS to stabilize...");
+    vTaskDelay(pdMS_TO_TICKS(5000));
     run_initial_probes();
 
     while (s_running) {

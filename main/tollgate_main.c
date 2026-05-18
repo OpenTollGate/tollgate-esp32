@@ -84,6 +84,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 
 static void services_start_task(void *pvParameters)
 {
+    vTaskDelay(pdMS_TO_TICKS(3000));
     start_services();
     vTaskDelete(NULL);
 }

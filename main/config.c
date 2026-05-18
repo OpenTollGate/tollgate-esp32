@@ -35,6 +35,7 @@ esp_err_t tollgate_config_init(void)
     g_config.payout.mint_count = 0;
     g_config.cvm_enabled = true;
     strncpy(g_config.cvm_relays, "wss://relay.primal.net", sizeof(g_config.cvm_relays) - 1);
+    strncpy(g_config.wifi_auth_mode, "WPA2", sizeof(g_config.wifi_auth_mode) - 1);
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -272,6 +273,11 @@ esp_err_t tollgate_config_init(void)
         }
     }
 
+    cJSON *auth_mode = cJSON_GetObjectItem(root, "wifi_auth_mode");
+    if (auth_mode && cJSON_IsString(auth_mode)) {
+        strncpy(g_config.wifi_auth_mode, auth_mode->valuestring, sizeof(g_config.wifi_auth_mode) - 1);
+    }
+
     if (g_config.payout.mint_count == 0 && g_config.mint_url[0] != '\0') {
         strncpy(g_config.payout.mints[0].url, g_config.mint_url,
                 sizeof(g_config.payout.mints[0].url) - 1);
@@ -319,7 +325,13 @@ esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config)
     memset(wifi_config, 0, sizeof(wifi_config_t));
     strncpy((char *)wifi_config->sta.ssid, g_config.networks[idx].ssid, sizeof(wifi_config->sta.ssid) - 1);
     strncpy((char *)wifi_config->sta.password, g_config.networks[idx].password, sizeof(wifi_config->sta.password) - 1);
-    wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA3_PSK;
+    wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    if (strstr(g_config.wifi_auth_mode, "WPA3")) {
+        wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA3_PSK;
+    } else if (strstr(g_config.wifi_auth_mode, "WPA2")) {
+        wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    }
+    ESP_LOGI(TAG, "STA auth threshold: %s → %d", g_config.wifi_auth_mode, wifi_config->sta.threshold.authmode);
     return ESP_OK;
 }
 
