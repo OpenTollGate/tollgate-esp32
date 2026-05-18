@@ -62,6 +62,8 @@ typedef struct {
 
     payout_config_t payout;
 
+    wifi_auth_mode_t wifi_auth_threshold;
+
     bool cvm_enabled;
     char cvm_relays[256];
 } tollgate_config_t;

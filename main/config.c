@@ -18,6 +18,7 @@ esp_err_t tollgate_config_init(void)
     g_config.max_retry = 5;
     g_config.ap_channel = 10;
     g_config.ap_max_conn = 4;
+    g_config.wifi_auth_threshold = WIFI_AUTH_WPA2_PSK;
     g_config.price_per_step = 21;
     g_config.step_size_ms = 60000;
     g_config.step_size_bytes = 22020096;
@@ -245,6 +246,16 @@ esp_err_t tollgate_config_init(void)
         }
     }
 
+    cJSON *auth_mode = cJSON_GetObjectItem(root, "wifi_auth_mode");
+    if (auth_mode && cJSON_IsString(auth_mode)) {
+        if (strcmp(auth_mode->valuestring, "WPA3") == 0) {
+            g_config.wifi_auth_threshold = WIFI_AUTH_WPA3_PSK;
+        } else {
+            g_config.wifi_auth_threshold = WIFI_AUTH_WPA2_PSK;
+        }
+        ESP_LOGI(TAG, "WiFi auth threshold from config: %s", auth_mode->valuestring);
+    }
+
     if (g_config.payout.mint_count == 0 && g_config.mint_url[0] != '\0') {
         strncpy(g_config.payout.mints[0].url, g_config.mint_url,
                 sizeof(g_config.payout.mints[0].url) - 1);
@@ -286,7 +297,7 @@ esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config)
     memset(wifi_config, 0, sizeof(wifi_config_t));
     strncpy((char *)wifi_config->sta.ssid, g_config.networks[idx].ssid, sizeof(wifi_config->sta.ssid) - 1);
     strncpy((char *)wifi_config->sta.password, g_config.networks[idx].password, sizeof(wifi_config->sta.password) - 1);
-    wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA3_PSK;
+    wifi_config->sta.threshold.authmode = g_config.wifi_auth_threshold;
     return ESP_OK;
 }
 
