@@ -22,7 +22,7 @@ LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_touch test_keyboard
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_touch test_keyboard test_wifi_setup
 
 .PHONY: all test clean $(TESTS)
 
@@ -86,6 +86,9 @@ test_touch: test_touch.c $(REPO_ROOT)/main/touch.c
 
 test_keyboard: test_keyboard.c $(REPO_ROOT)/main/keyboard.c
 	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/keyboard.c -o $@ $(LDFLAGS)
+
+test_wifi_setup: test_wifi_setup.c $(REPO_ROOT)/main/wifi_setup.c
+	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/wifi_setup.c -o $@ $(LDFLAGS)
 
 clean:
 	rm -f $(TESTS) $(SECP256K1_OBJ)

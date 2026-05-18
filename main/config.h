@@ -71,5 +71,6 @@ esp_err_t tollgate_config_init(void);
 const tollgate_config_t *tollgate_config_get(void);
 esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config);
 esp_err_t tollgate_config_get_next_wifi(wifi_config_t *wifi_config);
+esp_err_t tollgate_config_add_wifi(const char *ssid, const char *password);
 
 #endif
