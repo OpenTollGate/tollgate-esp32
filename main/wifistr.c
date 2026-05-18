@@ -2,6 +2,7 @@
 #include "identity.h"
 #include "nostr_event.h"
 #include "config.h"
+#include "local_relay.h"
 #include "esp_log.h"
 #include "esp_tls.h"
 #include "esp_crt_bundle.h"
@@ -216,8 +217,13 @@ esp_err_t wifistr_publish(void)
 
     ESP_LOGI(TAG, "Wifistr event: %s", event_json);
 
+    esp_err_t local_ret = local_relay_publish(event_json, strlen(event_json));
+    if (local_ret == ESP_OK) {
+        ESP_LOGI(TAG, "Published to local relay");
+    }
+
     const tollgate_config_t *cfg = tollgate_config_get();
-    esp_err_t last_err = ESP_FAIL;
+    esp_err_t last_err = local_ret;
 
     for (int i = 0; i < cfg->nostr_relay_count; i++) {
         esp_err_t err = ws_send_to_relay(cfg->nostr_relays[i], event_json);

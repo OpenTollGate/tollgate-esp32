@@ -35,6 +35,8 @@ esp_err_t tollgate_config_init(void)
     g_config.payout.mint_count = 0;
     g_config.cvm_enabled = true;
     strncpy(g_config.cvm_relays, "wss://relay.primal.net", sizeof(g_config.cvm_relays) - 1);
+    g_config.nostr_sync_interval_s = 1800;
+    g_config.nostr_fallback_sync_interval_s = 21600;
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -257,6 +259,28 @@ esp_err_t tollgate_config_init(void)
         g_config.payout.mint_count = 1;
     }
 
+    cJSON *seed_relays = cJSON_GetObjectItem(root, "nostr_seed_relays");
+    if (seed_relays && cJSON_IsArray(seed_relays)) {
+        int srcount = cJSON_GetArraySize(seed_relays);
+        if (srcount > TOLLGATE_MAX_SEED_RELAYS) srcount = TOLLGATE_MAX_SEED_RELAYS;
+        for (int i = 0; i < srcount; i++) {
+            cJSON *r = cJSON_GetArrayItem(seed_relays, i);
+            if (r && cJSON_IsString(r)) {
+                strncpy(g_config.nostr_seed_relays[i], r->valuestring,
+                        sizeof(g_config.nostr_seed_relays[i]) - 1);
+                g_config.nostr_seed_relay_count++;
+            }
+        }
+    }
+
+    cJSON *sync_interval = cJSON_GetObjectItem(root, "nostr_sync_interval_s");
+    if (sync_interval) g_config.nostr_sync_interval_s = sync_interval->valueint;
+
+    cJSON *fallback_interval = cJSON_GetObjectItem(root, "nostr_fallback_sync_interval_s");
+    if (fallback_interval) g_config.nostr_fallback_sync_interval_s = fallback_interval->valueint;
+
+    cJSON_Delete(root);
+
     if (g_config.payout.recipient_count == 0) {
         strncpy(g_config.payout.recipients[0].lightning_address, "TollGate@coinos.io",
                 sizeof(g_config.payout.recipients[0].lightning_address) - 1);
@@ -264,12 +288,22 @@ esp_err_t tollgate_config_init(void)
         g_config.payout.recipient_count = 1;
     }
 
-    cJSON_Delete(root);
-
     if (g_config.nostr_relay_count == 0) {
         strncpy(g_config.nostr_relays[0], "wss://relay.damus.io", sizeof(g_config.nostr_relays[0]) - 1);
         strncpy(g_config.nostr_relays[1], "wss://nos.lol", sizeof(g_config.nostr_relays[1]) - 1);
         g_config.nostr_relay_count = 2;
+    }
+
+    if (g_config.nostr_seed_relay_count == 0) {
+        strncpy(g_config.nostr_seed_relays[0], "wss://relay.orangesync.tech",
+                sizeof(g_config.nostr_seed_relays[0]) - 1);
+        strncpy(g_config.nostr_seed_relays[1], "wss://relay.damus.io",
+                sizeof(g_config.nostr_seed_relays[1]) - 1);
+        strncpy(g_config.nostr_seed_relays[2], "wss://nos.lol",
+                sizeof(g_config.nostr_seed_relays[2]) - 1);
+        strncpy(g_config.nostr_seed_relays[3], "wss://relay.nostr.band",
+                sizeof(g_config.nostr_seed_relays[3]) - 1);
+        g_config.nostr_seed_relay_count = 4;
     }
 
     ESP_LOGI(TAG, "Config loaded: nsec=%s...%s, %d WiFi networks, price=%d sats/%dms",

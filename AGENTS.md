@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-TollGate ESP32 firmware: captive portal WiFi hotspot with Cashu e-cash payments, on-device wallet, Nostr identity derivation, wifistr service discovery, and ContextVM (MCP over Nostr) server. Runs on three ESP32-S3 boards.
+TollGate ESP32 firmware: captive portal WiFi hotspot with Cashu e-cash payments, on-device wallet, Nostr identity derivation, wifistr service discovery, ContextVM (MCP over Nostr) server, and **local Nostr relay** with relay selection and sync. Runs on three ESP32-S3 boards.
 
 ## Technology Stack
 
@@ -12,6 +12,9 @@ TollGate ESP32 firmware: captive portal WiFi hotspot with Cashu e-cash payments,
 - **Identity:** Nostr nsec → HMAC-SHA512 → deterministic MAC/SSID/IP
 - **Service discovery:** wifistr (Nostr kind 38787) via WebSocket
 - **ContextVM:** MCP over Nostr (kind 25910), CEP-6 announcements, 10 MCP tools
+- **Local relay:** wisp-esp32 (adapted), NIP-01 server on port 4869, LittleFS 4MB storage
+- **Relay selection:** NIP-11 HTTP probing, latency + NIP-77 scoring, auto-failover
+- **Sync:** REQ-diff with primary (30min) and fallback (6h) relays
 - **Testing:** Host C unit tests (gcc), Node.js integration tests (live board), Playwright E2E
 
 ## Board Configuration
@@ -42,7 +45,8 @@ nvs_flash_init()
   → wifi_configure_ap()             // uses derived SSID
   → esp_wifi_start()
   → [on STA got IP] start_services():
-      sntp_init, firewall_init, session_init, wallet_init, dns_server, captive_portal, api, wifistr_publish, cvm_server_start
+      sntp_init, firewall_init, session_init, wallet_init, dns_server, captive_portal, api,
+      local_relay_init+start, relay_selector_init+probe, sync_manager_start, wifistr_publish, cvm_server_start
 ```
 
 ## Key Files
@@ -53,7 +57,7 @@ nvs_flash_init()
 - `identity.c/h` — HMAC-SHA512 derivation from nsec, npub/MAC/SSID/IP
 - `nostr_event.c/h` — NIP-01 event serialization + BIP-340 Schnorr signing
 - `geohash.c/h` — lat/lon to geohash encoding
-- `wifistr.c/h` — kind 38787 event builder + WebSocket relay publish
+- `wifistr.c/h` — kind 38787 event builder + local-first publish (local relay then public)
 - `captive_portal.c/h` — HTTP :80 portal, captive detection, grant/reset
 - `dns_server.c/h` — DNS hijack/forward per-client, DoT reject
 - `firewall.c/h` — per-client NAT filter via LWIP_HOOK_IP4_CANFORWARD, MAC resolution
@@ -62,10 +66,18 @@ nvs_flash_init()
 - `tollgate_api.c/h` — HTTP :2121, payment endpoints, wallet endpoints
 - `cvm_server.c/h` — ContextVM: persistent WS relay listener, kind 25910 subscription, MCP protocol handlers, CEP-6 announcements
 - `mcp_handler.c/h` — 10 MCP tool handlers (get_config, set_config, get_balance, wallet_send, get_sessions, get_usage, set_payout, set_metric, set_price, wallet_melt)
+- `local_relay.c/h` — Thin wrapper: inits wisp_relay storage/sub/rate-limiter on port 4869, publishes events to LittleFS + broadcasts to WS subscribers
+- `relay_selector.c/h` — NIP-11 HTTP probing of seed relays, latency + NIP-77 scoring, auto-failover after 3 disconnects, 6h re-probe cycle
+- `sync_manager.c/h` — REQ-diff sync: primary every 30min, fallback every 6h, reconciles local events vs remote, dedicated FreeRTOS task
 
 ### Components
 - `nucula_lib/` — C++ bridge to nucula::Wallet (C API in nucula_wallet.h)
 - `secp256k1/` — symlink to nucula_src/components/secp256k1/
+- `wisp_relay/` — Local Nostr relay (NIP-01): ws_server, storage_engine (LittleFS), sub_manager, broadcaster, router, handlers, relay_validator (Schnorr+SHA256), rate_limiter, nip11, deletion, flash_monitor
+- `esp_littlefs/` — LittleFS VFS integration for relay storage partition (git submodule)
+- `negentropy/` — Negentropy set-reconciliation library (git submodule, for future NIP-77)
+- `axs15231b/` — QSPI TFT display driver (JC3248W535)
+- `qrcode/` — QR code generator
 
 ### Config Format (config.json on SPIFFS)
 ```json
@@ -79,6 +91,14 @@ nvs_flash_init()
   "nostr_geohash": "u281w0dfz",
   "nostr_relays": ["wss://relay.damus.io", "wss://nos.lol"],
   "nostr_publish_interval_s": 21600,
+  "nostr_seed_relays": [
+    "wss://relay.orangesync.tech",
+    "wss://relay.damus.io",
+    "wss://nos.lol",
+    "wss://relay.nostr.band"
+  ],
+  "nostr_sync_interval_s": 1800,
+  "nostr_fallback_sync_interval_s": 21600,
   "cvm_enabled": true
 }
 ```
@@ -186,7 +206,9 @@ make flash-b        # flash to Board B
 
 - **Test mint:** `testnut.cashu.space` — auto-pays lightning invoices
 - **Nostr relays:** `relay.damus.io`, `nos.lol` — for wifistr events
+- **Seed relays:** `relay.orangesync.tech` (NIP-77), `relay.damus.io`, `nos.lol`, `relay.nostr.band` — for relay selection and sync
 - **CVM relay:** `relay.primal.net` — for ContextVM kind 25910 events and CEP-6 announcements
+- **Local relay:** Port 4869, LittleFS 4MB partition at 0x500000, max 5000 events, 21-day TTL
 - **Nutshell CLI:** `cashu` command for token generation
 - **ESP-IDF:** `source ~/esp/esp-idf/export.sh` before `idf.py` commands
 - **System libs for unit tests:** `libmbedtls-dev`, `libcjson-dev`
@@ -200,12 +222,12 @@ make flash-b        # flash to Board B
 - `sudo` password: `c03rad0r123`
 - SPIFFS is at offset `0x410000`, size `0xF0000` — erase with `esptool.py erase_region 0x410000 0xF0000` if config is stale
 - NVS stores wallet proofs — erasing NVS clears wallet balance
+- **Relay storage** LittleFS at offset `0x500000`, size `0x400000` (4MB) — auto-formatted on first boot
 - The `nostr_event.c` `created_at` field uses `gettimeofday()` — mock this in unit tests
 - Wifistr event signing uses `secp256k1_schnorrsig_sign32()` — verify with `_verify()` in tests
+- relay_validator.c does Schnorr verify + SHA-256 event ID — test with `test_relay_validator`
+- relay_selector scoring: NIP-77 bonus (1000pts) + latency + failure penalty (100pts each) — test with `test_relay_selector`
 - Portal HTML has server-side template substitution (`__AP_IP__`, `__PRICE__`, `__MINT_URL__`) — no JS fetch
 - **WiFi country code:** Must set `esp_wifi_set_country_code("DE")` before `esp_wifi_start()` — defaults to CN which causes auth failures on EU APs
-- **Board A WiFi is broken** — hardware issue confirmed: `WIFI_REASON_AUTH_EXPIRED` on all APs in all modes (APSTA, STA-only, factory MAC). Board B with identical firmware connects instantly. Do not waste time debugging Board A WiFi.
 - Default nsec: `a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2`
 - Board A nsec: `9af47906b45aca5e238390f3d03c8274e154198e81aa2095065627d1e61ca968`
-- CVM relay: `relay.primal.net` — relay disconnects every ~15s by default, now has 60s timeout + WS ping/pong keepalive
-- MCP responses sent via existing WS connection (not new TLS) — ESP32 can't handle multiple simultaneous TLS sessions

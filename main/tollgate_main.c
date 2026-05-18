@@ -24,6 +24,9 @@
 #include "lightning_payout.h"
 #include "cvm_server.h"
 #include "display.h"
+#include "local_relay.h"
+#include "relay_selector.h"
+#include "sync_manager.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -37,6 +40,9 @@ static int s_retry_count = 0;
 static bool s_services_running = false;
 static SemaphoreHandle_t s_services_mutex = NULL;
 static char s_ap_ip_str[16] = "10.0.0.1";
+
+static relay_selector_t s_relay_selector;
+static sync_manager_t s_sync_manager;
 
 static void start_services(void);
 static void stop_services(void);
@@ -159,6 +165,12 @@ static void start_services(void)
     captive_portal_start(cfg->ap_ip_str);
     tollgate_api_start();
 
+    relay_selector_init(&s_relay_selector);
+    relay_selector_seed_from_config(&s_relay_selector);
+
+    sync_manager_init(&s_sync_manager, &s_relay_selector);
+    sync_manager_start(&s_sync_manager);
+
     xTaskCreate(publish_wifistr_task, "wifistr_init", 16384, NULL, 3, NULL);
 
     const tollgate_config_t *cfg2 = tollgate_config_get();
@@ -189,6 +201,9 @@ static void stop_services(void)
     tollgate_api_stop();
     dns_server_stop();
     cvm_server_stop();
+    sync_manager_stop(&s_sync_manager);
+    local_relay_stop();
+    relay_selector_destroy(&s_relay_selector);
     firewall_revoke_all();
     s_services_running = false;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
@@ -310,6 +325,9 @@ void app_main(void)
     ESP_LOGI(TAG, "WiFi country code set to DE (EU regulatory domain)");
 
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    local_relay_init();
+    local_relay_start();
 
     ESP_LOGI(TAG, "WiFi AP+STA started, waiting for connection...");
 

@@ -2,4 +2,5 @@
 nvs,      data, nvs,     0x9000,  0x6000,
 phy_init, data, phy,     0xf000,  0x1000,
 factory,  app,  factory, 0x10000, 0x3F0000,
-storage,  data, spiffs,  0x410000,0xF0000,
+storage,      data, spiffs,  0x410000,0xF0000,
+relay_store,  data, 0x99,    0x500000,0x400000,

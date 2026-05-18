@@ -11,7 +11,6 @@
 #include "esp_tls.h"
 #include "esp_crt_bundle.h"
 #include "esp_random.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -31,8 +30,6 @@ static void publish_announcements_via_ws(esp_tls_t *tls);
 #define CVM_WS_BUF_SIZE 8192
 #define CVM_MAX_RESPONSE_SIZE 4096
 #define CVM_RECONNECT_DELAY_MS 5000
-#define CVM_WS_READ_TIMEOUT_MS 60000
-#define CVM_WS_PING_INTERVAL_S 30
 
 static char *parse_ws_text_frame(const uint8_t *buf, int len)
 {
@@ -151,7 +148,7 @@ static esp_err_t ws_connect(const char *relay_url, esp_tls_t **tls_out)
 
     esp_tls_cfg_t tls_cfg = {
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .timeout_ms = CVM_WS_READ_TIMEOUT_MS,
+        .timeout_ms = 15000,
     };
     esp_tls_t *tls = esp_tls_init();
     if (!tls) return ESP_ERR_NO_MEM;
@@ -326,54 +323,6 @@ static esp_err_t publish_event_to_relay(const char *relay_url, const char *event
     return ESP_OK;
 }
 
-static esp_err_t publish_kind_25910_response_ws(esp_tls_t *tls,
-                                                  const char *content_json,
-                                                  const char *request_event_id)
-{
-    const tollgate_identity_t *id = identity_get();
-    if (!id || !id->initialized) return ESP_FAIL;
-
-    cJSON *tags = cJSON_CreateArray();
-    cJSON *e_tag = cJSON_CreateArray();
-    cJSON_AddItemToArray(e_tag, cJSON_CreateString("e"));
-    cJSON_AddItemToArray(e_tag, cJSON_CreateString(request_event_id));
-    cJSON_AddItemToArray(tags, e_tag);
-
-    char *tags_str = cJSON_PrintUnformatted(tags);
-    cJSON_Delete(tags);
-
-    nostr_event_t event;
-    nostr_event_init(&event, id->npub_hex, 25910, tags_str, content_json);
-    nostr_event_sign(&event, id->nsec);
-
-    char *event_json = malloc(8192);
-    if (!event_json) {
-        free(tags_str);
-        return ESP_ERR_NO_MEM;
-    }
-
-    esp_err_t ret = nostr_event_to_json(&event, event_json, 8192);
-    free(tags_str);
-    if (ret != ESP_OK) {
-        free(event_json);
-        return ret;
-    }
-
-    size_t msg_len = 10 + strlen(event_json) + 2;
-    char *msg = malloc(msg_len);
-    if (!msg) {
-        free(event_json);
-        return ESP_ERR_NO_MEM;
-    }
-    snprintf(msg, msg_len, "[\"EVENT\",%s]", event_json);
-    ESP_LOGD(TAG, "Sending WS response (%d bytes)", (int)strlen(msg));
-    int rc = ws_send_text(tls, msg);
-    ESP_LOGD(TAG, "WS send result: %d", rc);
-    free(msg);
-    free(event_json);
-    return ESP_OK;
-}
-
 static esp_err_t publish_kind_25910_response(const char *relay_url,
                                               const char *content_json,
                                               const char *request_event_id)
@@ -417,7 +366,7 @@ static bool is_owner_pubkey(const char *pubkey_hex)
     return strcmp(id->npub_hex, pubkey_hex) == 0;
 }
 
-static void handle_mcp_message(esp_tls_t *tls, const char *sender_pubkey,
+static void handle_mcp_message(const char *relay_url, const char *sender_pubkey,
                                 const char *event_id, const char *content)
 {
     cJSON *msg = cJSON_Parse(content);
@@ -437,20 +386,14 @@ static void handle_mcp_message(esp_tls_t *tls, const char *sender_pubkey,
         if (strcmp(m, "initialize") == 0) {
             ESP_LOGI(TAG, "MCP initialize from %s", sender_pubkey);
             char *resp = build_initialize_response(id_str, sender_pubkey);
-            if (tls) {
-                publish_kind_25910_response_ws(tls, resp, event_id);
-            } else {
-                ESP_LOGW(TAG, "No TLS for response");
-            }
+            publish_kind_25910_response(relay_url, resp, event_id);
             free(resp);
         } else if (strcmp(m, "notifications/initialized") == 0) {
             ESP_LOGI(TAG, "Client initialized: %s", sender_pubkey);
         } else if (strcmp(m, "tools/list") == 0) {
             ESP_LOGI(TAG, "tools/list from %s", sender_pubkey);
             char *resp = build_tools_list_response(id_str);
-            if (tls) {
-                publish_kind_25910_response_ws(tls, resp, event_id);
-            }
+            publish_kind_25910_response(relay_url, resp, event_id);
             free(resp);
         } else if (strcmp(m, "tools/call") == 0) {
             cJSON *params = cJSON_GetObjectItem(msg, "params");
@@ -471,16 +414,12 @@ static void handle_mcp_message(esp_tls_t *tls, const char *sender_pubkey,
 
                 mcp_response_t mcp_resp = mcp_dispatch(&req);
                 char *resp = build_tool_call_response(id_str, &mcp_resp);
-                if (tls) {
-                    publish_kind_25910_response_ws(tls, resp, event_id);
-                }
+                publish_kind_25910_response(relay_url, resp, event_id);
                 free(resp);
             }
         } else if (strcmp(m, "ping") == 0) {
             char *resp = build_ping_response(id_str);
-            if (tls) {
-                publish_kind_25910_response_ws(tls, resp, event_id);
-            }
+            publish_kind_25910_response(relay_url, resp, event_id);
             free(resp);
         } else {
             ESP_LOGW(TAG, "Unknown MCP method: %s", m);
@@ -494,7 +433,7 @@ static void handle_mcp_message(esp_tls_t *tls, const char *sender_pubkey,
     cJSON_Delete(msg);
 }
 
-static void process_relay_message(esp_tls_t *tls, const char *relay_url, const char *msg_str)
+static void process_relay_message(const char *relay_url, const char *msg_str)
 {
     cJSON *arr = cJSON_Parse(msg_str);
     if (!arr || !cJSON_IsArray(arr)) {
@@ -553,7 +492,7 @@ static void process_relay_message(esp_tls_t *tls, const char *relay_url, const c
         return;
     }
 
-    handle_mcp_message(tls, pubkey->valuestring, event_id->valuestring, content->valuestring);
+    handle_mcp_message(relay_url, pubkey->valuestring, event_id->valuestring, content->valuestring);
     cJSON_Delete(arr);
 }
 
@@ -566,9 +505,7 @@ static esp_err_t subscribe_to_relay(esp_tls_t *tls, const char *npub)
     cJSON *kinds = cJSON_CreateArray();
     cJSON_AddItemToArray(kinds, cJSON_CreateNumber(25910));
     cJSON_AddItemToObject(filter, "kinds", kinds);
-    cJSON *p_tags = cJSON_CreateArray();
-    cJSON_AddItemToArray(p_tags, cJSON_CreateString(npub));
-    cJSON_AddItemToObject(filter, "#p", p_tags);
+    cJSON_AddStringToObject(filter, "#p", npub);
     cJSON_AddNumberToObject(filter, "limit", 100);
     cJSON_AddItemToArray(sub, filter);
 
@@ -616,8 +553,6 @@ static void cvm_relay_task(void *arg)
             return;
         }
 
-        int64_t last_ping_time = 0;
-
         while (g_running) {
             int rlen = esp_tls_conn_read(tls, buf, CVM_WS_BUF_SIZE - 1);
             if (rlen < 0) {
@@ -632,20 +567,10 @@ static void cvm_relay_task(void *arg)
                 char *text = parse_ws_text_frame(buf, rlen);
                 if (text) {
                     if (strlen(text) > 0) {
-                        process_relay_message(tls, relay_url, text);
+                        process_relay_message(relay_url, text);
                     }
                     free(text);
                 }
-            } else if ((buf[0] & 0x0F) == 0x09) {
-                uint8_t pong[2] = {0x8A, 0x00};
-                esp_tls_conn_write(tls, pong, 2);
-            }
-
-            int64_t now = (int64_t)esp_timer_get_time() / 1000000;
-            if (now - last_ping_time >= CVM_WS_PING_INTERVAL_S) {
-                uint8_t ping[2] = {0x89, 0x00};
-                esp_tls_conn_write(tls, ping, 2);
-                last_ping_time = now;
             }
         }
 

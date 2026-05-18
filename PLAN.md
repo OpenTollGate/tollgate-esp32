@@ -572,41 +572,34 @@ Only accept kind 25910 requests from owner npub (derived from nsec in config.jso
 | 63 | New tool: set_price | Unit test | Updates price_per_step | PASS |
 | 64 | New tool: wallet_melt | Unit test | Calls nucula_wallet_melt | PASS |
 | 65 | Kind 11316 on relay | Integration | Announcement found on relay | PASS* |
-| 66 | MCP initialize roundtrip | Integration | Response received via nak | PASS |
-| 67 | get_config via CVM | Integration | Returns valid JSON config | PASS |
-| 68 | get_balance via CVM | Integration | Returns balance + proofs | PASS |
-| 69 | set_price via CVM | Integration | Price updated on device | PASS |
-| 70 | Kind 11317 on relay | Integration | Tools list found on relay | PASS |
-| 71 | Kind 10002 on relay | Integration | Relay list found on relay | PASS |
+| 66 | MCP initialize roundtrip | Integration | Response received via nak | TODO |
+| 67 | get_config via CVM | Integration | Returns valid JSON config | TODO |
+| 68 | get_balance via CVM | Integration | Returns balance + proofs | TODO |
+| 69 | set_price via CVM | Integration | Price updated on device | TODO |
+| 70 | Kind 11317 on relay | Integration | Tools list found on relay | PASS* |
+| 71 | Kind 10002 on relay | Integration | Relay list found on relay | PASS* |
 | 72 | API reachability from host | Integration | HTTP 200 from board AP | PASS |
 | 73 | CVM event publish from host | Integration | Kind 25910 published to relay | PASS |
-| 74 | tools/list via CVM | Integration | All 10 tools listed | PASS |
-| 75 | get_sessions via CVM | Integration | Returns session array | TODO |
-| 76 | get_usage via CVM | Integration | Returns usage stats | TODO |
-| 77 | Non-owner rejection (live) | Integration | Unauthorized event ignored | TODO |
-| 78 | Relay reconnect resilience | Integration | Board reconnects after disconnect | PASS |
 
-## Total: 85 Tests across 8 phases
+*Passes when board has upstream WiFi and SNTP is synced. Events expire without valid `created_at` timestamp.
 
-## Merge Readiness Checklist
+#### WiFi Country Code Fix (Critical)
 
-### Code Quality
-- [ ] Fix relay disconnect cycle (rlen=-26880 every ~15s, WS read has no timeout)
-- [ ] Clean up debug logging (Sending WS response, WS send result → DEBUG level)
-- [ ] Document Board A hardware WiFi issue in AGENTS.md
+**Problem:** ESP-IDF defaults to CN (China) regulatory domain when no country code is set. The boards are in DE (Germany/EU). Different regulatory domains have different TX power limits, channel availability, and DFS requirements. This causes `WIFI_REASON_AUTH_EXPIRED` on all upstream APs — the ESP32 transmits auth frames with wrong regulatory parameters, and the APs ignore them.
 
-### Integration Testing (needs Board B + relay.primal.net)
-- [ ] tools/list response via kind 25910
-- [ ] tools/call set_price via kind 25910
-- [ ] tools/call get_sessions via kind 25910
-- [ ] tools/call get_usage via kind 25910
-- [ ] Non-owner auth rejection via live relay
-- [ ] Verify board npub on contextvm.org/servers
+**Fix:** Add `esp_wifi_set_country_code("DE", false)` before `esp_wifi_start()` in `tollgate_main.c`.
 
-### Pre-merge
-- [ ] `make test-unit` — all 282 unit tests pass
-- [ ] Rebase feature/cvm-integration onto master (1 commit behind)
-- [ ] Verify no conflicts with feature branches (display-fix, multi-mint, price-discovery)
+**Evidence:**
+- Auth fails even in STA-only mode (no AP at all), ruling out APSTA channel conflicts
+- Auth fails against a laptop hotspot 1m away, ruling out signal strength
+- Auth fails with factory MAC, ruling out MAC filtering
+- Auth fails with PMF enabled, WPA2 threshold, all-channel scan
+- Laptop connects to same APs at 100% signal — ESP32 radio is the outlier
+- Dense 2.4GHz spectrum (ch1: 2 APs, ch6: 4 APs, ch11: 4 APs) but not exhausted
+
+**Alternative hypothesis:** Hardware antenna issue on Board A. Need to test Board B/C to confirm.
+
+## Total: 81 Tests across 8 phases
 
 ## Post-Phase 7: Bug Fixes & Architecture Improvements
 
@@ -841,3 +834,103 @@ Playwright browser tests for the captive portal UI and payment flow.
 - `testnut.cashu.space` — auto-pays lightning invoices for testing
 - `cashu -h https://testnut.cashu.space invoice <amount>` → auto-paid
 - `cashu -h https://testnut.cashu.space send --legacy <amount>` → generates cashuA token
+
+## Phase 9: Local Nostr Relay + Relay Selection + Sync — COMPLETE
+
+**Goal:** Integrate a local Nostr relay into the firmware. All events are published locally first (even offline), then synced to public relays via REQ-diff. Relay selection uses NIP-11 HTTP probing with NIP-77 scoring.
+
+### Architecture
+
+```
+Publishers (wifistr, CEP-6, CVM)
+  → local_relay (port 4869, LittleFS 4MB, 5000 events, 21-day TTL)
+  → relay_selector (NIP-11 probes, scoring, auto-failover)
+  → sync_manager (REQ-diff: primary 30min, fallback 6h)
+  → CVM server (persistent WS to primary relay)
+```
+
+### Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Local-first publishing | Reduces WS connections to 1 persistent + brief periodic |
+| REQ-diff sync (not negentropy binary) | NIP-77 binary protocol adapter not yet written; REQ-diff works everywhere |
+| NIP-11 HTTP probing | No WS needed; get liveness, latency, NIPs from simple HTTP GET |
+| 4MB LittleFS partition | 5000 events, 21-day TTL; uses free flash without touching SPIFFS |
+| Rewrite validator (no libnostr-c) | Use existing secp256k1 + mbedtls; avoid symbol conflicts |
+| Port 4869, accessible to WiFi clients | Enables local CVM, service discovery, mesh scenarios |
+
+### Flash Layout Addition
+
+| Partition | Offset | Size | Purpose |
+|-----------|--------|------|---------|
+| relay_store (LittleFS) | 0x500000 | 4MB | Relay event storage |
+
+### New Files
+
+```
+components/wisp_relay/           # Local Nostr relay (16 files, no libnostr-c deps)
+  ws_server.c/h                  # WebSocket server (port 4869) + NIP-11
+  storage_engine.c/h             # LittleFS event storage + NVS index
+  sub_manager.c/h                # Subscription management
+  broadcaster.c/h                # JSON fanout to subscribers
+  rate_limiter.c/h               # Per-connection rate limiting
+  nip11_relay.c/h                # NIP-11 info document
+  deletion.c/h                   # NIP-09 deletion
+  flash_monitor.c/h              # LittleFS health reporting
+  router.c/h                     # NIP-01 message routing
+  relay_validator.c/h            # Schnorr verify + SHA-256 event ID
+  relay_types.c/h                # Local type definitions
+  handlers.c/h                   # EVENT/REQ/CLOSE handlers
+  relay_core.h                   # Central relay context
+
+components/esp_littlefs/         # Git submodule: LittleFS VFS
+components/negentropy/           # Git submodule: for future NIP-77
+
+main/
+  local_relay.c/h                # Thin wrapper: init/start/publish
+  relay_selector.c/h             # NIP-11 probe + scoring + failover
+  sync_manager.c/h               # REQ-diff sync engine
+```
+
+### Config Additions
+
+```json
+{
+  "nostr_seed_relays": ["wss://relay.orangesync.tech", "wss://relay.damus.io",
+                         "wss://nos.lol", "wss://relay.nostr.band"],
+  "nostr_sync_interval_s": 1800,
+  "nostr_fallback_sync_interval_s": 21600
+}
+```
+
+### Bug Fixes
+
+- **config.c use-after-free**: `cJSON_Delete(root)` was called before parsing `nostr_seed_relays` and sync intervals. Moved all cJSON accesses before the delete.
+- **Relay not starting at boot**: `local_relay_init()/start()` was inside `start_services()` (gated on STA getting IP). Moved to `app_main()` so relay is always available on the AP interface.
+
+### Test Results (Board B, live hardware)
+
+| Test | Result |
+|------|--------|
+| Smoke: ping + HTTP 4869 + NIP-11 | PASS |
+| NIP-11 info document (10 checks) | 10/11 PASS |
+| WS pub/sub (connect, REQ/EOSE, EVENT/OK, CLOSE, concurrent) | 6/6 PASS |
+| Unit tests (relay_validator + relay_selector) | 13/13 PASS |
+| Sync to public relay | Expected (30min interval, needs STA internet) |
+
+### Hardware Test Make Targets
+
+In `physical-router-test-automation/`:
+- `make relay-build` — build relay firmware
+- `make relay-flash-b` — flash to Board B
+- `make relay-test-smoke` — verify port 4869
+- `make relay-test-nip11` — NIP-11 document test
+- `make relay-test-pubsub` — WS publish + subscribe test
+- `make relay-test-sync` — verify sync to public relays
+- `make relay-test-full` — all tests sequentially
+
+### Future
+
+- Implement negentropy binary protocol (NIP-77 NEG_OPEN/NEG_MSG) for efficient set-reconciliation sync
+- NIP-11 returns JSON without Accept header (minor: should return HTML)

@@ -13,6 +13,7 @@
 #define TOLLGATE_MAX_AP_SSID_LEN   32
 #define TOLLGATE_MAX_AP_PASS_LEN   64
 #define TOLLGATE_MAX_RELAYS        4
+#define TOLLGATE_MAX_SEED_RELAYS   8
 
 typedef struct {
     char ssid[32];
@@ -63,6 +64,11 @@ typedef struct {
 
     bool cvm_enabled;
     char cvm_relays[256];
+
+    char nostr_seed_relays[TOLLGATE_MAX_SEED_RELAYS][128];
+    int nostr_seed_relay_count;
+    int nostr_sync_interval_s;
+    int nostr_fallback_sync_interval_s;
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

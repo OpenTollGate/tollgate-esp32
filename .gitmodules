@@ -1,6 +1,9 @@
 [submodule "nucula_src"]
 	path = nucula_src
 	url = https://github.com/zeugmaster/nucula.git
-[submodule "components/esp-miner"]
-	path = components/esp-miner
-	url = https://github.com/bitaxeorg/ESP-Miner.git
+[submodule "components/negentropy"]
+	path = components/negentropy
+	url = https://github.com/hoytech/negentropy.git
+[submodule "components/esp_littlefs"]
+	path = components/esp_littlefs
+	url = https://github.com/joltwallet/esp_littlefs.git
