@@ -17,6 +17,7 @@ typedef enum {
     TG_CLIENT_PAYING,
     TG_CLIENT_PAID,
     TG_CLIENT_RENEWING,
+    TG_CLIENT_MINING,
     TG_CLIENT_ERROR
 } tollgate_client_state_t;
 
@@ -26,6 +27,8 @@ typedef struct {
     int step_size_ms;
     char mint_url[TG_CLIENT_MAX_MINT_URL];
     char metric[TG_CLIENT_MAX_METRIC];
+    bool mining_available;
+    uint16_t mining_port;
 } tollgate_discovery_t;
 
 esp_err_t tollgate_client_init(void);

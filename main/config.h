@@ -15,6 +15,13 @@
 #define TOLLGATE_MAX_RELAYS        4
 #define TOLLGATE_MAX_SEED_RELAYS   8
 
+typedef enum {
+    MINING_PAYOUT_AUTO,
+    MINING_PAYOUT_POOL,
+    MINING_PAYOUT_UPSTREAM,
+    MINING_PAYOUT_PROXY_ONLY
+} mining_payout_mode_t;
+
 typedef struct {
     char ssid[32];
     char password[64];
@@ -69,6 +76,18 @@ typedef struct {
     int nostr_seed_relay_count;
     int nostr_sync_interval_s;
     int nostr_fallback_sync_interval_s;
+
+    bool mining_enabled;
+    mining_payout_mode_t mining_payout_mode;
+    char stratum_host[128];
+    uint16_t stratum_port;
+    char stratum_user[128];
+    char stratum_pass[64];
+    char stratum_fallback_host[128];
+    uint16_t stratum_fallback_port;
+    uint16_t mining_port;
+    uint64_t hashprice_sats_per_ghs_day;
+    bool mining_sandbox_mint_access;
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

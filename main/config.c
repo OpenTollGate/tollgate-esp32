@@ -37,6 +37,11 @@ esp_err_t tollgate_config_init(void)
     strncpy(g_config.cvm_relays, "wss://relay.primal.net", sizeof(g_config.cvm_relays) - 1);
     g_config.nostr_sync_interval_s = 1800;
     g_config.nostr_fallback_sync_interval_s = 21600;
+    g_config.mining_enabled = false;
+    g_config.mining_payout_mode = MINING_PAYOUT_AUTO;
+    g_config.stratum_port = 3333;
+    g_config.mining_port = 3334;
+    g_config.mining_sandbox_mint_access = true;
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -278,6 +283,46 @@ esp_err_t tollgate_config_init(void)
 
     cJSON *fallback_interval = cJSON_GetObjectItem(root, "nostr_fallback_sync_interval_s");
     if (fallback_interval) g_config.nostr_fallback_sync_interval_s = fallback_interval->valueint;
+
+    cJSON *mining = cJSON_GetObjectItem(root, "mining");
+    if (mining && cJSON_IsObject(mining)) {
+        cJSON *m_en = cJSON_GetObjectItem(mining, "enabled");
+        if (m_en && cJSON_IsBool(m_en)) g_config.mining_enabled = cJSON_IsTrue(m_en);
+
+        cJSON *m_mode = cJSON_GetObjectItem(mining, "payout_mode");
+        if (m_mode && cJSON_IsString(m_mode)) {
+            if (strcmp(m_mode->valuestring, "pool") == 0) g_config.mining_payout_mode = MINING_PAYOUT_POOL;
+            else if (strcmp(m_mode->valuestring, "upstream") == 0) g_config.mining_payout_mode = MINING_PAYOUT_UPSTREAM;
+            else if (strcmp(m_mode->valuestring, "proxy_only") == 0) g_config.mining_payout_mode = MINING_PAYOUT_PROXY_ONLY;
+        }
+
+        cJSON *m_host = cJSON_GetObjectItem(mining, "stratum_host");
+        if (m_host && cJSON_IsString(m_host)) strncpy(g_config.stratum_host, m_host->valuestring, sizeof(g_config.stratum_host) - 1);
+
+        cJSON *m_port = cJSON_GetObjectItem(mining, "stratum_port");
+        if (m_port) g_config.stratum_port = (uint16_t)m_port->valueint;
+
+        cJSON *m_user = cJSON_GetObjectItem(mining, "stratum_user");
+        if (m_user && cJSON_IsString(m_user)) strncpy(g_config.stratum_user, m_user->valuestring, sizeof(g_config.stratum_user) - 1);
+
+        cJSON *m_pass = cJSON_GetObjectItem(mining, "stratum_pass");
+        if (m_pass && cJSON_IsString(m_pass)) strncpy(g_config.stratum_pass, m_pass->valuestring, sizeof(g_config.stratum_pass) - 1);
+
+        cJSON *m_fb_host = cJSON_GetObjectItem(mining, "stratum_fallback_host");
+        if (m_fb_host && cJSON_IsString(m_fb_host)) strncpy(g_config.stratum_fallback_host, m_fb_host->valuestring, sizeof(g_config.stratum_fallback_host) - 1);
+
+        cJSON *m_fb_port = cJSON_GetObjectItem(mining, "stratum_fallback_port");
+        if (m_fb_port) g_config.stratum_fallback_port = (uint16_t)m_fb_port->valueint;
+
+        cJSON *m_mport = cJSON_GetObjectItem(mining, "mining_port");
+        if (m_mport) g_config.mining_port = (uint16_t)m_mport->valueint;
+
+        cJSON *m_hp = cJSON_GetObjectItem(mining, "hashprice_sats_per_ghs_day");
+        if (m_hp) g_config.hashprice_sats_per_ghs_day = (uint64_t)m_hp->valuedouble;
+
+        cJSON *m_sandbox = cJSON_GetObjectItem(mining, "sandbox_mint_access");
+        if (m_sandbox && cJSON_IsBool(m_sandbox)) g_config.mining_sandbox_mint_access = cJSON_IsTrue(m_sandbox);
+    }
 
     cJSON_Delete(root);
 

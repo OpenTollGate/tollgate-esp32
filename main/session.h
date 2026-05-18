@@ -8,6 +8,12 @@
 #define SESSION_MAX_CLIENTS     10
 #define SESSION_MAX_MAC_LEN     18
 
+typedef enum {
+    PAYMENT_METHOD_CASHU,
+    PAYMENT_METHOD_MINING,
+    PAYMENT_METHOD_BYTES
+} payment_method_t;
+
 typedef struct {
     uint32_t client_ip;
     char mac[SESSION_MAX_MAC_LEN];
@@ -15,6 +21,7 @@ typedef struct {
     int64_t start_time_ms;
     uint64_t allotment_bytes;
     uint64_t bytes_consumed;
+    payment_method_t payment_method;
     bool active;
 } session_t;
 

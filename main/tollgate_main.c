@@ -23,6 +23,11 @@
 #include "tollgate_client.h"
 #include "lightning_payout.h"
 #include "cvm_server.h"
+#include "stratum_client.h"
+#include "stratum_proxy.h"
+#include "sw_miner.h"
+#include "asic_miner.h"
+#include "mining_payment.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -154,6 +159,11 @@ static void start_services(void)
     session_manager_init();
 
     const tollgate_config_t *cfg = tollgate_config_get();
+    if (cfg->mining_enabled) {
+        firewall_set_mining_port(cfg->mining_port);
+        firewall_set_sandbox_mint_access(cfg->mining_sandbox_mint_access);
+    }
+
     nucula_wallet_init(cfg->mint_url);
     lightning_payout_init(&cfg->payout);
 
@@ -173,6 +183,26 @@ static void start_services(void)
     if (cfg2->cvm_enabled) {
         cvm_server_init();
         cvm_server_start();
+    }
+
+    if (cfg2->mining_enabled) {
+        ESP_LOGI(TAG, "Mining subsystem enabled, initializing...");
+        mining_payment_init();
+        stratum_client_init();
+        stratum_proxy_init(cfg2->mining_port);
+
+        if (cfg2->mining_payout_mode != MINING_PAYOUT_UPSTREAM) {
+            stratum_client_start();
+        }
+
+        asic_miner_init();
+        if (asic_miner_is_present()) {
+            asic_miner_start();
+            ESP_LOGI(TAG, "ASIC miner started");
+        } else {
+            sw_miner_start();
+            ESP_LOGI(TAG, "Software miner started (no ASIC)");
+        }
     }
 
     s_services_running = true;
@@ -329,5 +359,6 @@ void app_main(void)
         session_tick();
         tollgate_client_tick();
         lightning_payout_tick();
+        stratum_client_tick();
     }
 }
