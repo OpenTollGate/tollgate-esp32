@@ -100,9 +100,24 @@ static int ws_send_text(esp_tls_t *tls, const char *msg)
         frame[pos + i] = (uint8_t)msg[i] ^ mask[i & 3];
     pos += len;
 
-    int w = esp_tls_conn_write(tls, frame, pos);
+    int total = pos;
+    int written = 0;
+    while (written < total) {
+        int w = esp_tls_conn_write(tls, frame + written, total - written);
+        if (w < 0) {
+            ESP_LOGE(TAG, "ws_send: write failed at %d/%d", written, total);
+            free(frame);
+            return -1;
+        }
+        if (w == 0) {
+            ESP_LOGW(TAG, "ws_send: write returned 0 at %d/%d", written, total);
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        written += w;
+    }
+    ESP_LOGD(TAG, "ws_send: sent %d bytes (payload %d)", total, (int)len);
     free(frame);
-    return w > 0 ? 0 : -1;
+    return 0;
 }
 
 static esp_err_t ws_connect(const char *relay_url, esp_tls_t **tls_out)
@@ -292,7 +307,7 @@ static esp_err_t publish_event_to_relay(const char *relay_url, const char *event
 
     char *msg;
     size_t event_len2 = strlen(event_json);
-    size_t msg_len2 = 8 + event_len2 + 1;
+     size_t msg_len2 = 10 + event_len2 + 2;
     msg = malloc(msg_len2);
     snprintf(msg, msg_len2, "[\"EVENT\",%s]", event_json);
 
@@ -591,7 +606,7 @@ static esp_err_t publish_event_via_ws(esp_tls_t *tls, int kind,
 
     char *msg;
     size_t event_len = strlen(event_json);
-    size_t msg_len = 8 + event_len + 1;
+    size_t msg_len = 10 + event_len + 2;
     msg = malloc(msg_len);
     snprintf(msg, msg_len, "[\"EVENT\",%s]", event_json);
 

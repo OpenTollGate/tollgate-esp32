@@ -54,7 +54,7 @@ esp_err_t tollgate_config_init(void)
         const char *default_json = "{"
             "\"nsec\":\"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\","
             "\"wifi_networks\":["
-              "{\"ssid\":\"EnterSSID-2.4GHz\",\"password\":\"c03rad0r123!\"}"
+              "{\"ssid\":\"c03rad0r\",\"password\":\"c03rad0r123\"}"
             "],"
             "\"ap_password\":\"\","
             "\"mint_url\":\"https://testnut.cashu.space\","
@@ -288,7 +288,7 @@ esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config)
     memset(wifi_config, 0, sizeof(wifi_config_t));
     strncpy((char *)wifi_config->sta.ssid, g_config.networks[idx].ssid, sizeof(wifi_config->sta.ssid) - 1);
     strncpy((char *)wifi_config->sta.password, g_config.networks[idx].password, sizeof(wifi_config->sta.password) - 1);
-    wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA3_PSK;
     return ESP_OK;
 }
 
