@@ -26,7 +26,7 @@
 #include "cvm_server.h"
 #include "display.h"
 
-#define MAX_STA_RETRY 5
+#define MAX_STA_RETRY 3
 static const char *TAG = "tollgate_main";
 
 static EventGroupHandle_t s_wifi_event_group;
@@ -55,7 +55,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         s_retry_count++;
         ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d", s_retry_count, MAX_STA_RETRY);
         tollgate_client_on_sta_disconnected();
-        if (s_services_running) stop_services();
         if (s_retry_count < MAX_STA_RETRY) {
             esp_wifi_connect();
         } else {
@@ -112,7 +111,6 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
         ESP_LOGW(TAG, "Lost IP address");
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-        stop_services();
     }
 }
 
@@ -319,10 +317,8 @@ void app_main(void)
 
     ESP_LOGI(TAG, "WiFi AP+STA started, waiting for connection...");
 
-    if (tollgate_config_get_wifi(&(wifi_config_t){0}) != ESP_OK) {
-        ESP_LOGI(TAG, "No STA network configured, starting services immediately");
-        xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
-    }
+    xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
+    ESP_LOGI(TAG, "Services starting immediately (AP-only mode, STA will connect when available)");
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));

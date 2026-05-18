@@ -484,8 +484,28 @@ static esp_err_t api_post_wallet_send(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t api_get_mints(httpd_req_t *req)
+{
+    int mint_count = 0;
+    const mint_status_t *mints = mint_health_get_all(&mint_count);
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < mint_count; i++) {
+        cJSON *obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(obj, "url", mints[i].url);
+        cJSON_AddBoolToObject(obj, "reachable", mints[i].reachable);
+        cJSON_AddItemToArray(arr, obj);
+    }
+    char *json = cJSON_PrintUnformatted(arr);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, strlen(json));
+    cJSON_free(json);
+    cJSON_Delete(arr);
+    return ESP_OK;
+}
+
 static const httpd_uri_t uri_discovery = { .uri = "/", .method = HTTP_GET, .handler = api_get_discovery };
 static const httpd_uri_t uri_payment = { .uri = "/", .method = HTTP_POST, .handler = api_post_payment };
+static const httpd_uri_t uri_mints = { .uri = "/mints", .method = HTTP_GET, .handler = api_get_mints };
 static const httpd_uri_t uri_usage = { .uri = "/usage", .method = HTTP_GET, .handler = api_get_usage };
 static const httpd_uri_t uri_whoami = { .uri = "/whoami", .method = HTTP_GET, .handler = api_get_whoami };
 static const httpd_uri_t uri_wallet = { .uri = "/wallet", .method = HTTP_GET, .handler = api_get_wallet };
@@ -499,7 +519,7 @@ esp_err_t tollgate_api_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 2121;
     config.ctrl_port = 32769;
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 12;
     config.stack_size = 16384;
 
     esp_err_t ret = httpd_start(&s_api_server, &config);
@@ -510,6 +530,7 @@ esp_err_t tollgate_api_start(void)
 
     httpd_register_uri_handler(s_api_server, &uri_discovery);
     httpd_register_uri_handler(s_api_server, &uri_payment);
+    httpd_register_uri_handler(s_api_server, &uri_mints);
     httpd_register_uri_handler(s_api_server, &uri_usage);
     httpd_register_uri_handler(s_api_server, &uri_whoami);
     httpd_register_uri_handler(s_api_server, &uri_wallet);

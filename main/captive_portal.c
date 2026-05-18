@@ -236,25 +236,6 @@ static esp_err_t grant_access_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t mints_handler(httpd_req_t *req)
-{
-    int mint_count = 0;
-    const mint_status_t *mints = mint_health_get_all(&mint_count);
-    cJSON *arr = cJSON_CreateArray();
-    for (int i = 0; i < mint_count; i++) {
-        cJSON *obj = cJSON_CreateObject();
-        cJSON_AddStringToObject(obj, "url", mints[i].url);
-        cJSON_AddBoolToObject(obj, "reachable", mints[i].reachable);
-        cJSON_AddItemToArray(arr, obj);
-    }
-    char *json = cJSON_PrintUnformatted(arr);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json, strlen(json));
-    cJSON_free(json);
-    cJSON_Delete(arr);
-    return ESP_OK;
-}
-
 static esp_err_t status_handler(httpd_req_t *req)
 {
     const tollgate_config_t *cfg = tollgate_config_get();
@@ -355,7 +336,6 @@ static esp_err_t catchall_handler(httpd_req_t *req)
 
 static const httpd_uri_t uri_portal = { .uri = "/", .method = HTTP_GET, .handler = portal_handler };
 static const httpd_uri_t uri_grant = { .uri = "/grant_access", .method = HTTP_GET, .handler = grant_access_handler };
-static const httpd_uri_t uri_mints = { .uri = "/mints", .method = HTTP_GET, .handler = mints_handler };
 static const httpd_uri_t uri_status = { .uri = "/api/status", .method = HTTP_GET, .handler = status_handler };
 static const httpd_uri_t uri_whoami = { .uri = "/whoami", .method = HTTP_GET, .handler = whoami_handler };
 static const httpd_uri_t uri_usage = { .uri = "/usage", .method = HTTP_GET, .handler = usage_handler };
@@ -386,7 +366,6 @@ esp_err_t captive_portal_start(const char *ap_ip_str)
 
     httpd_register_uri_handler(s_server, &uri_portal);
     httpd_register_uri_handler(s_server, &uri_grant);
-    httpd_register_uri_handler(s_server, &uri_mints);
     httpd_register_uri_handler(s_server, &uri_status);
     httpd_register_uri_handler(s_server, &uri_whoami);
     httpd_register_uri_handler(s_server, &uri_usage);
