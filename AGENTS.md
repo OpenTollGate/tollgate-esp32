@@ -204,5 +204,8 @@ make flash-b        # flash to Board B
 - Wifistr event signing uses `secp256k1_schnorrsig_sign32()` — verify with `_verify()` in tests
 - Portal HTML has server-side template substitution (`__AP_IP__`, `__PRICE__`, `__MINT_URL__`) — no JS fetch
 - **WiFi country code:** Must set `esp_wifi_set_country_code("DE")` before `esp_wifi_start()` — defaults to CN which causes auth failures on EU APs
+- **Board A WiFi is broken** — hardware issue confirmed: `WIFI_REASON_AUTH_EXPIRED` on all APs in all modes (APSTA, STA-only, factory MAC). Board B with identical firmware connects instantly. Do not waste time debugging Board A WiFi.
 - Default nsec: `a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2`
 - Board A nsec: `9af47906b45aca5e238390f3d03c8274e154198e81aa2095065627d1e61ca968`
+- CVM relay: `relay.primal.net` — relay disconnects every ~15s by default, now has 60s timeout + WS ping/pong keepalive
+- MCP responses sent via existing WS connection (not new TLS) — ESP32 can't handle multiple simultaneous TLS sessions

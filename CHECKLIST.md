@@ -98,10 +98,15 @@
 - [x] MCP initialize roundtrip via kind 25910 — PASS
 - [x] tools/call get_config via kind 25910 — PASS
 - [x] tools/call get_balance via kind 25910 — PASS
-- [ ] tools/call set_price via kind 25910
-- [ ] End-to-end CVM test: full initialize → tools/list → tools/call sequence
-- [ ] End-to-end MCP tools/call roundtrip via kind 25910
+- [x] tools/list response via kind 25910 — PASS
+- [x] tools/call set_price via kind 25910 — PASS (price updated to 42)
+- [ ] tools/call get_sessions via kind 25910
+- [ ] tools/call get_usage via kind 25910
+- [ ] Non-owner auth rejection via live relay (unit test only so far)
 - [ ] Verify board npub on contextvm.org/servers
+- [ ] Fix relay disconnect cycle (rlen=-26880 every ~15s)
+- [ ] Clean up debug logging (reduce INFO→DEBUG for verbose messages)
+- [ ] Document Board A hardware issue in AGENTS.md
 
 ### WiFi Debugging Findings (Board A — 94:a9:90:2e:37:7c)
 - **Symptom:** `WIFI_REASON_AUTH_EXPIRED` (0x200) on all upstream APs

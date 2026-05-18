@@ -575,31 +575,38 @@ Only accept kind 25910 requests from owner npub (derived from nsec in config.jso
 | 66 | MCP initialize roundtrip | Integration | Response received via nak | PASS |
 | 67 | get_config via CVM | Integration | Returns valid JSON config | PASS |
 | 68 | get_balance via CVM | Integration | Returns balance + proofs | PASS |
-| 69 | set_price via CVM | Integration | Price updated on device | TODO |
-| 70 | Kind 11317 on relay | Integration | Tools list found on relay | PASS* |
-| 71 | Kind 10002 on relay | Integration | Relay list found on relay | PASS* |
+| 69 | set_price via CVM | Integration | Price updated on device | PASS |
+| 70 | Kind 11317 on relay | Integration | Tools list found on relay | PASS |
+| 71 | Kind 10002 on relay | Integration | Relay list found on relay | PASS |
 | 72 | API reachability from host | Integration | HTTP 200 from board AP | PASS |
 | 73 | CVM event publish from host | Integration | Kind 25910 published to relay | PASS |
+| 74 | tools/list via CVM | Integration | All 10 tools listed | PASS |
+| 75 | get_sessions via CVM | Integration | Returns session array | TODO |
+| 76 | get_usage via CVM | Integration | Returns usage stats | TODO |
+| 77 | Non-owner rejection (live) | Integration | Unauthorized event ignored | TODO |
+| 78 | Relay reconnect resilience | Integration | Board reconnects after disconnect | PASS |
 
-*Passes when board has upstream WiFi and SNTP is synced. Events expire without valid `created_at` timestamp.
+## Total: 85 Tests across 8 phases
 
-#### WiFi Country Code Fix (Critical)
+## Merge Readiness Checklist
 
-**Problem:** ESP-IDF defaults to CN (China) regulatory domain when no country code is set. The boards are in DE (Germany/EU). Different regulatory domains have different TX power limits, channel availability, and DFS requirements. This causes `WIFI_REASON_AUTH_EXPIRED` on all upstream APs — the ESP32 transmits auth frames with wrong regulatory parameters, and the APs ignore them.
+### Code Quality
+- [ ] Fix relay disconnect cycle (rlen=-26880 every ~15s, WS read has no timeout)
+- [ ] Clean up debug logging (Sending WS response, WS send result → DEBUG level)
+- [ ] Document Board A hardware WiFi issue in AGENTS.md
 
-**Fix:** Add `esp_wifi_set_country_code("DE", false)` before `esp_wifi_start()` in `tollgate_main.c`.
+### Integration Testing (needs Board B + relay.primal.net)
+- [ ] tools/list response via kind 25910
+- [ ] tools/call set_price via kind 25910
+- [ ] tools/call get_sessions via kind 25910
+- [ ] tools/call get_usage via kind 25910
+- [ ] Non-owner auth rejection via live relay
+- [ ] Verify board npub on contextvm.org/servers
 
-**Evidence:**
-- Auth fails even in STA-only mode (no AP at all), ruling out APSTA channel conflicts
-- Auth fails against a laptop hotspot 1m away, ruling out signal strength
-- Auth fails with factory MAC, ruling out MAC filtering
-- Auth fails with PMF enabled, WPA2 threshold, all-channel scan
-- Laptop connects to same APs at 100% signal — ESP32 radio is the outlier
-- Dense 2.4GHz spectrum (ch1: 2 APs, ch6: 4 APs, ch11: 4 APs) but not exhausted
-
-**Alternative hypothesis:** Hardware antenna issue on Board A. Need to test Board B/C to confirm.
-
-## Total: 81 Tests across 8 phases
+### Pre-merge
+- [ ] `make test-unit` — all 282 unit tests pass
+- [ ] Rebase feature/cvm-integration onto master (1 commit behind)
+- [ ] Verify no conflicts with feature branches (display-fix, multi-mint, price-discovery)
 
 ## Post-Phase 7: Bug Fixes & Architecture Improvements
 

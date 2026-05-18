@@ -11,6 +11,7 @@
 #include "esp_tls.h"
 #include "esp_crt_bundle.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -30,6 +31,8 @@ static void publish_announcements_via_ws(esp_tls_t *tls);
 #define CVM_WS_BUF_SIZE 8192
 #define CVM_MAX_RESPONSE_SIZE 4096
 #define CVM_RECONNECT_DELAY_MS 5000
+#define CVM_WS_READ_TIMEOUT_MS 60000
+#define CVM_WS_PING_INTERVAL_S 30
 
 static char *parse_ws_text_frame(const uint8_t *buf, int len)
 {
@@ -148,7 +151,7 @@ static esp_err_t ws_connect(const char *relay_url, esp_tls_t **tls_out)
 
     esp_tls_cfg_t tls_cfg = {
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .timeout_ms = 15000,
+        .timeout_ms = CVM_WS_READ_TIMEOUT_MS,
     };
     esp_tls_t *tls = esp_tls_init();
     if (!tls) return ESP_ERR_NO_MEM;
@@ -363,9 +366,9 @@ static esp_err_t publish_kind_25910_response_ws(esp_tls_t *tls,
         return ESP_ERR_NO_MEM;
     }
     snprintf(msg, msg_len, "[\"EVENT\",%s]", event_json);
-    ESP_LOGI(TAG, "Sending WS response (%d bytes)", (int)strlen(msg));
+    ESP_LOGD(TAG, "Sending WS response (%d bytes)", (int)strlen(msg));
     int rc = ws_send_text(tls, msg);
-    ESP_LOGI(TAG, "WS send result: %d", rc);
+    ESP_LOGD(TAG, "WS send result: %d", rc);
     free(msg);
     free(event_json);
     return ESP_OK;
@@ -613,6 +616,8 @@ static void cvm_relay_task(void *arg)
             return;
         }
 
+        int64_t last_ping_time = 0;
+
         while (g_running) {
             int rlen = esp_tls_conn_read(tls, buf, CVM_WS_BUF_SIZE - 1);
             if (rlen < 0) {
@@ -631,6 +636,16 @@ static void cvm_relay_task(void *arg)
                     }
                     free(text);
                 }
+            } else if ((buf[0] & 0x0F) == 0x09) {
+                uint8_t pong[2] = {0x8A, 0x00};
+                esp_tls_conn_write(tls, pong, 2);
+            }
+
+            int64_t now = (int64_t)esp_timer_get_time() / 1000000;
+            if (now - last_ping_time >= CVM_WS_PING_INTERVAL_S) {
+                uint8_t ping[2] = {0x89, 0x00};
+                esp_tls_conn_write(tls, ping, 2);
+                last_ping_time = now;
             }
         }
 
