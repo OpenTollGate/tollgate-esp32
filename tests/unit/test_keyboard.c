@@ -38,10 +38,10 @@ int main(void)
     ASSERT_EQ_INT(0, count, "Invalid row 99 returns 0");
 
     {
-        kb_result_t r = kb_hit_test(160, 100, KB_ALPHA_LOWER);
+        kb_result_t r = kb_hit_test(160, 10, KB_ALPHA_LOWER);
         ASSERT(r.action == KB_ACTION_NONE, "Touch above keyboard = NONE");
 
-        r = kb_hit_test(160, 500, KB_ALPHA_LOWER);
+        r = kb_hit_test(160, KB_START_Y + KB_ROW_COUNT * (KB_KEY_H + KB_KEY_GAP) + 10, KB_ALPHA_LOWER);
         ASSERT(r.action == KB_ACTION_NONE, "Touch below keyboard = NONE");
     }
 

@@ -454,7 +454,6 @@ static void render_wifi_setup_password(void) {
             } else if (c == '\004') {
                 label[0] = '>';
                 fg = COLOR_GREEN;
-                bg = COLOR_DARKGRAY;
             } else if (c == '\b') {
                 label[0] = '<';
                 bg = COLOR_GRAY;

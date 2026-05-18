@@ -5,21 +5,21 @@ static const char *s_alpha_lower[] = {
     "qwertyuiop",
     "asdfghjkl",
     "\001zxcvbnm\b",
-    "\002\003 \004"
+    "\002\003\004"
 };
 
 static const char *s_alpha_upper[] = {
     "QWERTYUIOP",
     "ASDFGHJKL",
     "\001ZXCVBNM\b",
-    "\002\003 \004"
+    "\002\003\004"
 };
 
 static const char *s_numsym[] = {
     "1234567890",
     "-/:;()$&@\"",
     "\001.,?!'\\b",
-    "\002\003 \004"
+    "\002\003\004"
 };
 
 #define CTRL_SHIFT  '\001'
@@ -73,9 +73,7 @@ static int key_width_at(int row, int col, int total_keys) {
     if (row == 3) {
         if (col == 0) return 42;
         if (col == total_keys - 1) return 50;
-        if (total_keys == 3 && col == 1) return 168;
-        if (total_keys == 4 && col == 1) return 168;
-        if (total_keys == 4 && col == 2) return 42;
+        return 168;
     }
     return KB_KEY_W;
 }

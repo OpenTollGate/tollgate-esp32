@@ -9,7 +9,7 @@
 #define KB_KEY_H         36
 #define KB_KEY_GAP       2
 #define KB_ROW_COUNT     4
-#define KB_START_Y       310
+#define KB_START_Y       70
 
 typedef enum {
     KB_ALPHA_LOWER,
