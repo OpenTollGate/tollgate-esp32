@@ -1,3 +1,6 @@
 [submodule "nucula_src"]
 	path = nucula_src
 	url = https://github.com/zeugmaster/nucula.git
+[submodule "components/esp-miner"]
+	path = components/esp-miner
+	url = https://github.com/bitaxeorg/ESP-Miner.git
