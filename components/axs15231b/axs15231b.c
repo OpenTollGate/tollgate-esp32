@@ -136,11 +136,11 @@ esp_err_t axs15231b_init(void) {
     esp_err_t ret;
 
     spi_bus_config_t buscfg = {
-        .mosi_io_num = AXS15231B_PIN_D0,
+        .data0_io_num = AXS15231B_PIN_D0,
+        .data1_io_num = AXS15231B_PIN_D1,
         .sclk_io_num = AXS15231B_PIN_CLK,
-        .miso_io_num = -1,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
+        .data2_io_num = AXS15231B_PIN_D2,
+        .data3_io_num = AXS15231B_PIN_D3,
         .max_transfer_sz = 32768,
     };
 
@@ -149,7 +149,7 @@ esp_err_t axs15231b_init(void) {
         .mode = 0,
         .spics_io_num = AXS15231B_PIN_CS,
         .queue_size = 7,
-        .flags = 0,
+        .flags = SPI_DEVICE_HALFDUPLEX,
     };
 
     ret = spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
@@ -266,10 +266,11 @@ void axs15231b_flush(void) {
         int remaining = total_bytes - offset;
         int this_chunk = remaining < chunk_size ? remaining : chunk_size;
 
-        spi_transaction_t t = {0};
-        t.length = this_chunk * 8;
-        t.tx_buffer = fb_bytes + offset;
-        esp_err_t ret = spi_device_polling_transmit(s_spi, &t);
+        spi_transaction_ext_t t = {0};
+        t.base.length = this_chunk * 8;
+        t.base.tx_buffer = fb_bytes + offset;
+        t.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_MULTILINE_CMD;
+        esp_err_t ret = spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Flush transfer failed at offset %d: %s", offset, esp_err_to_name(ret));
             return;
