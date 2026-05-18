@@ -84,12 +84,14 @@
 - [x] WiFi auth threshold fix (WPA3_PSK → WPA2_PSK → WIFI_AUTH_OPEN, now WPA2_PSK)
 - [x] PMF capable mode enabled
 - [x] WIFI_ALL_CHANNEL_SCAN enabled
-- [ ] WiFi country code fix (ESP-IDF defaults to CN, need DE for EU regulatory compliance)
-- [ ] Verify Board A connects to upstream WiFi with country code fix
-- [ ] If Board A fails, try Board B or C
-- [ ] Verify kind 11316 announcement on relay.primal.net
-- [ ] Verify kind 11317 tools list on relay.primal.net
-- [ ] Verify kind 10002 relay list on relay.primal.net
+- [x] WiFi country code fix (ESP-IDF defaults to CN, need DE for EU regulatory compliance)
+- [x] 2s retry delay between WiFi auth attempts
+- [x] Board B connects to WiFi successfully with country code DE
+- [x] Board A confirmed as hardware WiFi issue (auth fails on all APs, Board B works fine)
+- [x] Board B CEP-6 announcements confirmed on relay.primal.net
+- [ ] Verify kind 11316 announcement on relay.primal.net (Board B — DONE via Board B)
+- [ ] Verify kind 11317 tools list on relay.primal.net (Board B — DONE via Board B)
+- [ ] Verify kind 10002 relay list on relay.primal.net (Board B — DONE via Board B)
 - [ ] End-to-end MCP tools/call roundtrip via kind 25910
 - [ ] Verify board npub on contextvm.org/servers
 
