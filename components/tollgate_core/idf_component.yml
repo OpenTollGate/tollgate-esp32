@@ -1,0 +1,6 @@
+version: "1.0.0"
+description: TollGate core component — Cashu payment processing, per-client DNS/firewall, session management for paid WiFi hotspots
+url: https://github.com/nicoulaj/esp32-tollgate
+dependencies:
+  idf:
+    version: ">=5.4.0"

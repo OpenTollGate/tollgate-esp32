@@ -284,65 +284,66 @@ This refactoring **must not proceed** until these branches land on master:
 
 - [ ] All blocking PRs merged to master
 - [ ] This branch rebased onto latest master
-- [ ] Full build passes on master
+- [x] Full build passes on master
 
 ### Phase 1: Create Component Skeleton
 
-- [ ] Create `components/tollgate_core/` directory structure
-- [ ] Create `components/tollgate_core/include/tollgate_core.h` (public API)
-- [ ] Create `components/tollgate_core/include/tollgate_platform.h` (platform interface)
-- [ ] Create `components/tollgate_core/idf_component.yml` (component metadata)
-- [ ] Create `components/tollgate_core/CMakeLists.txt` (register component, REQUIRES nucula_lib)
+- [x] Create `components/tollgate_core/` directory structure
+- [x] Create `components/tollgate_core/include/tollgate_core.h` (public API)
+- [x] Create `components/tollgate_core/include/tollgate_platform.h` (platform interface)
+- [x] Create `components/tollgate_core/idf_component.yml` (component metadata)
+- [x] Create `components/tollgate_core/CMakeLists.txt` (register component)
 - [ ] Verify empty component builds without errors
 
 ### Phase 2: Move Core Modules (one at a time, build after each)
 
-- [ ] Copy `main/cashu.c/h` → `components/tollgate_core/src/tollgate_core_cashu.c/h`
-  - [ ] Rename functions: `cashu_*` → `tollgate_core_cashu_*`
-  - [ ] Replace `tollgate_config_get()` calls with platform callbacks
-  - [ ] Remove direct `config.h` include
+- [x] Copy `main/cashu.c/h` → `components/tollgate_core/src/tollgate_core_cashu.c/h`
+  - [x] Rename functions: `cashu_*` → `tollgate_core_cashu_*`
+  - [x] Replace `tollgate_config_get()` calls with parameterized arguments
+  - [x] Remove direct `config.h` include
   - [ ] Build and verify
-- [ ] Copy `main/dns_server.c/h` → `components/tollgate_core/src/tollgate_core_dns.c/h`
-  - [ ] Rename functions: `dns_server_*` → `tollgate_core_dns_*`
-  - [ ] No platform dependencies (pure LWIP) — should be clean copy
+- [x] Copy `main/dns_server.c/h` → `components/tollgate_core/src/tollgate_core_dns.c/h`
+  - [x] Rename functions: `dns_server_*` → `tollgate_core_dns_*`
+  - [x] No platform dependencies (pure LWIP) — clean copy
   - [ ] Build and verify
-- [ ] Copy `main/firewall.c/h` → `components/tollgate_core/src/tollgate_core_firewall.c/h`
-  - [ ] Rename functions: `firewall_*` → `tollgate_core_firewall_*`
-  - [ ] Internalize `dns_set_authenticated` calls (keep within component)
-  - [ ] Remove `dns_server.h` external dependency
+- [x] Copy `main/firewall.c/h` → `components/tollgate_core/src/tollgate_core_firewall.c/h`
+  - [x] Rename functions: `firewall_*` → `tollgate_core_firewall_*` / `tollgate_core_fw_*`
+  - [x] Internalize `dns_set_authenticated` calls (kept within component)
+  - [x] Remove `dns_server.h` external dependency
   - [ ] Build and verify
-- [ ] Copy `main/session.c/h` → `components/tollgate_core/src/tollgate_core_session.c/h`
-  - [ ] Rename functions: `session_*` → `tollgate_core_session_*`
-  - [ ] Replace `config.h` calls with platform callbacks for metric check
-  - [ ] Internalize firewall notification (already calls firewall directly)
-  - [ ] Support both time and bytes metrics (portable, not stripped)
+- [x] Copy `main/session.c/h` → `components/tollgate_core/src/tollgate_core_session.c/h`
+  - [x] Rename functions: `session_*` → `tollgate_core_session_*`
+  - [x] Replace `config.h` calls with platform callbacks for metric check
+  - [x] Internalize firewall notification (already calls firewall directly)
+  - [x] Support both time and bytes metrics (portable, not stripped)
   - [ ] Build and verify
 
 ### Phase 3: Wire Component API
 
-- [ ] Implement `tollgate_core_init(const tollgate_platform_t *platform)` — stores platform, inits all sub-modules
-- [ ] Implement `tollgate_core_process_payment(ip, token)` — decode → verify → spend → create session
-- [ ] Implement `tollgate_core_client_connected(mac, ip)` — owner detection + firewall check
-- [ ] Implement `tollgate_core_client_disconnected(mac)` — session cleanup + owner reassign
-- [ ] Implement `tollgate_core_tick()` — session expiry check
-- [ ] Implement `tollgate_core_get_status_json()` — JSON status
-- [ ] Implement `tollgate_core_get_config_json()` — JSON config (via platform)
+- [x] Implement `tollgate_core_init(const tollgate_platform_t *platform, esp_ip4_addr_t ap_ip)` — stores platform, inits all sub-modules
+- [x] Implement `tollgate_core_process_payment(ip, token)` — decode → verify → spend → create session
+- [x] Implement `tollgate_core_client_connected(mac, ip)` — owner detection + firewall check
+- [x] Implement `tollgate_core_client_disconnected(mac)` — session cleanup + owner reassign
+- [x] Implement `tollgate_core_tick()` — session expiry check
+- [x] Implement `tollgate_core_get_status_json()` — JSON status
+- [x] Implement `tollgate_core_get_config_json()` — JSON config (via platform)
 - [ ] Build and verify standalone
 
 ### Phase 4: Standalone Platform Implementation
 
-- [ ] Create `main/tollgate_platform.c` implementing `tollgate_platform_t`
-  - [ ] `get_price_sats` → `tollgate_config_get()->price_per_step`
-  - [ ] `get_step_ms` → `tollgate_config_get()->step_size`
-  - [ ] `get_mint_url` → `tollgate_config_get()->mint_url`
-  - [ ] `get_metric` → `tollgate_config_get()->metric`
-  - [ ] `get_step_bytes` → `tollgate_config_get()->step_bytes`
-  - [ ] `get_time_ms` → `xTaskGetTickCount() * portTICK_PERIOD_MS`
-  - [ ] `spend_proofs` → `nucula_wallet_receive()`
-- [ ] Update `main/tollgate_api.c` to call `tollgate_core_*` instead of direct module calls
-- [ ] Update `main/tollgate_main.c` init sequence
-- [ ] Remove old `main/cashu.c`, `main/dns_server.c`, `main/firewall.c`, `main/session.c`
-- [ ] Update `main/CMakeLists.txt` (remove old SRCS, add `tollgate_platform.c`)
+- [x] Create `main/tollgate_platform.c` implementing `tollgate_platform_t`
+  - [x] `get_price_sats` → `tollgate_config_get()->price_per_step`
+  - [x] `get_step_ms` → `tollgate_config_get()->step_size`
+  - [x] `get_mint_url` → `tollgate_config_get()->mint_url`
+  - [x] `get_metric` → `tollgate_config_get()->metric`
+  - [x] `get_step_bytes` → `tollgate_config_get()->step_bytes`
+  - [x] `get_time_ms` → `xTaskGetTickCount() * portTICK_PERIOD_MS`
+  - [x] `spend_proofs` → stub returning true (wallet called separately)
+- [x] Update `main/tollgate_api.c` to call `tollgate_core_*` instead of direct module calls
+- [x] Update `main/tollgate_main.c` init sequence
+- [x] Remove old `main/cashu.c`, `main/dns_server.c`, `main/firewall.c`, `main/session.c` from CMakeLists.txt
+- [x] Update `main/CMakeLists.txt` (remove old SRCS, add `tollgate_platform.c`, add `tollgate_core` to REQUIRES)
+- [x] Update `main/lwip_tollgate_hooks.h` to call `tollgate_core_ip4_canforward_filter`
 - [ ] Full standalone build + test
 
 ### Phase 5: ESP-Miner Integration

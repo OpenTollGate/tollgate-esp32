@@ -13,10 +13,8 @@
 #include "dhcpserver/dhcpserver.h"
 #include "config.h"
 #include "identity.h"
-#include "dns_server.h"
+#include "tollgate_core.h"
 #include "captive_portal.h"
-#include "firewall.h"
-#include "session.h"
 #include "tollgate_api.h"
 #include "nucula_wallet.h"
 #include "wifistr.h"
@@ -73,11 +71,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Station connected: MAC=%02x:%02x:%02x:%02x:%02x:%02x",
                  event->mac[0], event->mac[1], event->mac[2],
                  event->mac[3], event->mac[4], event->mac[5]);
+        tollgate_core_client_connected(event->mac, 0);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STADISCONNECTED) {
         wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
         ESP_LOGI(TAG, "Station disconnected: MAC=%02x:%02x:%02x:%02x:%02x:%02x",
                  event->mac[0], event->mac[1], event->mac[2],
                  event->mac[3], event->mac[4], event->mac[5]);
+        tollgate_core_client_disconnected(event->mac);
     }
 }
 
@@ -115,13 +115,6 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
-static void wallet_init_task(void *pvParameters)
-{
-    const tollgate_config_t *cfg = tollgate_config_get();
-    nucula_wallet_init(cfg->mint_url);
-    vTaskDelete(NULL);
-}
-
 static void publish_wifistr_task(void *pvParameters)
 {
     vTaskDelay(pdMS_TO_TICKS(5000));
@@ -139,7 +132,6 @@ static void start_services(void)
         return;
     }
 
-    esp_netif_get_ip_info(s_ap_netif, &(esp_netif_ip_info_t){0});
     esp_netif_ip_info_t ap_ip_info;
     esp_netif_get_ip_info(s_ap_netif, &ap_ip_info);
 
@@ -147,21 +139,20 @@ static void start_services(void)
     const ip_addr_t *dns_addr = dns_getserver(0);
     upstream_dns.addr = dns_addr->addr;
 
-    firewall_init(ap_ip_info.ip);
-    session_manager_init();
-
     const tollgate_config_t *cfg = tollgate_config_get();
+    const tollgate_platform_t *platform = tollgate_get_platform();
+    tollgate_core_init(platform, ap_ip_info.ip);
+
     nucula_wallet_init(cfg->mint_url);
     lightning_payout_init(&cfg->payout);
 
-    dns_server_start(ap_ip_info.ip, upstream_dns);
+    tollgate_core_dns_start(upstream_dns);
     captive_portal_start(cfg->ap_ip_str);
     tollgate_api_start();
 
     xTaskCreate(publish_wifistr_task, "wifistr_init", 16384, NULL, 3, NULL);
 
-    const tollgate_config_t *cfg2 = tollgate_config_get();
-    if (cfg2->cvm_enabled) {
+    if (cfg->cvm_enabled) {
         cvm_server_init();
         cvm_server_start();
     }
@@ -186,9 +177,8 @@ static void stop_services(void)
 
     captive_portal_stop();
     tollgate_api_stop();
-    dns_server_stop();
+    tollgate_core_dns_stop();
     cvm_server_stop();
-    firewall_revoke_all();
     s_services_running = false;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services stopped ===");
@@ -316,7 +306,7 @@ void app_main(void)
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
-        session_tick();
+        tollgate_core_tick();
         tollgate_client_tick();
         lightning_payout_tick();
     }

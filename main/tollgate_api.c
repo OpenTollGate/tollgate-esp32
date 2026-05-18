@@ -1,8 +1,6 @@
 #include "tollgate_api.h"
-#include "cashu.h"
+#include "tollgate_core.h"
 #include "config.h"
-#include "session.h"
-#include "firewall.h"
 #include "nucula_wallet.h"
 #include "esp_log.h"
 #include "cJSON.h"
@@ -184,37 +182,11 @@ static esp_err_t api_post_payment(httpd_req_t *req)
 
     ESP_LOGI(TAG, "Payment received: %d bytes", total);
 
-    cashu_token_t *token = malloc(sizeof(cashu_token_t));
-    if (!token) {
-        cJSON *notice = create_notice("error", "session-error", "Out of memory");
-        char *json = cJSON_PrintUnformatted(notice);
-        httpd_resp_set_status(req, "503 Service Unavailable");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, json, strlen(json));
-        cJSON_free(json);
-        cJSON_Delete(notice);
-        return ESP_OK;
-    }
-    esp_err_t err = cashu_decode_token(body, token);
-    char *body_copy = strdup(body);
+    esp_err_t err = tollgate_core_process_payment(client_ip, body);
     free(body);
 
     if (err != ESP_OK) {
-        free(token);
-        cJSON *notice = create_notice("error", "payment-error-invalid", "Failed to decode Cashu token");
-        char *json = cJSON_PrintUnformatted(notice);
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, json, strlen(json));
-        cJSON_free(json);
-        cJSON_Delete(notice);
-        return ESP_OK;
-    }
-
-    const char *mint_url = token->mint_url[0] ? token->mint_url : tollgate_config_get()->mint_url;
-    if (!cashu_is_mint_accepted(mint_url)) {
-        free(token);
-        cJSON *notice = create_notice("error", "payment-error-mint-not-accepted", "Mint not accepted");
+        cJSON *notice = create_notice("error", "payment-error", "Payment processing failed");
         char *json = cJSON_PrintUnformatted(notice);
         httpd_resp_set_status(req, "402 Payment Required");
         httpd_resp_set_type(req, "application/json");
@@ -222,99 +194,16 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         cJSON_free(json);
         cJSON_Delete(notice);
         return ESP_OK;
-    }
-
-    cashu_proof_state_t *states = malloc(CASHU_MAX_PROOFS * sizeof(cashu_proof_state_t));
-    if (!states) {
-        free(token);
-        cJSON *notice = create_notice("error", "session-error", "Out of memory");
-        char *json = cJSON_PrintUnformatted(notice);
-        httpd_resp_set_status(req, "503 Service Unavailable");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, json, strlen(json));
-        cJSON_free(json);
-        cJSON_Delete(notice);
-        return ESP_OK;
-    }
-    int state_count = 0;
-    err = cashu_check_proof_states(mint_url, token, states, &state_count);
-    ESP_LOGI(TAG, "Stack HWM after checkstate: %u", uxTaskGetStackHighWaterMark(NULL));
-    if (err != ESP_OK) {
-        free(states);
-        free(token);
-        cJSON *notice = create_notice("error", "payment-error-verification", "Failed to verify token with mint");
-        char *json = cJSON_PrintUnformatted(notice);
-        httpd_resp_set_status(req, "502 Bad Gateway");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, json, strlen(json));
-        cJSON_free(json);
-        cJSON_Delete(notice);
-        return ESP_OK;
-    }
-
-    for (int i = 0; i < state_count; i++) {
-        if (states[i].spent) {
-            free(states);
-            free(token);
-            cJSON *notice = create_notice("error", "payment-error-token-spent", "Token already spent");
-            char *json = cJSON_PrintUnformatted(notice);
-            httpd_resp_set_status(req, "402 Payment Required");
-            httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(req, json, strlen(json));
-            cJSON_free(json);
-            cJSON_Delete(notice);
-            return ESP_OK;
-        }
     }
 
     const tollgate_config_t *cfg = tollgate_config_get();
-    bool is_bytes = (strcmp(cfg->metric, "bytes") == 0);
-    uint64_t step_size = is_bytes ? (uint64_t)cfg->step_size_bytes : (uint64_t)cfg->step_size_ms;
-    uint64_t allotment = cashu_calculate_allotment(token->total_amount, cfg->price_per_step,
-                                                    cfg->metric, step_size);
-    if (allotment == 0) {
-        free(states);
-        free(token);
-        cJSON *notice = create_notice("error", "payment-error-insufficient", "Token value too low");
-        char *json = cJSON_PrintUnformatted(notice);
-        httpd_resp_set_status(req, "402 Payment Required");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, json, strlen(json));
-        cJSON_free(json);
-        cJSON_Delete(notice);
-        return ESP_OK;
-    }
-
-    session_t *session;
-    if (is_bytes) {
-        session = session_create_bytes(client_ip, allotment);
-    } else {
-        session = session_create(client_ip, allotment);
-    }
-    if (!session) {
-        free(states);
-        free(token);
-        cJSON *notice = create_notice("error", "session-error", "Failed to create session");
-        char *json = cJSON_PrintUnformatted(notice);
-        httpd_resp_set_status(req, "503 Service Unavailable");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, json, strlen(json));
-        cJSON_free(json);
-        cJSON_Delete(notice);
-        return ESP_OK;
-    }
-
+    uint64_t allotment = 0;
     cJSON *session_event = create_session_event(client_ip, allotment);
     char *json = cJSON_PrintUnformatted(session_event);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, strlen(json));
     cJSON_free(json);
     cJSON_Delete(session_event);
-
-    nucula_wallet_receive(body_copy);
-
-    free(states);
-    free(token);
     return ESP_OK;
 }
 
@@ -323,29 +212,15 @@ static esp_err_t api_get_usage(httpd_req_t *req)
     uint32_t client_ip = 0;
     get_client_ip(req, &client_ip);
 
-    session_t *session = session_find_by_ip(client_ip);
-    if (!session || !session->active) {
-        httpd_resp_set_type(req, "text/plain");
-        httpd_resp_send(req, "-1/-1", 5);
-        return ESP_OK;
-    }
-
-    const tollgate_config_t *cfg = tollgate_config_get();
-    bool is_bytes = (strcmp(cfg->metric, "bytes") == 0);
-
-    char resp[64];
-    if (is_bytes) {
-        int64_t remaining = (int64_t)session->allotment_bytes - (int64_t)session->bytes_consumed;
-        if (remaining < 0) remaining = 0;
-        snprintf(resp, sizeof(resp), "%lld/%llu", (long long)remaining, (unsigned long long)session->allotment_bytes);
+    char *status_json = tollgate_core_get_status_json();
+    if (status_json) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, status_json, strlen(status_json));
+        cJSON_free(status_json);
     } else {
-        int64_t elapsed = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS - session->start_time_ms;
-        int64_t remaining = session->allotment_ms - elapsed;
-        if (remaining < 0) remaining = 0;
-        snprintf(resp, sizeof(resp), "%lld/%llu", (long long)remaining, (unsigned long long)session->allotment_ms);
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "{}", 2);
     }
-    httpd_resp_set_type(req, "text/plain");
-    httpd_resp_send(req, resp, strlen(resp));
     return ESP_OK;
 }
 
@@ -354,15 +229,10 @@ static esp_err_t api_get_whoami(httpd_req_t *req)
     uint32_t client_ip = 0;
     char resp[96];
     if (get_client_ip(req, &client_ip) == ESP_OK) {
-        char mac[18] = {0};
         esp_ip4_addr_t ip = { .addr = client_ip };
-        if (firewall_get_mac_for_ip(client_ip, mac, sizeof(mac)) == ESP_OK) {
-            snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=%s", IP2STR(&ip), mac);
-        } else {
-            snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=unknown", IP2STR(&ip));
-        }
+        snprintf(resp, sizeof(resp), "ip=" IPSTR, IP2STR(&ip));
     } else {
-        snprintf(resp, sizeof(resp), "ip=unknown mac=unknown");
+        snprintf(resp, sizeof(resp), "ip=unknown");
     }
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, resp, strlen(resp));
