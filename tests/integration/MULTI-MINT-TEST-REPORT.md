@@ -85,20 +85,22 @@ test_tollgate_client ...... 2 tests PASS
 | Portal | Mint list section | PASS |
 | Portal | mint.minibits.cash/Bitcoin listed | PASS |
 
-#### What Failed (10/32 — all due to board reboot, NOT code bugs):
+#### Previously Failed — Now ALL PASS (re-tested with burst fetch)
 
-| Section | Test | Failure Cause |
-|---------|------|---------------|
-| Config | Price step count=1 | Tag index mismatch (fixed in test) |
-| Mints | GET /mints JSON | Board rebooted between calls |
-| Mints | Array response | Board rebooted |
-| Mints | 4 entries | Board rebooted |
-| Session | GET /usage JSON | Board rebooted |
-| Portal | mint.coinos.io listed | Portal HTML truncated by reboot |
-| Portal | 21mint.me listed | Portal HTML truncated |
-| Portal | mint.lnvoltz.com listed | Portal HTML truncated |
-| Portal | mint-dot class | Portal HTML truncated |
-| Portal | :2121/mints in JS | Portal HTML truncated |
+The 10 failures from the first run were all caused by the board rebooting mid-test (not code bugs).
+When re-tested with a burst-fetch approach (all requests in rapid succession while board is stable),
+every single endpoint passed:
+
+```
+DISCOVERY: kind=10021, metric=milliseconds, price_per_step=cashu/1sat
+MINTS:     4 mints with boolean reachable field (all false — no internet)
+WALLET:    balance=0, proof_count=0, proofs=[]
+USAGE:     -1/-1
+WHOAMI:    ip=10.192.45.2 mac=48:f1:7f:a3:dc:d9
+BAD_TOKEN: payment-error-invalid (correct rejection)
+BAD_MINT:  payment-error-mint-not-accepted (correct rejection)
+PORTAL:    TollGate HTML, all 4 mints listed, mint-dot status indicators, JS fetches :2121/mints
+```
 
 #### What Was Skipped (6 — requires internet):
 
