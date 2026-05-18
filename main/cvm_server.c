@@ -30,6 +30,9 @@ static void publish_announcements_via_ws(esp_tls_t *tls);
 #define CVM_WS_BUF_SIZE 8192
 #define CVM_MAX_RESPONSE_SIZE 4096
 #define CVM_RECONNECT_DELAY_MS 5000
+#define CVM_WS_READ_TIMEOUT_MS 1000
+#define CVM_WS_PING_INTERVAL_S 30
+#define CVM_WS_MAX_CONSECUTIVE_TIMEOUTS 65
 
 static char *parse_ws_text_frame(const uint8_t *buf, int len)
 {
@@ -553,24 +556,46 @@ static void cvm_relay_task(void *arg)
             return;
         }
 
+        int64_t last_ping_time = (int64_t)esp_timer_get_time() / 1000000;
+        int consecutive_timeouts = 0;
+
         while (g_running) {
             int rlen = esp_tls_conn_read(tls, buf, CVM_WS_BUF_SIZE - 1);
             if (rlen < 0) {
-                ESP_LOGW(TAG, "Read error on %s (rlen=%d)", relay_url, rlen);
+                consecutive_timeouts++;
+                if (consecutive_timeouts >= CVM_WS_MAX_CONSECUTIVE_TIMEOUTS) {
+                    ESP_LOGW(TAG, "Read timeout on %s (%d consecutive)", relay_url, consecutive_timeouts);
+                    break;
+                }
+            } else if (rlen == 0) {
+                ESP_LOGW(TAG, "Connection closed by %s", relay_url);
                 break;
-            }
-            if (rlen == 0) {
-                break;
+            } else {
+                consecutive_timeouts = 0;
+                if ((buf[0] & 0x0F) == 0x01) {
+                    char *text = parse_ws_text_frame(buf, rlen);
+                    if (text) {
+                        if (strlen(text) > 0) {
+                            process_relay_message(tls, relay_url, text);
+                        }
+                        free(text);
+                    }
+                } else if ((buf[0] & 0x0F) == 0x09) {
+                    ESP_LOGD(TAG, "Relay ping received, sending pong");
+                    uint8_t pong[2] = {0x8A, 0x00};
+                    esp_tls_conn_write(tls, pong, 2);
+                } else if ((buf[0] & 0x0F) == 0x08) {
+                    ESP_LOGW(TAG, "Relay sent close frame");
+                    break;
+                }
             }
 
-            if ((buf[0] & 0x0F) == 0x01) {
-                char *text = parse_ws_text_frame(buf, rlen);
-                if (text) {
-                    if (strlen(text) > 0) {
-                        process_relay_message(relay_url, text);
-                    }
-                    free(text);
-                }
+            int64_t now = (int64_t)esp_timer_get_time() / 1000000;
+            if (now - last_ping_time >= CVM_WS_PING_INTERVAL_S) {
+                uint8_t ping[2] = {0x89, 0x00};
+                esp_tls_conn_write(tls, ping, 2);
+                last_ping_time = now;
+                ESP_LOGD(TAG, "Sent WS keepalive ping");
             }
         }
 

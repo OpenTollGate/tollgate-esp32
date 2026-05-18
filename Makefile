@@ -280,6 +280,11 @@ test-cvm:
 	@echo "=== Running CVM integration test ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-cvm.mjs
 
+test-cvm-mcp:
+	$(call _require_board_lock)
+	@echo "=== Running CVM MCP relay integration test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-cvm-mcp-relay.mjs
+
 # ──────────────────────────────────────────────
 # Wallet
 # ──────────────────────────────────────────────

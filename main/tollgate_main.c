@@ -23,10 +23,6 @@
 #include "tollgate_client.h"
 #include "lightning_payout.h"
 #include "cvm_server.h"
-#include "display.h"
-#include "local_relay.h"
-#include "relay_selector.h"
-#include "sync_manager.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -182,11 +178,6 @@ static void start_services(void)
     s_services_running = true;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services started ===");
-
-    display_set_state(DISPLAY_READY);
-    char portal_url[128];
-    snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
-    display_update(cfg->ap_ssid, 0, 0, portal_url);
 }
 
 static void stop_services(void)
@@ -269,9 +260,6 @@ static void wifi_init_sta(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "=== TollGate ESP32 Starting ===");
-
-    display_init();
-    display_set_state(DISPLAY_BOOT);
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
