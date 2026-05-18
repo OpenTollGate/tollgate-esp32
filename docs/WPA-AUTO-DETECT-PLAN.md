@@ -97,6 +97,10 @@ probes actually fire during short board uptime windows.
 - [x] Verify STA connects via serial (`Got IP:192.168.2.16`)
 - [x] Verify health probes fire and mints show `reachable: true`
 - [x] Run API endpoint tests (discovery, mints, wallet, usage, whoami)
+- [x] Run `make test-discovery-b`, `make test-mints-b`, `make test-multi-mint-b` — all pass
+- [x] All 4 mints confirmed reachable via health probes on Board B
+- [x] Discovery shows 4 `price_per_step` tags (one per reachable mint)
+- [x] Wallet has 40 sats balance from previous payment (proofs stored in NVS)
 - [ ] Test 6 previously-skipped scenarios (real payment, unreachable transition, etc.)
 
 ### Commit
@@ -104,6 +108,8 @@ probes actually fire during short board uptime windows.
 - [ ] Push when Nostr relay recovers (relay.ngit.dev still down)
 
 ## Commits
+- `b387982` wip: disable display for stability testing
+- `d21fc93` docs: update WPA auto-detect plan with hardware verification results
 - `2ad2ed4` feat: WPA auto-detect, STA connectivity fix, lwip crash fix (feature/multi-mint-support)
 - `64e81b5` feat: WPA auto-detect SPIFFS generation + per-board flash targets (physical-router-test-automation)
 
