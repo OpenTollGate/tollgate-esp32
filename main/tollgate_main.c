@@ -108,8 +108,6 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         char gw_ip_str[16];
         snprintf(gw_ip_str, sizeof(gw_ip_str), IPSTR, IP2STR(&event->ip_info.gw));
         tollgate_client_on_sta_connected(gw_ip_str);
-
-        xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
         ESP_LOGW(TAG, "Lost IP address");
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
@@ -178,6 +176,13 @@ static void start_services(void)
     s_services_running = true;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services started ===");
+
+    if (cfg->display_enabled) {
+        display_set_state(DISPLAY_READY);
+        char portal_url[128];
+        snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
+        display_update(cfg->ap_ssid, 0, 0, portal_url);
+    }
 }
 
 static void stop_services(void)
@@ -259,9 +264,6 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "=== TollGate ESP32 Starting ===");
 
-    ESP_LOGW(TAG, "Display disabled for stability testing");
-
-
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -271,7 +273,13 @@ void app_main(void)
 
     ESP_ERROR_CHECK(tollgate_config_init());
 
-    ESP_ERROR_CHECK(identity_init(tollgate_config_get()->nsec));
+    const tollgate_config_t *init_cfg = tollgate_config_get();
+    if (init_cfg->display_enabled) {
+        display_init();
+        display_set_state(DISPLAY_BOOT);
+    }
+
+    ESP_ERROR_CHECK(identity_init(init_cfg->nsec));
 
     tollgate_config_derive_unique((tollgate_config_t *)tollgate_config_get());
 

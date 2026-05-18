@@ -1,6 +1,7 @@
 #include "tollgate_api.h"
 #include "cashu.h"
 #include "config.h"
+#include "identity.h"
 #include "session.h"
 #include "firewall.h"
 #include "nucula_wallet.h"
@@ -15,8 +16,6 @@
 
 static const char *TAG = "tollgate_api";
 static httpd_handle_t s_api_server = NULL;
-
-static const char *TOLLGATE_PUBKEY = "0000000000000000000000000000000000000000000000000000000000000000";
 
 static esp_err_t get_client_ip(httpd_req_t *req, uint32_t *ip_out)
 {
@@ -34,7 +33,7 @@ static cJSON *create_notice(const char *level, const char *code, const char *con
 {
     cJSON *root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "kind", 21023);
-    cJSON_AddStringToObject(root, "pubkey", TOLLGATE_PUBKEY);
+    cJSON_AddStringToObject(root, "pubkey", identity_get()->npub_hex);
     cJSON *tags = cJSON_CreateArray();
     cJSON *level_tag = cJSON_CreateArray();
     cJSON_AddItemToArray(level_tag, cJSON_CreateString("level"));
@@ -53,7 +52,7 @@ static cJSON *create_session_event(uint32_t client_ip, uint64_t allotment_ms)
 {
     cJSON *root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "kind", 1022);
-    cJSON_AddStringToObject(root, "pubkey", TOLLGATE_PUBKEY);
+    cJSON_AddStringToObject(root, "pubkey", identity_get()->npub_hex);
 
     cJSON *tags = cJSON_CreateArray();
 
@@ -95,7 +94,7 @@ static esp_err_t api_get_discovery(httpd_req_t *req)
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "kind", 10021);
-    cJSON_AddStringToObject(root, "pubkey", TOLLGATE_PUBKEY);
+    cJSON_AddStringToObject(root, "pubkey", identity_get()->npub_hex);
 
     cJSON *tags = cJSON_CreateArray();
 

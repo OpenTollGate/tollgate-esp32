@@ -19,4 +19,11 @@ tests/unit/test_identity
 tests/unit/test_nostr_event
 tests/unit/test_cashu
 tests/unit/test_session
+tests/unit/test_mcp_handler
+tests/unit/test_mint_health
+tests/unit/test_tollgate_client
+tests/unit/test_cvm_server
+tests/unit/test_lnurl_pay
+tests/unit/test_lightning_payout
+tests/unit/test_nip04
 interop/routers.env
