@@ -11,6 +11,7 @@ static const char *TAG = "touch";
 static i2c_master_bus_handle_t s_bus = NULL;
 static i2c_master_dev_handle_t s_dev = NULL;
 static bool s_initialized = false;
+static int s_rotation = 0;
 
 static const uint8_t s_read_cmd[11] = {
     0xb5, 0xab, 0xa5, 0x5a, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00
@@ -115,7 +116,31 @@ bool touch_read(touch_point_t *pt) {
     }
 
     touch_parse_raw(data, pt);
+
+    if (pt->touched && s_rotation != 0) {
+        uint16_t raw_x = pt->x;
+        uint16_t raw_y = pt->y;
+        switch (s_rotation) {
+            case 1:
+                pt->x = raw_y;
+                pt->y = TOUCH_MAX_X - raw_x;
+                break;
+            case 2:
+                pt->x = TOUCH_MAX_X - raw_x;
+                pt->y = TOUCH_MAX_Y - raw_y;
+                break;
+            case 3:
+                pt->x = TOUCH_MAX_Y - raw_y;
+                pt->y = raw_x;
+                break;
+        }
+    }
+
     return pt->touched;
+}
+
+void touch_set_rotation(int rotation) {
+    s_rotation = rotation;
 }
 
 void touch_deinit(void) {

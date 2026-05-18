@@ -22,6 +22,7 @@ typedef struct {
 esp_err_t touch_init(void);
 bool touch_read(touch_point_t *pt);
 void touch_deinit(void);
+void touch_set_rotation(int rotation);
 
 void touch_parse_raw(const uint8_t *data, touch_point_t *pt);
 

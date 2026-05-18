@@ -28,11 +28,28 @@ static const char *s_numsym[] = {
 #define CTRL_DONE   '\004'
 #define CTRL_BS     '\b'
 
+static kb_layout_t s_layout = {
+    .key_w = 28,
+    .key_h = 36,
+    .key_gap = 2,
+    .start_y = 70,
+    .screen_w = 320,
+    .row_count = 4,
+};
+
 void kb_state_init(kb_state_t *st) {
     if (!st) return;
     memset(st, 0, sizeof(*st));
     st->layer = KB_ALPHA_LOWER;
     st->reveal = false;
+}
+
+void kb_set_layout(const kb_layout_t *layout) {
+    if (layout) s_layout = *layout;
+}
+
+const kb_layout_t *kb_get_layout(void) {
+    return &s_layout;
 }
 
 static const char **get_layer(kb_layer_t layer) {
@@ -43,12 +60,8 @@ static const char **get_layer(kb_layer_t layer) {
     }
 }
 
-static int key_is_ctrl(char c) {
-    return c == CTRL_SHIFT || c == CTRL_LAYER || c == CTRL_SPACE || c == CTRL_DONE || c == CTRL_BS;
-}
-
 int kb_get_row_keys(int row, kb_layer_t layer, const char **keys_out) {
-    if (row < 0 || row >= KB_ROW_COUNT) {
+    if (row < 0 || row >= s_layout.row_count) {
         *keys_out = NULL;
         return 0;
     }
@@ -58,46 +71,59 @@ int kb_get_row_keys(int row, kb_layer_t layer, const char **keys_out) {
     return (int)strlen(row_str);
 }
 
-static int row_x_offset(int row) {
+static int row_x_offset(int row, int total_keys) {
+    int kw = s_layout.key_w;
+    int gap = s_layout.key_gap;
+    int total_w = total_keys * kw + (total_keys - 1) * gap;
+    int margin = (s_layout.screen_w - total_w) / 2;
+    if (margin < 2) margin = 2;
     switch (row) {
-        case 0: return 5;
-        case 1: return 14;
-        case 2: return 23;
-        case 3: return 5;
-        default: return 0;
+        case 0: return margin;
+        case 1: return margin + kw / 2;
+        case 2: return margin + kw;
+        case 3: return margin;
+        default: return margin;
     }
 }
 
 static int key_width_at(int row, int col, int total_keys) {
-    (void)col;
+    int kw = s_layout.key_w;
     if (row == 3) {
-        if (col == 0) return 42;
-        if (col == total_keys - 1) return 50;
-        return 168;
+        int gap = s_layout.key_gap;
+        int margin = row_x_offset(3, total_keys);
+        int available = s_layout.screen_w - margin * 2;
+        int side_w = (available - gap) / 4;
+        if (col == 0) return side_w;
+        if (col == total_keys - 1) return side_w;
+        return available - side_w * 2 - gap * 2;
     }
-    return KB_KEY_W;
+    return kw;
 }
 
 kb_result_t kb_hit_test(int tx, int ty, kb_layer_t layer) {
     kb_result_t result = {KB_ACTION_NONE, 0};
+    int sy = s_layout.start_y;
+    int kw = s_layout.key_w;
+    int kh = s_layout.key_h;
+    int gap = s_layout.key_gap;
 
-    if (ty < KB_START_Y || ty >= KB_START_Y + KB_ROW_COUNT * (KB_KEY_H + KB_KEY_GAP)) {
+    if (ty < sy || ty >= sy + s_layout.row_count * (kh + gap)) {
         return result;
     }
 
-    int row = (ty - KB_START_Y) / (KB_KEY_H + KB_KEY_GAP);
-    if (row < 0 || row >= KB_ROW_COUNT) return result;
+    int row = (ty - sy) / (kh + gap);
+    if (row < 0 || row >= s_layout.row_count) return result;
 
     const char *row_str;
     int total_keys = kb_get_row_keys(row, layer, &row_str);
     if (total_keys == 0) return result;
 
-    int x_off = row_x_offset(row);
+    int x_off = row_x_offset(row, total_keys);
     int cx = x_off;
 
     for (int col = 0; col < total_keys; col++) {
-        int kw = key_width_at(row, col, total_keys);
-        if (tx >= cx && tx < cx + kw) {
+        int key_w = key_width_at(row, col, total_keys);
+        if (tx >= cx && tx < cx + key_w) {
             char c = row_str[col];
             if (c == CTRL_SHIFT) {
                 result.action = KB_ACTION_SHIFT;
@@ -116,7 +142,7 @@ kb_result_t kb_hit_test(int tx, int ty, kb_layer_t layer) {
             }
             return result;
         }
-        cx += kw + KB_KEY_GAP;
+        cx += key_w + gap;
     }
 
     return result;

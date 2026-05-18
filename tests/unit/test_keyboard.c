@@ -41,37 +41,41 @@ int main(void)
         kb_result_t r = kb_hit_test(160, 10, KB_ALPHA_LOWER);
         ASSERT(r.action == KB_ACTION_NONE, "Touch above keyboard = NONE");
 
-        r = kb_hit_test(160, KB_START_Y + KB_ROW_COUNT * (KB_KEY_H + KB_KEY_GAP) + 10, KB_ALPHA_LOWER);
+        r = kb_hit_test(160, 70 + 4 * (36 + 2) + 10, KB_ALPHA_LOWER);
         ASSERT(r.action == KB_ACTION_NONE, "Touch below keyboard = NONE");
     }
 
     {
-        int mid_x = 5 + KB_KEY_W / 2;
-        int mid_y = KB_START_Y + KB_KEY_H / 2;
+        int margin_r0 = (320 - (10 * 28 + 9 * 2)) / 2;
+        int mid_x = margin_r0 + 28 / 2;
+        int mid_y = 70 + 36 / 2;
         kb_result_t r = kb_hit_test(mid_x, mid_y, KB_ALPHA_LOWER);
         ASSERT(r.action == KB_ACTION_CHAR, "Row 0 first key is a char");
         ASSERT_EQ_INT('q', r.ch, "Row 0 first key = 'q'");
     }
 
     {
-        int x = 5 + KB_KEY_W + KB_KEY_GAP + KB_KEY_W / 2;
-        int y = KB_START_Y + KB_KEY_H / 2;
+        int margin_r0 = (320 - (10 * 28 + 9 * 2)) / 2;
+        int x = margin_r0 + 28 + 2 + 28 / 2;
+        int y = 70 + 36 / 2;
         kb_result_t r = kb_hit_test(x, y, KB_ALPHA_LOWER);
         ASSERT(r.action == KB_ACTION_CHAR, "Row 0 second key is a char");
         ASSERT_EQ_INT('w', r.ch, "Row 0 second key = 'w'");
     }
 
     {
-        int y_row1 = KB_START_Y + (KB_KEY_H + KB_KEY_GAP) + KB_KEY_H / 2;
-        int x_row1 = 14 + KB_KEY_W / 2;
+        int margin_r1 = (320 - (9 * 28 + 8 * 2)) / 2;
+        int y_row1 = 70 + (36 + 2) + 36 / 2;
+        int x_row1 = margin_r1 + 28 / 2 + 28 / 2;
         kb_result_t r = kb_hit_test(x_row1, y_row1, KB_ALPHA_LOWER);
         ASSERT(r.action == KB_ACTION_CHAR, "Row 1 first key is a char");
         ASSERT_EQ_INT('a', r.ch, "Row 1 first key = 'a'");
     }
 
     {
-        int y_row2 = KB_START_Y + 2 * (KB_KEY_H + KB_KEY_GAP) + KB_KEY_H / 2;
-        int x_row2 = 23 + 42 / 2;
+        int margin_r2 = (320 - (9 * 28 + 8 * 2)) / 2 + 28;
+        int y_row2 = 70 + 2 * (36 + 2) + 36 / 2;
+        int x_row2 = margin_r2 + 28 / 2;
         kb_result_t r = kb_hit_test(x_row2, y_row2, KB_ALPHA_LOWER);
         ASSERT(r.action == KB_ACTION_SHIFT, "Row 2 first key = SHIFT");
     }

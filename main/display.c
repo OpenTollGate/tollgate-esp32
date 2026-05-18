@@ -46,17 +46,53 @@ static int64_t s_last_allotment_ms = 0;
 #define COLOR_GRAY     0x8410
 #define COLOR_DARKGRAY 0x4208
 #define COLOR_LIGHTBLUE 0xA5FF
+#define COLOR_HIGHLIGHT 0x07E0
 
 static wifi_setup_t s_wifi_setup;
 static kb_state_t s_kb_state;
 static bool s_wifi_setup_active = false;
 static bool s_touch_initialized = false;
 static bool s_wifi_scan_pending = false;
+static int s_display_rotation = 0;
 
 #define SETUP_BTN_X 240
 #define SETUP_BTN_Y 440
 #define SETUP_BTN_W 72
 #define SETUP_BTN_H 30
+
+static void enter_wifi_setup_rotation(void) {
+    if (s_display_rotation != 1) {
+        s_display_rotation = 1;
+        axs15231b_set_rotation(1);
+        touch_set_rotation(1);
+        kb_layout_t landscape = {
+            .key_w = 38,
+            .key_h = 40,
+            .key_gap = 2,
+            .start_y = 170,
+            .screen_w = 480,
+            .row_count = 4,
+        };
+        kb_set_layout(&landscape);
+    }
+}
+
+static void exit_wifi_setup_rotation(void) {
+    if (s_display_rotation != 0) {
+        s_display_rotation = 0;
+        axs15231b_set_rotation(0);
+        touch_set_rotation(0);
+        kb_layout_t portrait = {
+            .key_w = 28,
+            .key_h = 36,
+            .key_gap = 2,
+            .start_y = 70,
+            .screen_w = 320,
+            .row_count = 4,
+        };
+        kb_set_layout(&portrait);
+    }
+}
 
 static void render_setup_button(int x, int y, int w, int h) {
     axs15231b_fill_rect(x, y, w, h, COLOR_DARKGRAY);
@@ -67,6 +103,14 @@ static void render_setup_button(int x, int y, int w, int h) {
 
 static bool touch_in_rect(uint16_t tx, uint16_t ty, int x, int y, int w, int h) {
     return tx >= x && tx < x + w && ty >= y && ty < y + h;
+}
+
+static void highlight_rect(int x, int y, int w, int h) {
+    axs15231b_fill_rect(x, y, w, h, COLOR_HIGHLIGHT);
+    axs15231b_flush();
+    vTaskDelay(pdMS_TO_TICKS(80));
+    axs15231b_fill_rect(x, y, w, h, COLOR_DARKGRAY);
+    axs15231b_flush();
 }
 
 static int qr_version_from_strlen(int len) {
@@ -357,6 +401,7 @@ static void render_wifi_setup_scanning(void) {
 
 static void render_wifi_setup_list(void) {
     int screen_w = axs15231b_get_width();
+    int screen_h = axs15231b_get_height();
     axs15231b_fill_screen(COLOR_BG);
 
     const char *title = "Select Network";
@@ -365,47 +410,51 @@ static void render_wifi_setup_list(void) {
 
     int y = 25;
     int visible = wifi_setup_visible_count(&s_wifi_setup);
+    int item_w = screen_w - 20;
+    int max_y = screen_h - 40;
 
-    for (int i = 0; i < visible && y < 295; i++) {
+    for (int i = 0; i < visible && y < max_y; i++) {
         const wifi_ap_info_t *ap = wifi_setup_get_visible(&s_wifi_setup, i);
         if (!ap) break;
 
-        char line[40];
         int rssi_bars = 0;
         if (ap->rssi >= -30) rssi_bars = 4;
         else if (ap->rssi >= -50) rssi_bars = 3;
         else if (ap->rssi >= -70) rssi_bars = 2;
         else rssi_bars = 1;
 
-        snprintf(line, sizeof(line), "%s", ap->ssid);
-        axs15231b_fill_rect(5, y, 260, 26, COLOR_DARKGRAY);
-        display_render_text(10, y + 4, line, COLOR_WHITE, COLOR_DARKGRAY, 1);
+        axs15231b_fill_rect(10, y, item_w, 26, COLOR_DARKGRAY);
+        display_render_text(15, y + 4, ap->ssid, COLOR_WHITE, COLOR_DARKGRAY, 1);
 
+        int bar_x = 10 + item_w - 50;
         for (int b = 0; b < rssi_bars; b++) {
-            axs15231b_fill_rect(270 + b * 8, y + 16 - (b + 1) * 4, 6, (b + 1) * 4, COLOR_GREEN);
+            axs15231b_fill_rect(bar_x + b * 10, y + 16 - (b + 1) * 4, 8, (b + 1) * 4, COLOR_GREEN);
         }
 
         if (ap->secured) {
-            const char *lock = "*";
-            display_render_text(254, y + 4, lock, COLOR_YELLOW, COLOR_DARKGRAY, 1);
+            display_render_text(bar_x - 12, y + 4, "*", COLOR_YELLOW, COLOR_DARKGRAY, 1);
         }
 
         y += 30;
     }
 
-    render_setup_button(5, 440, 50, 28);
-    display_render_text(10, 444, "X", COLOR_WHITE, COLOR_DARKGRAY, 1);
+    int btn_y = screen_h - 30;
+    axs15231b_fill_rect(10, btn_y, 50, 26, COLOR_DARKGRAY);
+    display_render_text(25, btn_y + 5, "X", COLOR_WHITE, COLOR_DARKGRAY, 1);
 
     axs15231b_flush();
 }
 
 static void render_wifi_setup_password(void) {
+    int screen_w = axs15231b_get_width();
+    const kb_layout_t *kb = kb_get_layout();
     axs15231b_fill_screen(COLOR_BG);
 
     display_render_text(10, 5, s_wifi_setup.selected_ssid, COLOR_CYAN, COLOR_BG, 1);
     display_render_text(10, 25, "Password:", COLOR_DIM, COLOR_BG, 1);
 
-    axs15231b_fill_rect(10, 40, 220, 20, COLOR_DARKGRAY);
+    int field_w = screen_w - 80;
+    axs15231b_fill_rect(10, 40, field_w, 20, COLOR_DARKGRAY);
 
     char masked[KB_INPUT_MAX + 1];
     if (s_kb_state.reveal) {
@@ -413,30 +462,40 @@ static void render_wifi_setup_password(void) {
         masked[sizeof(masked) - 1] = '\0';
     } else {
         int len = s_kb_state.cursor;
-        if (len > 27) len = 27;
+        int max_chars = (field_w - 8) / 8;
+        if (len > max_chars) len = max_chars;
         for (int i = 0; i < len; i++) masked[i] = '*';
         masked[len] = '\0';
     }
     display_render_text(14, 43, masked, COLOR_WHITE, COLOR_DARKGRAY, 1);
 
+    int eye_x = 10 + field_w + 5;
     const char *eye_label = s_kb_state.reveal ? "H" : "S";
-    axs15231b_fill_rect(235, 40, 24, 20, COLOR_GRAY);
-    display_render_text(241, 43, eye_label, COLOR_WHITE, COLOR_GRAY, 1);
+    axs15231b_fill_rect(eye_x, 40, 24, 20, COLOR_GRAY);
+    display_render_text(eye_x + 8, 43, eye_label, COLOR_WHITE, COLOR_GRAY, 1);
 
-    int kb_y = 70;
-    for (int row = 0; row < KB_ROW_COUNT; row++) {
+    int kb_y = kb->start_y;
+    for (int row = 0; row < kb->row_count; row++) {
         const char *row_str;
         int key_count = kb_get_row_keys(row, s_kb_state.layer, &row_str);
-        int x_off = (row == 0) ? 5 : (row == 1) ? 14 : (row == 2) ? 23 : 5;
+        const char *tmp;
+        int total_keys = kb_get_row_keys(row, s_kb_state.layer, &tmp);
+        int x_off = (row == 0) ? (screen_w - total_keys * kb->key_w - (total_keys - 1) * kb->key_gap) / 2
+                   : (row == 1) ? (screen_w - total_keys * kb->key_w - (total_keys - 1) * kb->key_gap) / 2 + kb->key_w / 2
+                   : (row == 2) ? (screen_w - total_keys * kb->key_w - (total_keys - 1) * kb->key_gap) / 2 + kb->key_w
+                   : (screen_w - total_keys * kb->key_w - (total_keys - 1) * kb->key_gap) / 2;
 
         int cx = x_off;
         for (int col = 0; col < key_count; col++) {
             char c = row_str[col];
-            int kw = 28;
+            int kw = kb->key_w;
             if (row == 3) {
-                if (col == 0) kw = 42;
-                else if (col == key_count - 1) kw = 50;
-                else kw = 168;
+                int margin = (screen_w - total_keys * kb->key_w - (total_keys - 1) * kb->key_gap) / 2;
+                int available = screen_w - margin * 2;
+                int side_w = (available - kb->key_gap) / 4;
+                if (col == 0) kw = side_w;
+                else if (col == key_count - 1) kw = side_w;
+                else kw = available - side_w * 2 - kb->key_gap * 2;
             }
 
             uint16_t bg = COLOR_DARKGRAY;
@@ -461,12 +520,12 @@ static void render_wifi_setup_password(void) {
                 label[0] = c;
             }
 
-            axs15231b_fill_rect(cx, kb_y, kw, 30, bg);
+            axs15231b_fill_rect(cx, kb_y, kw, kb->key_h, bg);
             int lw = 8;
-            display_render_text(cx + (kw - lw) / 2, kb_y + 8, label, fg, bg, 1);
-            cx += kw + 2;
+            display_render_text(cx + (kw - lw) / 2, kb_y + (kb->key_h - 8) / 2, label, fg, bg, 1);
+            cx += kw + kb->key_gap;
         }
-        kb_y += 34;
+        kb_y += kb->key_h + kb->key_gap;
     }
 
     axs15231b_flush();
@@ -492,53 +551,65 @@ static void render_wifi_setup_connecting(void) {
 
 static void render_wifi_setup_result(void) {
     int screen_w = axs15231b_get_width();
+    int screen_h = axs15231b_get_height();
     axs15231b_fill_screen(COLOR_BG);
 
     if (s_wifi_setup.state == SETUP_SUCCESS) {
         const char *msg = "Connected!";
         int mw = strlen(msg) * 8 * 2;
-        display_render_text((screen_w - mw) / 2, 180, msg, COLOR_WHITE, COLOR_GREEN, 2);
+        display_render_text((screen_w - mw) / 2, screen_h / 2 - 40, msg, COLOR_WHITE, COLOR_GREEN, 2);
 
         if (s_wifi_setup.connect_ip[0]) {
             char ip_line[32];
             snprintf(ip_line, sizeof(ip_line), "IP: %s", s_wifi_setup.connect_ip);
             int iw = strlen(ip_line) * 8;
-            display_render_text((screen_w - iw) / 2, 240, ip_line, COLOR_WHITE, COLOR_BG, 1);
+            display_render_text((screen_w - iw) / 2, screen_h / 2, ip_line, COLOR_WHITE, COLOR_BG, 1);
         }
     } else {
         const char *msg = "Connection failed";
         int mw = strlen(msg) * 8 * 2;
-        display_render_text((screen_w - mw) / 2, 180, msg, COLOR_WHITE, COLOR_RED, 2);
+        display_render_text((screen_w - mw) / 2, screen_h / 2 - 40, msg, COLOR_WHITE, COLOR_RED, 2);
 
         const char *hint = "Wrong password?";
         int hw = strlen(hint) * 8;
-        display_render_text((screen_w - hw) / 2, 240, hint, COLOR_YELLOW, COLOR_BG, 1);
+        display_render_text((screen_w - hw) / 2, screen_h / 2, hint, COLOR_YELLOW, COLOR_BG, 1);
 
-        axs15231b_fill_rect(30, 280, 120, 30, COLOR_DARKGRAY);
-        display_render_text(50, 288, "Retry", COLOR_WHITE, COLOR_DARKGRAY, 1);
-        axs15231b_fill_rect(170, 280, 120, 30, COLOR_DARKGRAY);
-        display_render_text(180, 288, "Change", COLOR_WHITE, COLOR_DARKGRAY, 1);
+        int btn_y = screen_h / 2 + 30;
+        int btn_w = (screen_w - 40) / 2;
+        axs15231b_fill_rect(10, btn_y, btn_w, 30, COLOR_DARKGRAY);
+        display_render_text(10 + (btn_w - 40) / 2, btn_y + 8, "Retry", COLOR_WHITE, COLOR_DARKGRAY, 1);
+        axs15231b_fill_rect(20 + btn_w, btn_y, btn_w, 30, COLOR_DARKGRAY);
+        display_render_text(20 + btn_w + (btn_w - 50) / 2, btn_y + 8, "Change", COLOR_WHITE, COLOR_DARKGRAY, 1);
     }
 
     axs15231b_flush();
 }
 
 static void handle_wifi_setup_touch(uint16_t tx, uint16_t ty) {
+    int screen_w = axs15231b_get_width();
+    int screen_h = axs15231b_get_height();
+
     switch (s_wifi_setup.state) {
         case SETUP_SCAN:
             break;
 
         case SETUP_LIST: {
-            if (touch_in_rect(tx, ty, 5, 440, 50, 28)) {
+            int btn_y = screen_h - 30;
+            if (touch_in_rect(tx, ty, 10, btn_y, 50, 26)) {
+                highlight_rect(10, btn_y, 50, 26);
                 wifi_setup_handle_cancel(&s_wifi_setup);
                 s_wifi_setup_active = false;
+                exit_wifi_setup_rotation();
                 s_state = DISPLAY_ERROR;
                 return;
             }
+            int item_w = screen_w - 20;
             int y = 25;
+            int max_y = screen_h - 40;
             int visible = wifi_setup_visible_count(&s_wifi_setup);
-            for (int i = 0; i < visible; i++) {
-                if (touch_in_rect(tx, ty, 5, y, 300, 26)) {
+            for (int i = 0; i < visible && y < max_y; i++) {
+                if (touch_in_rect(tx, ty, 10, y, item_w, 26)) {
+                    highlight_rect(10, y, item_w, 26);
                     wifi_setup_handle_select(&s_wifi_setup, i);
                     kb_state_init(&s_kb_state);
                     return;
@@ -549,12 +620,17 @@ static void handle_wifi_setup_touch(uint16_t tx, uint16_t ty) {
         }
 
         case SETUP_PASSWORD: {
-            if (touch_in_rect(tx, ty, 235, 40, 24, 20)) {
+            int field_w = screen_w - 80;
+            int eye_x = 10 + field_w + 5;
+            if (touch_in_rect(tx, ty, eye_x, 40, 24, 20)) {
                 s_kb_state.reveal = !s_kb_state.reveal;
                 return;
             }
             kb_result_t r = kb_hit_test(tx, ty, s_kb_state.layer);
             if (r.action != KB_ACTION_NONE) {
+                axs15231b_fill_rect(tx - 20, ty - 20, 40, 40, COLOR_HIGHLIGHT);
+                axs15231b_flush();
+                vTaskDelay(pdMS_TO_TICKS(60));
                 if (r.action == KB_ACTION_DONE && s_kb_state.cursor > 0) {
                     wifi_setup_handle_connect(&s_wifi_setup);
                     wifi_config_t wifi_cfg = {0};
@@ -578,15 +654,20 @@ static void handle_wifi_setup_touch(uint16_t tx, uint16_t ty) {
         case SETUP_SUCCESS: {
             wifi_setup_handle_cancel(&s_wifi_setup);
             s_wifi_setup_active = false;
+            exit_wifi_setup_rotation();
             s_state = DISPLAY_READY;
             return;
         }
 
         case SETUP_FAILED: {
-            if (touch_in_rect(tx, ty, 30, 280, 120, 30)) {
+            int btn_y = screen_h / 2 + 30;
+            int btn_w = (screen_w - 40) / 2;
+            if (touch_in_rect(tx, ty, 10, btn_y, btn_w, 30)) {
+                highlight_rect(10, btn_y, btn_w, 30);
                 wifi_setup_handle_retry(&s_wifi_setup);
                 kb_state_init(&s_kb_state);
-            } else if (touch_in_rect(tx, ty, 170, 280, 120, 30)) {
+            } else if (touch_in_rect(tx, ty, 20 + btn_w, btn_y, btn_w, 30)) {
+                highlight_rect(20 + btn_w, btn_y, btn_w, 30);
                 wifi_setup_handle_change_network(&s_wifi_setup);
             }
             break;
@@ -618,6 +699,7 @@ static void display_task(void *pvParameters) {
                 state = s_state;
             } else if (state == DISPLAY_ERROR || state == DISPLAY_READY) {
                 if (touch_in_rect(tp.x, tp.y, SETUP_BTN_X, SETUP_BTN_Y, SETUP_BTN_W, SETUP_BTN_H)) {
+                    enter_wifi_setup_rotation();
                     s_wifi_setup_active = true;
                     wifi_setup_init(&s_wifi_setup);
                     kb_state_init(&s_kb_state);
@@ -710,6 +792,7 @@ static void display_task(void *pvParameters) {
                         vTaskDelay(pdMS_TO_TICKS(3000));
                         wifi_setup_handle_cancel(&s_wifi_setup);
                         s_wifi_setup_active = false;
+                        exit_wifi_setup_rotation();
                         s_state = DISPLAY_READY;
                         break;
                     case SETUP_FAILED:
@@ -804,6 +887,7 @@ void display_notify_wifi_disconnected(void) {
 
 void display_enter_wifi_setup(void) {
     if (!s_initialized) return;
+    enter_wifi_setup_rotation();
     s_wifi_setup_active = true;
     wifi_setup_init(&s_wifi_setup);
     kb_state_init(&s_kb_state);

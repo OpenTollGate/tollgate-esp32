@@ -37,6 +37,7 @@ static spi_device_handle_t s_spi = NULL;
 static uint16_t *s_fb = NULL;
 static int s_width = AXS15231B_WIDTH;
 static int s_height = AXS15231B_HEIGHT;
+static int s_rotation = 0;
 static uint8_t *s_swap_buf = NULL;
 #define SWAP_BUF_PIXELS 2048
 
@@ -354,3 +355,34 @@ void axs15231b_flush(void) {
 
 int axs15231b_get_width(void) { return s_width; }
 int axs15231b_get_height(void) { return s_height; }
+
+void axs15231b_set_rotation(int rotation) {
+    uint8_t madctl = MADCTL_RGB;
+    switch (rotation) {
+        case 0:
+            madctl = MADCTL_RGB;
+            s_width = AXS15231B_WIDTH;
+            s_height = AXS15231B_HEIGHT;
+            break;
+        case 1:
+            madctl = MADCTL_MX | MADCTL_MV;
+            s_width = AXS15231B_HEIGHT;
+            s_height = AXS15231B_WIDTH;
+            break;
+        case 2:
+            madctl = MADCTL_MX | MADCTL_MY;
+            s_width = AXS15231B_WIDTH;
+            s_height = AXS15231B_HEIGHT;
+            break;
+        case 3:
+            madctl = MADCTL_MY | MADCTL_MV;
+            s_width = AXS15231B_HEIGHT;
+            s_height = AXS15231B_WIDTH;
+            break;
+        default:
+            return;
+    }
+    s_rotation = rotation;
+    qspi_write_cmd_data8(MADCTL, madctl);
+    ESP_LOGI(TAG, "Rotation set to %d (%dx%d)", rotation, s_width, s_height);
+}

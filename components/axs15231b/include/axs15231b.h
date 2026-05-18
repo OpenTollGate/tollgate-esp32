@@ -23,5 +23,6 @@ void axs15231b_fill_rect(int x, int y, int w, int h, uint16_t color);
 void axs15231b_flush(void);
 int axs15231b_get_width(void);
 int axs15231b_get_height(void);
+void axs15231b_set_rotation(int rotation);
 
 #endif
