@@ -38,6 +38,7 @@ static uint16_t *s_fb = NULL;
 static int s_width = AXS15231B_WIDTH;
 static int s_height = AXS15231B_HEIGHT;
 static int s_rotation = 0;
+static int s_stride = 480;
 static uint8_t *s_swap_buf = NULL;
 #define SWAP_BUF_PIXELS 2048
 
@@ -242,7 +243,7 @@ esp_err_t axs15231b_init(void) {
 
     cs_init();
 
-    size_t fb_size = (size_t)s_width * s_height * 2;
+    size_t fb_size = (size_t)480 * 480 * 2;
     s_fb = heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_fb) {
         ESP_LOGE(TAG, "Failed to allocate framebuffer (%zu bytes)", fb_size);
@@ -297,9 +298,10 @@ void axs15231b_set_backlight(bool on) {
 }
 
 void axs15231b_fill_screen(uint16_t color) {
-    uint32_t pixels = (uint32_t)s_width * s_height;
-    for (uint32_t i = 0; i < pixels; i++) {
-        s_fb[i] = color;
+    for (int row = 0; row < s_height; row++) {
+        for (int col = 0; col < s_width; col++) {
+            s_fb[row * s_stride + col] = color;
+        }
     }
 }
 
@@ -307,7 +309,7 @@ void axs15231b_fill_rect(int x, int y, int w, int h, uint16_t color) {
     if (x < 0 || y < 0 || x + w > s_width || y + h > s_height) return;
     for (int row = y; row < y + h; row++) {
         for (int col = x; col < x + w; col++) {
-            s_fb[row * s_width + col] = color;
+            s_fb[row * s_stride + col] = color;
         }
     }
 }
@@ -319,36 +321,38 @@ void axs15231b_flush(void) {
     qspi_write_cmd_d16d16(RASET, 0, s_height - 1);
     qspi_write_command(RAMWR);
 
-    int total_pixels = s_width * s_height;
-    int pixel_offset = 0;
     bool first = true;
 
     cs_low();
-    while (pixel_offset < total_pixels) {
-        int remaining = total_pixels - pixel_offset;
-        int chunk_pixels = remaining < SWAP_BUF_PIXELS ? remaining : SWAP_BUF_PIXELS;
-        int chunk_bytes = chunk_pixels * 2;
+    for (int row = 0; row < s_height; row++) {
+        int chunk_remaining = s_width;
+        int col_offset = 0;
+        while (chunk_remaining > 0) {
+            int chunk_pixels = chunk_remaining < SWAP_BUF_PIXELS ? chunk_remaining : SWAP_BUF_PIXELS;
+            int chunk_bytes = chunk_pixels * 2;
 
-        uint8_t *src = (uint8_t *)(s_fb + pixel_offset);
-        for (int i = 0; i < chunk_bytes; i += 2) {
-            s_swap_buf[i] = src[i + 1];
-            s_swap_buf[i + 1] = src[i];
-        }
+            uint8_t *src = (uint8_t *)(s_fb + row * s_stride + col_offset);
+            for (int i = 0; i < chunk_bytes; i += 2) {
+                s_swap_buf[i] = src[i + 1];
+                s_swap_buf[i + 1] = src[i];
+            }
 
-        spi_transaction_ext_t t = {0};
-        if (first) {
-            t.base.flags = SPI_TRANS_MODE_QIO;
-            t.base.cmd = QSPI_CMD_DATA_WRITE;
-            t.base.addr = QSPI_DATA_ADDR;
-            first = false;
-        } else {
-            t.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD |
-                           SPI_TRANS_VARIABLE_ADDR | SPI_TRANS_VARIABLE_DUMMY;
+            spi_transaction_ext_t t = {0};
+            if (first) {
+                t.base.flags = SPI_TRANS_MODE_QIO;
+                t.base.cmd = QSPI_CMD_DATA_WRITE;
+                t.base.addr = QSPI_DATA_ADDR;
+                first = false;
+            } else {
+                t.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD |
+                               SPI_TRANS_VARIABLE_ADDR | SPI_TRANS_VARIABLE_DUMMY;
+            }
+            t.base.tx_buffer = s_swap_buf;
+            t.base.length = chunk_pixels * 16;
+            spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
+            col_offset += chunk_pixels;
+            chunk_remaining -= chunk_pixels;
         }
-        t.base.tx_buffer = s_swap_buf;
-        t.base.length = chunk_pixels * 16;
-        spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
-        pixel_offset += chunk_pixels;
     }
     cs_high();
 }
