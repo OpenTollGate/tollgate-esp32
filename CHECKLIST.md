@@ -48,10 +48,83 @@
 ## Phase 6: Bytes-Based Billing — COMPLETE (commit `edd125d`)
 - [x] Dual-metric session support (milliseconds + bytes)
 
-## Phase 7: MCP Handler + NIP-04 + CVM Server — COMPLETE (commit `fdf662f`)
+## Phase 7: MCP Handler + NIP-04 + CVM Server — SKELETON (commit `fdf662f`)
 - [x] mcp_handler.c/h (4 tools, 25 unit tests)
 - [x] nip04.c/h (AES-256-CBC + ECDH, 15 unit tests)
-- [x] cvm_server.c/h (Nostr DM listener)
+- [x] cvm_server.c/h (Nostr DM listener skeleton)
+
+## Phase 7b: ContextVM Protocol Rewrite — COMPLETE
+- [x] Add 6 new tools to mcp_handler.c/h (get_sessions, get_usage, set_payout, set_metric, set_price, wallet_melt)
+- [x] Update test_mcp_handler.c with tests for 6 new tools
+- [x] Rewrite cvm_server.c: persistent WebSocket listener, kind 25910 subscription
+- [x] MCP protocol handlers: initialize, notifications/initialized, tools/list, tools/call, ping
+- [x] Auth check: only accept from owner npub
+- [x] CEP-6: publish kind 11316 server announcement on startup
+- [x] CEP-6: publish kind 11317 tools list on startup
+- [x] CEP-17: publish kind 10002 relay list on startup
+- [x] Update config.c: default cvm_enabled = true
+- [x] Create test_cvm_server.c unit test (event parsing, announcement construction, auth)
+- [x] Update tests/unit/Makefile with test_cvm_server target
+- [x] Create tests/integration/test-cvm.mjs (nak-based integration test)
+- [x] Update Makefile with cvm-* targets (test-cvm, cvm-pubkey, cvm-test-tool)
+- [x] WS frame masking fix (RFC 6455 client-to-server)
+- [x] EVENT msg buffer underflow fix (snprintf buffer size)
+- [x] TLS write loop for large payloads
+- [x] WS ping/pong keepalive (30s interval)
+- [x] Subscription REQ fix (removed invalid limit field)
+- [x] SNTP init after STA gets IP
+- [x] 282 unit tests passing (61 CVM + 60 MCP + 161 existing)
+
+## Phase 7c: CVM Integration Testing — IN PROGRESS
+- [x] Per-board hardware locks implemented (board-a/b/c.lock)
+- [x] Lock infrastructure in 3 Makefiles (esp32-tollgate, physical-router-test-automation/esp32, top-level)
+- [x] CVM test infrastructure verified (API check, relay queries, event publishing)
+- [x] Fix CVM test API reachability check (HTTP status instead of JSON parse)
+- [x] WiFi password fix for EnterSSID-2.4GHz (c03rad0r123! — was missing `!`)
+- [x] WiFi auth threshold fix (WPA3_PSK → WPA2_PSK → WIFI_AUTH_OPEN, now WPA2_PSK)
+- [x] PMF capable mode enabled
+- [x] WIFI_ALL_CHANNEL_SCAN enabled
+- [x] WiFi country code fix (ESP-IDF defaults to CN, need DE for EU regulatory compliance)
+- [x] 2s retry delay between WiFi auth attempts
+- [x] Board B connects to WiFi successfully with country code DE
+- [x] Board A confirmed as hardware WiFi issue (auth fails on all APs, Board B works fine)
+- [x] Board B CEP-6 announcements confirmed on relay.primal.net
+- [x] Verify kind 11316 announcement on relay.primal.net — PASS
+- [x] Verify kind 11317 tools list on relay.primal.net — PASS
+- [x] Verify kind 10002 relay list on relay.primal.net — PASS
+- [x] Fix subscription #p filter (must be array, not string) — relay rejected as 'bad req'
+- [x] Fix MCP response publishing (use existing WS instead of new TLS connection)
+- [x] Fix use-after-free bug (tags_str freed before nostr_event_to_json)
+- [x] MCP initialize roundtrip via kind 25910 — PASS
+- [x] tools/call get_config via kind 25910 — PASS
+- [x] tools/call get_balance via kind 25910 — PASS
+- [x] tools/list response via kind 25910 — PASS
+- [x] tools/call set_price via kind 25910 — PASS (price updated to 42)
+- [ ] tools/call get_sessions via kind 25910
+- [ ] tools/call get_usage via kind 25910
+- [ ] Non-owner auth rejection via live relay (unit test only so far)
+- [ ] Verify board npub on contextvm.org/servers
+- [ ] Fix relay disconnect cycle (rlen=-26880 every ~15s)
+- [ ] Clean up debug logging (reduce INFO→DEBUG for verbose messages)
+- [ ] Document Board A hardware issue in AGENTS.md
+
+### WiFi Debugging Findings (Board A — 94:a9:90:2e:37:7c)
+- **Symptom:** `WIFI_REASON_AUTH_EXPIRED` (0x200) on all upstream APs
+- **APs tested:** EnterSSID-2.4GHz (ch11, WPA2), c03rad0r (not in range), laptop hotspot (ch6, WPA2)
+- **Modes tested:** APSTA (ch1/6/11), STA-only (no AP at all)
+- **MAC tested:** Custom (derived from nsec) and factory MAC
+- **Result:** Auth fails in ALL configurations, even STA-only 1m from laptop hotspot
+- **Root cause hypothesis 1:** Missing WiFi country code — ESP-IDF defaults to CN regulatory domain, boards are in DE. Different TX power limits and channel parameters may cause APs to ignore ESP32 auth frames.
+- **Root cause hypothesis 2:** Hardware antenna issue on Board A — needs testing on other boards to confirm
+- **Spectrum:** Dense environment (ch1: 2 APs, ch6: 4 APs, ch11: 4 APs) but laptop connects fine at 100%
+- **Next step:** Add `esp_wifi_set_country_code("DE")` and test Board A, then Board B/C if needed
+
+### Per-Board Hardware Locks
+- [x] Lock files in `physical-router-test-automation/locks/` (board-a.lock, board-b.lock, board-c.lock)
+- [x] `lock-a/b/c`, `unlock-a/b/c`, `force-unlock-a/b/c` targets
+- [x] All hardware-touching targets require corresponding board lock
+- [x] Read-only targets (build, cvm-pubkey, lock-status) work without lock
+- [x] Board port mapping updated: A=ACM0, B=ACM1, C=ACM3
 
 ## Bug Fixes — COMPLETE (commit `3342c8e`)
 - [x] reset_auth, /usage, metric default, sys_evt stack overflow fixes
@@ -77,6 +150,21 @@
 - [x] Remove local spent-secret check in `tollgate_api.c`
 - [x] Update `tests/unit/test_session.c`
 - [x] 186 unit tests passing
+
+## TFT Display (JC3248W535 / AXS15231B) — IN PROGRESS
+- [x] Create QR code component (port qrcoded from NSD, fix bool/pragma/comparison warnings)
+- [x] Create AXS15231B QSPI display driver component (init sequence, PSRAM framebuffer, chunked flush)
+- [x] Create 8x8 bitmap font (ASCII 32-127)
+- [x] Create display abstraction layer (display.h/c — boot/ready/payment/error states)
+- [x] Integrate display into tollgate_main.c and main/CMakeLists.txt
+- [x] Build succeeds (binary 1.2MB, 71% free in partition)
+- [x] Wi-Fi QR code encoding: `WIFI:S:<escaped_ssid>;T:nopass;;` with special char escaping (`\;:,"`)
+- [x] QR cycling: alternate between Wi-Fi QR and portal URL QR every 5 seconds
+- [ ] Flash to JC3248W535 board at `/dev/ttyACM0` and test
+- [ ] Verify Wi-Fi QR is scannable by Android/iOS camera
+- [ ] Verify portal URL QR is scannable and loads captive portal
+- [ ] Add unit tests for QR generation and escape_wifi_field()
+- [ ] Update AGENTS.md with display module docs
 
 ---
 
@@ -125,12 +213,13 @@
 
 ## Reminders
 - **Commit + push every time a test passes that previously didn't pass**
-- Board A: `/dev/ttyACM0`, SSID `TollGate-C0E9CA`, AP IP `10.192.45.1`
-- Board B: `/dev/ttyACM1`, SSID `TollGate-b96d80`, AP IP `10.185.47.1`, nsec `9af47906...`
-- OpenWRT Router: SSH `root@10.47.41.1`, port 2121
+- Board A: `/dev/ttyACM0`, MAC `94:a9:90:2e:37:7c`, SSID `TollGate-B96D80`, AP IP `10.185.47.1`
+- Board B: `/dev/ttyACM1`, MAC `fc:01:2c:c5:50:50`, SSID `TollGate-C0E9CA`, AP IP `10.192.45.1`
+- Board C: `/dev/ttyACM3`, MAC `20:6e:f1:98:d7:08`
 - `source ~/esp/esp-idf/export.sh` before `idf.py`
-- Latest commit: `0c2c67b`
-- 186 unit tests + 18 Playwright tests — all passing
 - sudo password: `c03rad0r123`
 - Token generation: `cashu -h https://testnut.cashu.space send --legacy 21`
+- SPIFFS offset `0x410000`, size `0xF0000`
 - See `AGENTS.md` for full testing rules
+- **Per-board locks:** `make lock-a PHASE="desc"` before hardware access
+- **WiFi country code:** Must set `esp_wifi_set_country_code("DE")` before `esp_wifi_start()`

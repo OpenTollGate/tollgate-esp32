@@ -16,7 +16,7 @@ esp_err_t tollgate_config_init(void)
 {
     memset(&g_config, 0, sizeof(g_config));
     g_config.max_retry = 5;
-    g_config.ap_channel = 1;
+    g_config.ap_channel = 6;
     g_config.ap_max_conn = 4;
     g_config.price_per_step = 21;
     g_config.step_size_ms = 60000;
@@ -33,8 +33,8 @@ esp_err_t tollgate_config_init(void)
     g_config.payout.check_interval_s = 60;
     g_config.payout.recipient_count = 0;
     g_config.payout.mint_count = 0;
-    g_config.cvm_enabled = false;
-    strncpy(g_config.cvm_relays, "wss://relay.damus.io", sizeof(g_config.cvm_relays) - 1);
+    g_config.cvm_enabled = true;
+    strncpy(g_config.cvm_relays, "wss://relay.primal.net", sizeof(g_config.cvm_relays) - 1);
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -54,7 +54,9 @@ esp_err_t tollgate_config_init(void)
         const char *default_json = "{"
             "\"nsec\":\"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\","
             "\"wifi_networks\":["
-              "{\"ssid\":\"EnterSSID-2.4GHz\",\"password\":\"c03rad0r123!\"}"
+              "{\"ssid\":\"EnterSSID-2.4GHz\",\"password\":\"c03rad0r123!\"},"
+              "{\"ssid\":\"c03rad0r\",\"password\":\"c03rad0r123\"},"
+              "{\"ssid\":\"TK-GAESTE\",\"password\":\"\"}"
             "],"
             "\"ap_password\":\"\","
             "\"mint_url\":\"https://testnut.cashu.space\","
@@ -289,6 +291,9 @@ esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config)
     strncpy((char *)wifi_config->sta.ssid, g_config.networks[idx].ssid, sizeof(wifi_config->sta.ssid) - 1);
     strncpy((char *)wifi_config->sta.password, g_config.networks[idx].password, sizeof(wifi_config->sta.password) - 1);
     wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    wifi_config->sta.pmf_cfg.capable = true;
+    wifi_config->sta.pmf_cfg.required = false;
+    wifi_config->sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     return ESP_OK;
 }
 

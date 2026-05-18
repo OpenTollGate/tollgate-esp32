@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-TollGate ESP32 firmware: captive portal WiFi hotspot with Cashu e-cash payments, on-device wallet, Nostr identity derivation, and wifistr service discovery. Runs on two ESP32-S3 boards.
+TollGate ESP32 firmware: captive portal WiFi hotspot with Cashu e-cash payments, on-device wallet, Nostr identity derivation, wifistr service discovery, and ContextVM (MCP over Nostr) server. Runs on three ESP32-S3 boards.
 
 ## Technology Stack
 
@@ -11,14 +11,18 @@ TollGate ESP32 firmware: captive portal WiFi hotspot with Cashu e-cash payments,
 - **Wallet:** nucula library (libsecp256k1) via git submodule
 - **Identity:** Nostr nsec → HMAC-SHA512 → deterministic MAC/SSID/IP
 - **Service discovery:** wifistr (Nostr kind 38787) via WebSocket
+- **ContextVM:** MCP over Nostr (kind 25910), CEP-6 announcements, 10 MCP tools
 - **Testing:** Host C unit tests (gcc), Node.js integration tests (live board), Playwright E2E
 
 ## Board Configuration
 
-| Board | Port | Factory MAC | Notes |
-|-------|------|-------------|-------|
-| A | `/dev/ttyACM0` | `94:a9:90:2e:37:7c` | Primary test target |
-| B | `/dev/ttyACM1` | `fc:01:2c:c5:50:50` | Secondary |
+| Board | Port | Factory MAC | SSID | AP IP | Notes |
+|-------|------|-------------|------|-------|-------|
+| A | `/dev/ttyACM0` | `94:a9:90:2e:37:7c` | `TollGate-B96D80` | `10.185.47.1` | Primary test target |
+| B | `/dev/ttyACM1` | `fc:01:2c:c5:50:50` | `TollGate-C0E9CA` | `10.192.45.1` | Secondary |
+| C | `/dev/ttyACM3` | `20:6e:f1:98:d7:08` | (TBD) | (TBD) | Display board |
+
+**IMPORTANT:** Board ports change on every USB replug. Always verify with `esptool.py --port <port> chip_id` before flashing.
 
 Identity (SSID, IP, MAC) is derived from `nsec` in config.json. Each board gets a unique nsec.
 
@@ -34,10 +38,11 @@ nvs_flash_init()
   → esp_wifi_init()
   → esp_wifi_set_mac(STA/AP)        // sets derived MACs
   → esp_wifi_set_mode(APSTA)
+  → esp_wifi_set_country_code("DE") // EU regulatory domain (channels 1-13, 20dBm)
   → wifi_configure_ap()             // uses derived SSID
   → esp_wifi_start()
   → [on STA got IP] start_services():
-      firewall_init, session_init, wallet_init, dns_server, captive_portal, api, wifistr_publish
+      sntp_init, firewall_init, session_init, wallet_init, dns_server, captive_portal, api, wifistr_publish, cvm_server_start
 ```
 
 ## Key Files
@@ -55,6 +60,8 @@ nvs_flash_init()
 - `session.c/h` — time-based sessions, MAC tracking
 - `cashu.c/h` — Cashu token decode, checkstate, allotment calc
 - `tollgate_api.c/h` — HTTP :2121, payment endpoints, wallet endpoints
+- `cvm_server.c/h` — ContextVM: persistent WS relay listener, kind 25910 subscription, MCP protocol handlers, CEP-6 announcements
+- `mcp_handler.c/h` — 10 MCP tool handlers (get_config, set_config, get_balance, wallet_send, get_sessions, get_usage, set_payout, set_metric, set_price, wallet_melt)
 
 ### Components
 - `nucula_lib/` — C++ bridge to nucula::Wallet (C API in nucula_wallet.h)
@@ -71,7 +78,8 @@ nvs_flash_init()
   "step_size_ms": 60000,
   "nostr_geohash": "u281w0dfz",
   "nostr_relays": ["wss://relay.damus.io", "wss://nos.lol"],
-  "nostr_publish_interval_s": 21600
+  "nostr_publish_interval_s": 21600,
+  "cvm_enabled": true
 }
 ```
 
@@ -178,6 +186,7 @@ make flash-b        # flash to Board B
 
 - **Test mint:** `testnut.cashu.space` — auto-pays lightning invoices
 - **Nostr relays:** `relay.damus.io`, `nos.lol` — for wifistr events
+- **CVM relay:** `relay.primal.net` — for ContextVM kind 25910 events and CEP-6 announcements
 - **Nutshell CLI:** `cashu` command for token generation
 - **ESP-IDF:** `source ~/esp/esp-idf/export.sh` before `idf.py` commands
 - **System libs for unit tests:** `libmbedtls-dev`, `libcjson-dev`
@@ -186,10 +195,17 @@ make flash-b        # flash to Board B
 
 - **Commit + push every time a test passes that previously didn't pass.** Green tests = checkpoint. Don't batch multiple test fixes into one commit.
 - Commit + push after each working change
-- Board A is at `/dev/ttyACM0`, Board B at `/dev/ttyACM1`
+- Board A is at `/dev/ttyACM0`, Board B at `/dev/ttyACM1`, Board C at `/dev/ttyACM3`
+- **Per-board locks required** before hardware access: `make lock-a PHASE="desc"`, lock files in `physical-router-test-automation/locks/`
 - `sudo` password: `c03rad0r123`
 - SPIFFS is at offset `0x410000`, size `0xF0000` — erase with `esptool.py erase_region 0x410000 0xF0000` if config is stale
 - NVS stores wallet proofs — erasing NVS clears wallet balance
 - The `nostr_event.c` `created_at` field uses `gettimeofday()` — mock this in unit tests
 - Wifistr event signing uses `secp256k1_schnorrsig_sign32()` — verify with `_verify()` in tests
 - Portal HTML has server-side template substitution (`__AP_IP__`, `__PRICE__`, `__MINT_URL__`) — no JS fetch
+- **WiFi country code:** Must set `esp_wifi_set_country_code("DE")` before `esp_wifi_start()` — defaults to CN which causes auth failures on EU APs
+- **Board A WiFi is broken** — hardware issue confirmed: `WIFI_REASON_AUTH_EXPIRED` on all APs in all modes (APSTA, STA-only, factory MAC). Board B with identical firmware connects instantly. Do not waste time debugging Board A WiFi.
+- Default nsec: `a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2`
+- Board A nsec: `9af47906b45aca5e238390f3d03c8274e154198e81aa2095065627d1e61ca968`
+- CVM relay: `relay.primal.net` — relay disconnects every ~15s by default, now has 60s timeout + WS ping/pong keepalive
+- MCP responses sent via existing WS connection (not new TLS) — ESP32 can't handle multiple simultaneous TLS sessions

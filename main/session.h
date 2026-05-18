@@ -43,4 +43,7 @@ int session_active_count(void);
 
 void session_tick(void);
 
+session_t *cvm_get_sessions_array(void);
+int cvm_get_sessions_count(void);
+
 #endif

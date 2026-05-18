@@ -178,3 +178,13 @@ void session_tick(void)
 {
     session_check_expiry();
 }
+
+session_t *cvm_get_sessions_array(void)
+{
+    return s_sessions;
+}
+
+int cvm_get_sessions_count(void)
+{
+    return SESSION_MAX_CLIENTS;
+}

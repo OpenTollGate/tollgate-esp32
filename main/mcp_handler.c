@@ -1,7 +1,9 @@
 #include "mcp_handler.h"
 #include "config.h"
 #include "nucula_wallet.h"
+#include "session.h"
 #include "cJSON.h"
+#include "lwip/ip4_addr.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -14,6 +16,12 @@ mcp_tool_t mcp_parse_tool(const char *method)
     if (strcmp(method, "set_config") == 0) return MCP_TOOL_SET_CONFIG;
     if (strcmp(method, "get_balance") == 0) return MCP_TOOL_GET_BALANCE;
     if (strcmp(method, "wallet_send") == 0) return MCP_TOOL_WALLET_SEND;
+    if (strcmp(method, "get_sessions") == 0) return MCP_TOOL_GET_SESSIONS;
+    if (strcmp(method, "get_usage") == 0) return MCP_TOOL_GET_USAGE;
+    if (strcmp(method, "set_payout") == 0) return MCP_TOOL_SET_PAYOUT;
+    if (strcmp(method, "set_metric") == 0) return MCP_TOOL_SET_METRIC;
+    if (strcmp(method, "set_price") == 0) return MCP_TOOL_SET_PRICE;
+    if (strcmp(method, "wallet_melt") == 0) return MCP_TOOL_WALLET_MELT;
     return MCP_TOOL_UNKNOWN;
 }
 
@@ -146,6 +154,222 @@ mcp_response_t mcp_handle_wallet_send(const char *params_json)
     return resp;
 }
 
+mcp_response_t mcp_handle_get_sessions(void)
+{
+    mcp_response_t resp = {0};
+    extern session_t *cvm_get_sessions_array(void);
+    extern int cvm_get_sessions_count(void);
+
+    cJSON *arr = cJSON_CreateArray();
+    int count = cvm_get_sessions_count();
+    session_t *sessions = cvm_get_sessions_array();
+
+    if (sessions && count > 0) {
+        for (int i = 0; i < count; i++) {
+            if (!sessions[i].active) continue;
+            cJSON *s = cJSON_CreateObject();
+            esp_ip4_addr_t ip = { .addr = sessions[i].client_ip };
+            char ip_str[16];
+            snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip));
+            cJSON_AddStringToObject(s, "client_ip", ip_str);
+            if (sessions[i].mac[0])
+                cJSON_AddStringToObject(s, "mac", sessions[i].mac);
+            cJSON_AddNumberToObject(s, "allotment_ms", (double)sessions[i].allotment_ms);
+            cJSON_AddNumberToObject(s, "allotment_bytes", (double)sessions[i].allotment_bytes);
+            cJSON_AddNumberToObject(s, "bytes_consumed", (double)sessions[i].bytes_consumed);
+            cJSON_AddBoolToObject(s, "active", sessions[i].active);
+            cJSON_AddItemToArray(arr, s);
+        }
+    }
+
+    char *json = cJSON_PrintUnformatted(arr);
+    snprintf(resp.result_json, sizeof(resp.result_json), "%s", json);
+    cJSON_free(json);
+    cJSON_Delete(arr);
+    resp.success = true;
+    return resp;
+}
+
+mcp_response_t mcp_handle_get_usage(void)
+{
+    mcp_response_t resp = {0};
+    const tollgate_config_t *cfg = tollgate_config_get();
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "metric", cfg->metric);
+    cJSON_AddNumberToObject(root, "price_per_step", cfg->price_per_step);
+    cJSON_AddNumberToObject(root, "step_size_ms", cfg->step_size_ms);
+    cJSON_AddNumberToObject(root, "step_size_bytes", cfg->step_size_bytes);
+    cJSON_AddBoolToObject(root, "client_enabled", cfg->client_enabled);
+
+    char *json = cJSON_PrintUnformatted(root);
+    snprintf(resp.result_json, sizeof(resp.result_json), "%s", json);
+    cJSON_free(json);
+    cJSON_Delete(root);
+    resp.success = true;
+    return resp;
+}
+
+mcp_response_t mcp_handle_set_payout(const char *params_json)
+{
+    mcp_response_t resp = {0};
+    cJSON *root = cJSON_Parse(params_json);
+    if (!root) {
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Invalid JSON params");
+        return resp;
+    }
+
+    tollgate_config_t *cfg = (tollgate_config_t *)tollgate_config_get();
+    if (!cfg) {
+        cJSON_Delete(root);
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Config not loaded");
+        return resp;
+    }
+
+    cJSON *enabled = cJSON_GetObjectItem(root, "enabled");
+    if (enabled && cJSON_IsBool(enabled)) cfg->payout.enabled = cJSON_IsTrue(enabled);
+
+    cJSON *recipients = cJSON_GetObjectItem(root, "recipients");
+    if (recipients && cJSON_IsArray(recipients)) {
+        int rcount = cJSON_GetArraySize(recipients);
+        if (rcount > PAYOUT_MAX_RECIPIENTS) rcount = PAYOUT_MAX_RECIPIENTS;
+        for (int i = 0; i < rcount; i++) {
+            cJSON *r = cJSON_GetArrayItem(recipients, i);
+            cJSON *addr = cJSON_GetObjectItem(r, "lightning_address");
+            cJSON *factor = cJSON_GetObjectItem(r, "factor");
+            if (addr && cJSON_IsString(addr)) {
+                strncpy(cfg->payout.recipients[i].lightning_address, addr->valuestring,
+                        sizeof(cfg->payout.recipients[i].lightning_address) - 1);
+            }
+            if (factor && cJSON_IsNumber(factor)) {
+                cfg->payout.recipients[i].factor = factor->valuedouble;
+            }
+        }
+        cfg->payout.recipient_count = rcount;
+    }
+
+    cJSON_Delete(root);
+    resp.success = true;
+    snprintf(resp.result_json, sizeof(resp.result_json), "{\"status\":\"ok\"}");
+    return resp;
+}
+
+mcp_response_t mcp_handle_set_metric(const char *params_json)
+{
+    mcp_response_t resp = {0};
+    cJSON *root = cJSON_Parse(params_json);
+    if (!root) {
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Invalid JSON params");
+        return resp;
+    }
+
+    tollgate_config_t *cfg = (tollgate_config_t *)tollgate_config_get();
+    if (!cfg) {
+        cJSON_Delete(root);
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Config not loaded");
+        return resp;
+    }
+
+    cJSON *metric = cJSON_GetObjectItem(root, "metric");
+    if (metric && cJSON_IsString(metric)) {
+        const char *m = metric->valuestring;
+        if (strcmp(m, "bytes") == 0 || strcmp(m, "milliseconds") == 0) {
+            strncpy(cfg->metric, m, sizeof(cfg->metric) - 1);
+        } else {
+            cJSON_Delete(root);
+            resp.success = false;
+            snprintf(resp.error, sizeof(resp.error), "Invalid metric: must be 'bytes' or 'milliseconds'");
+            return resp;
+        }
+    } else {
+        cJSON_Delete(root);
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Missing 'metric' field");
+        return resp;
+    }
+
+    cJSON_Delete(root);
+    resp.success = true;
+    snprintf(resp.result_json, sizeof(resp.result_json), "{\"status\":\"ok\",\"metric\":\"%s\"}", cfg->metric);
+    return resp;
+}
+
+mcp_response_t mcp_handle_set_price(const char *params_json)
+{
+    mcp_response_t resp = {0};
+    cJSON *root = cJSON_Parse(params_json);
+    if (!root) {
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Invalid JSON params");
+        return resp;
+    }
+
+    tollgate_config_t *cfg = (tollgate_config_t *)tollgate_config_get();
+    if (!cfg) {
+        cJSON_Delete(root);
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Config not loaded");
+        return resp;
+    }
+
+    cJSON *price = cJSON_GetObjectItem(root, "price_per_step");
+    if (price && cJSON_IsNumber(price) && price->valueint > 0) {
+        cfg->price_per_step = price->valueint;
+    } else {
+        cJSON_Delete(root);
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Missing or invalid 'price_per_step' field");
+        return resp;
+    }
+
+    cJSON_Delete(root);
+    resp.success = true;
+    snprintf(resp.result_json, sizeof(resp.result_json),
+             "{\"status\":\"ok\",\"price_per_step\":%d}", cfg->price_per_step);
+    return resp;
+}
+
+mcp_response_t mcp_handle_wallet_melt(const char *params_json)
+{
+    mcp_response_t resp = {0};
+    cJSON *root = cJSON_Parse(params_json);
+    if (!root) {
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Invalid JSON params");
+        return resp;
+    }
+
+    cJSON *bolt11 = cJSON_GetObjectItem(root, "bolt11");
+    if (!bolt11 || !cJSON_IsString(bolt11)) {
+        cJSON_Delete(root);
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Missing 'bolt11' field");
+        return resp;
+    }
+
+    cJSON *max_fee = cJSON_GetObjectItem(root, "max_fee_sats");
+    uint64_t fee = 10;
+    if (max_fee && cJSON_IsNumber(max_fee)) fee = (uint64_t)max_fee->valuedouble;
+
+    esp_err_t rc = nucula_wallet_melt(bolt11->valuestring, fee);
+
+    if (rc != ESP_OK) {
+        cJSON_Delete(root);
+        resp.success = false;
+        snprintf(resp.error, sizeof(resp.error), "Melt failed: %s", esp_err_to_name(rc));
+        return resp;
+    }
+
+    cJSON_Delete(root);
+    resp.success = true;
+    snprintf(resp.result_json, sizeof(resp.result_json), "{\"status\":\"ok\"}");
+    return resp;
+}
+
 mcp_response_t mcp_dispatch(const mcp_request_t *req)
 {
     if (!req) {
@@ -164,6 +388,18 @@ mcp_response_t mcp_dispatch(const mcp_request_t *req)
             return mcp_handle_get_balance();
         case MCP_TOOL_WALLET_SEND:
             return mcp_handle_wallet_send(req->params_json);
+        case MCP_TOOL_GET_SESSIONS:
+            return mcp_handle_get_sessions();
+        case MCP_TOOL_GET_USAGE:
+            return mcp_handle_get_usage();
+        case MCP_TOOL_SET_PAYOUT:
+            return mcp_handle_set_payout(req->params_json);
+        case MCP_TOOL_SET_METRIC:
+            return mcp_handle_set_metric(req->params_json);
+        case MCP_TOOL_SET_PRICE:
+            return mcp_handle_set_price(req->params_json);
+        case MCP_TOOL_WALLET_MELT:
+            return mcp_handle_wallet_melt(req->params_json);
         default:
             break;
     }

@@ -19,13 +19,71 @@ PYTHON ?= python3
 
 TOLLGATE_IP ?= 10.192.45.1
 
+BOARD ?= b
+
+HARDWARE_LOCK_DIR := /home/c03rad0r/physical-router-test-automation/locks
+
+RED := \033[31m
+GREEN := \033[32m
+YELLOW := \033[33m
+BOLD := \033[1m
+RESET := \033[0m
+
+define require_lock_a
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-a.lock" ]; then \
+		echo "$(RED)$(BOLD)Board A not locked — run 'make lock-a PHASE=\"description\"' first$(RESET)"; \
+		echo "$(YELLOW)Another LLM session may be using Board A.$(RESET)"; \
+		exit 1; \
+	fi
+endef
+
+define require_lock_b
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-b.lock" ]; then \
+		echo "$(RED)$(BOLD)Board B not locked — run 'make lock-b PHASE=\"description\"' first$(RESET)"; \
+		echo "$(YELLOW)Another LLM session may be using Board B.$(RESET)"; \
+		exit 1; \
+	fi
+endef
+
+define _require_board_lock
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-$(BOARD).lock" ]; then \
+		echo "$(RED)$(BOLD)Board $(BOARD) not locked — run 'make lock-$(BOARD) PHASE=\"description\"' first$(RESET)"; \
+		echo "$(YELLOW)Another LLM session may be using Board $(BOARD).$(RESET)"; \
+		exit 1; \
+	fi
+endef
+
+define _acquire_lock
+	@if [ -f "$(HARDWARE_LOCK_DIR)/$(1).lock" ]; then \
+		echo "$(RED)$(BOLD)Cannot acquire lock — $(1) already locked:$(RESET)"; \
+		echo ""; \
+		cat $(HARDWARE_LOCK_DIR)/$(1).lock | sed 's/^/  /'; \
+		echo ""; \
+		echo "$(YELLOW)Use 'make force-unlock-$(1)' to override.$(RESET)"; \
+		exit 1; \
+	fi; \
+	branch=$$(git branch --show-current 2>/dev/null || echo "unknown"); \
+	worktree=$$(pwd); \
+	echo "locked: true" > $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "board: $(1)" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "branch: $$branch" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "worktree: $$worktree" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "session: $$USER@$$HOSTNAME" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "timestamp: $$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "phase: $(PHASE)" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "$(GREEN)$(BOLD)$(1) lock acquired$(RESET)"; \
+	cat $(HARDWARE_LOCK_DIR)/$(1).lock
+endef
+
 .PHONY: help setup detect-ports detect-chip detect-all
 .PHONY: flash flash-a flash-b monitor monitor-a monitor-b
 .PHONY: test test-unit test-integration test-e2e test-all
 .PHONY: test-smoke test-api test-network test-portal test-payment
-.PHONY: test-reset-auth test-session-expiry test-dns-firewall
+.PHONY: test-reset-auth test-session-expiry test-dns-firewall test-cvm
 .PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log bootstrap-config
+.PHONY: cvm-pubkey cvm-test-tool cvm-announce
+.PHONY: lock-a lock-b unlock-a unlock-b force-unlock-a force-unlock-b lock-status
 
 help:
 	@echo "TollGate ESP32 — Makefile"
@@ -50,6 +108,12 @@ help:
 	@echo "  test-reset-auth   Reset auth + per-client NAT filter test"
 	@echo "  test-dns-firewall DNS hijack + NAT filter test"
 	@echo "  test-session-expiry Session lifecycle with 65s expiry wait"
+	@echo "  test-cvm          ContextVM protocol integration test"
+	@echo ""
+	@echo "ContextVM:"
+	@echo "  cvm-pubkey        Print board's ContextVM npub"
+	@echo "  cvm-announce      Trigger re-publish of CEP-6 announcements"
+	@echo "  cvm-test-tool     Send single MCP tools/call (METHOD=get_config)"
 	@echo ""
 	@echo "Wallet:"
 	@echo "  wallet-setup      Initialize nutshell wallet for test mint"
@@ -122,13 +186,18 @@ setup:
 
 flash: build
 	@echo "=== Flashing to $(PORT) ==="
-	. $(IDF_PATH)/export.sh && idf.py -p $(PORT) -b $(BAUD) flash
+	@echo "$(RED)Error: use 'make flash-a' or 'make flash-b' (per-board lock required)$(RESET)"
+	@exit 1
 
-flash-a: PORT=$(PORT_A)
-flash-a: flash
+flash-a: build
+	$(call require_lock_a)
+	@echo "=== Flashing to $(PORT_A) (Board A) ==="
+	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_A) -b $(BAUD) flash
 
-flash-b: PORT=$(PORT_B)
-flash-b: flash
+flash-b: build
+	$(call require_lock_b)
+	@echo "=== Flashing to $(PORT_B) (Board B) ==="
+	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_B) -b $(BAUD) flash
 
 build:
 	@echo "=== Building $(TARGET) ==="
@@ -136,14 +205,13 @@ build:
 		idf.py set-target $(TARGET) 2>/dev/null; \
 		idf.py build
 
-monitor:
-	. $(IDF_PATH)/export.sh && idf.py -p $(PORT) monitor
+monitor-a:
+	$(call require_lock_a)
+	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_A) monitor
 
-monitor-a: PORT=$(PORT_A)
-monitor-a: monitor
-
-monitor-b: PORT=$(PORT_B)
-monitor-b: monitor
+monitor-b:
+	$(call require_lock_b)
+	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_B) monitor
 
 # ──────────────────────────────────────────────
 # Testing
@@ -153,10 +221,11 @@ test-unit:
 	@echo "=== Running host unit tests ==="
 	$(MAKE) -C tests/unit test
 
-test-integration: test-api test-network test-reset-auth test-dns-firewall
+test-integration: test-api test-network test-reset-auth test-dns-firewall test-cvm
 	@echo "=== Integration tests passed ==="
 
 test-e2e:
+	$(call _require_board_lock)
 	@echo "=== Running Playwright E2E tests ==="
 	cd tests/e2e && npx playwright test
 
@@ -167,36 +236,49 @@ test: test-unit test-integration
 	@echo "=== Tests passed ==="
 
 test-smoke:
+	$(call _require_board_lock)
 	@echo "=== Running smoke test (30s) ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/smoke.mjs
 
 test-api:
+	$(call _require_board_lock)
 	@echo "=== Running API tests ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/api.mjs
 
 test-network:
+	$(call _require_board_lock)
 	@echo "=== Running network tests ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/network.mjs
 
 test-portal:
+	$(call _require_board_lock)
 	@echo "=== Running Playwright portal tests ==="
 	cd tests/e2e && npx playwright test captive-portal.spec.mjs
 
 test-payment:
+	$(call _require_board_lock)
 	@echo "=== Running payment tests ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/phase2.mjs
 
 test-reset-auth:
+	$(call _require_board_lock)
 	@echo "=== Running reset auth test ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-reset-auth.mjs
 
 test-session-expiry:
+	$(call _require_board_lock)
 	@echo "=== Running session expiry test (65s wait, ~80s total) ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-session-expiry.mjs
 
 test-dns-firewall:
+	$(call _require_board_lock)
 	@echo "=== Running DNS + firewall test ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-dns-firewall.mjs
+
+test-cvm:
+	$(call _require_board_lock)
+	@echo "=== Running CVM integration test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-cvm.mjs
 
 # ──────────────────────────────────────────────
 # Wallet
@@ -230,6 +312,33 @@ send-token:
 tokens: send-token
 
 # ──────────────────────────────────────────────
+# ContextVM
+# ──────────────────────────────────────────────
+
+cvm-pubkey:
+	@echo "=== Board ContextVM npub ==="
+	@nak key public a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 | xargs -I{} nak encode npub {}
+	@echo ""
+	@echo "Search for this npub on https://contextvm.org/servers"
+
+cvm-announce:
+	@echo "=== Triggering CEP-6 re-announcement ==="
+	curl -s http://$(TOLLGATE_IP):2121/ | head -1 || echo "Board not reachable"
+
+cvm-test-tool:
+	$(call _require_board_lock)
+	@METHOD=$${METHOD:-get_config}; \
+	PARAMS=$${PARAMS:-{}}; \
+	echo "=== Calling $$METHOD via CVM ==="; \
+	NPUB_HEX=$$(nak key public a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2); \
+	CONTENT="$$(echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$$METHOD\",\"arguments\":$$PARAMS}}" | jq -c .)"; \
+	EVENT_JSON="$$(nak event --kind 25910 --tag p=$$NPUB_HEX --content "$$CONTENT" wss://relay.damus.io 2>/dev/null)"; \
+	echo "Published: $$EVENT_JSON"; \
+	echo "Waiting for response..."; \
+	sleep 3; \
+	nak req -k 25910 -a $$NPUB_HEX -l 5 wss://relay.damus.io
+
+# ──────────────────────────────────────────────
 # Utilities
 # ──────────────────────────────────────────────
 
@@ -238,16 +347,19 @@ clean:
 	. $(IDF_PATH)/export.sh && idf.py fullclean
 
 erase-nvs:
+	$(call _require_board_lock)
 	@echo "=== Erasing NVS on $(PORT) ==="
 	. $(IDF_PATH)/export.sh && \
 		partition_offset=$$(idf.py partition-table 2>/dev/null | grep nvs | awk '{print $$2}'); \
 		python3 -m esptool --port $(PORT) erase_region $$partition_offset 0x6000
 
 reset:
+	$(call _require_board_lock)
 	@echo "=== Resetting device on $(PORT) ==="
 	python3 -m esptool --port $(PORT) run 2>/dev/null || true
 
 serial-log:
+	$(call _require_board_lock)
 	@echo "=== Capturing serial output from $(PORT) ==="
 	python3 -c "import serial; s=serial.Serial('$(PORT)',115200,timeout=1); \
 		[print(s.readline().decode(errors='replace'),end='') for _ in iter(lambda: s.readline(), b'')]"
@@ -256,3 +368,55 @@ bootstrap-config:
 	@echo "=== Bootstrapping config.json ==="
 	@echo '{"wifi_networks":[{"ssid":"$(WIFI_SSID)","password":"$(WIFI_PASSWORD)"}],"ap_ssid":"$(AP_SSID)","ap_password":"$(AP_PASSWORD)","mint_url":"$(MINT_URL)","lnurl_url":"$(LNURL_URL)","price_per_step":$(PRICE_PER_STEP),"step_size_ms":$(STEP_SIZE)}' > main/config.json
 	@echo "Config written to main/config.json"
+
+# ──────────────────────────────────────────────
+# Per-Board Hardware Locks
+# ──────────────────────────────────────────────
+
+lock-a: ## Acquire Board A lock (set PHASE="description")
+	$(call _acquire_lock,board-a)
+
+lock-b: ## Acquire Board B lock (set PHASE="description")
+	$(call _acquire_lock,board-b)
+
+unlock-a: ## Release Board A lock
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-a.lock" ]; then \
+		echo "$(YELLOW)Board A not locked.$(RESET)"; exit 0; \
+	fi; \
+	rm -f $(HARDWARE_LOCK_DIR)/board-a.lock; \
+	echo "$(GREEN)Board A lock released.$(RESET)"
+
+unlock-b: ## Release Board B lock
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-b.lock" ]; then \
+		echo "$(YELLOW)Board B not locked.$(RESET)"; exit 0; \
+	fi; \
+	rm -f $(HARDWARE_LOCK_DIR)/board-b.lock; \
+	echo "$(GREEN)Board B lock released.$(RESET)"
+
+force-unlock-a: ## Force-release Board A lock
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-a.lock" ]; then \
+		echo "$(YELLOW)Board A not locked.$(RESET)"; exit 0; \
+	fi; \
+	echo "$(RED)$(BOLD)WARNING: Force-releasing Board A!$(RESET)"; \
+	cat $(HARDWARE_LOCK_DIR)/board-a.lock | sed 's/^/  /'; \
+	rm -f $(HARDWARE_LOCK_DIR)/board-a.lock; \
+	echo "$(GREEN)Board A force-released.$(RESET)"
+
+force-unlock-b: ## Force-release Board B lock
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-b.lock" ]; then \
+		echo "$(YELLOW)Board B not locked.$(RESET)"; exit 0; \
+	fi; \
+	echo "$(RED)$(BOLD)WARNING: Force-releasing Board B!$(RESET)"; \
+	cat $(HARDWARE_LOCK_DIR)/board-b.lock | sed 's/^/  /'; \
+	rm -f $(HARDWARE_LOCK_DIR)/board-b.lock; \
+	echo "$(GREEN)Board B force-released.$(RESET)"
+
+lock-status: ## Show all board lock statuses
+	@for board in a b; do \
+		if [ -f "$(HARDWARE_LOCK_DIR)/board-$$board.lock" ]; then \
+			echo "$(YELLOW)Board $$board: LOCKED$(RESET)"; \
+			cat $(HARDWARE_LOCK_DIR)/board-$$board.lock | sed 's/^/  /'; \
+		else \
+			echo "Board $$board: $(GREEN)available$(RESET)"; \
+		fi; \
+	done

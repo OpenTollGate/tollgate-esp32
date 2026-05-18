@@ -9,6 +9,7 @@
 #include "esp_netif.h"
 #include "lwip/netif.h"
 #include "lwip/dns.h"
+#include "esp_sntp.h"
 #include "dhcpserver/dhcpserver.h"
 #include "config.h"
 #include "identity.h"
@@ -22,6 +23,7 @@
 #include "tollgate_client.h"
 #include "lightning_payout.h"
 #include "cvm_server.h"
+#include "display.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -54,6 +56,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         tollgate_client_on_sta_disconnected();
         if (s_services_running) stop_services();
         if (s_retry_count < MAX_STA_RETRY) {
+            vTaskDelay(pdMS_TO_TICKS(2000));
             esp_wifi_connect();
         } else {
             wifi_config_t wifi_cfg;
@@ -93,6 +96,13 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Got IP:" IPSTR ", GW:" IPSTR, IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.gw));
         s_retry_count = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+        esp_sntp_stop();
+        esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        esp_sntp_setservername(0, "pool.ntp.org");
+        esp_sntp_setservername(1, "time.google.com");
+        esp_sntp_init();
+        ESP_LOGI(TAG, "SNTP time sync started");
 
         char gw_ip_str[16];
         snprintf(gw_ip_str, sizeof(gw_ip_str), IPSTR, IP2STR(&event->ip_info.gw));
@@ -160,6 +170,11 @@ static void start_services(void)
     s_services_running = true;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services started ===");
+
+    display_set_state(DISPLAY_READY);
+    char portal_url[128];
+    snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
+    display_update(cfg->ap_ssid, 0, 0, portal_url);
 }
 
 static void stop_services(void)
@@ -240,6 +255,9 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "=== TollGate ESP32 Starting ===");
 
+    display_init();
+    display_set_state(DISPLAY_BOOT);
+
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -287,6 +305,9 @@ void app_main(void)
         const tollgate_config_t *tcfg2 = tollgate_config_get();
         ESP_LOGI(TAG, "STA configured for SSID: %s", tcfg2->networks[tcfg2->current_network].ssid);
     }
+
+    ESP_ERROR_CHECK(esp_wifi_set_country_code("DE", false));
+    ESP_LOGI(TAG, "WiFi country code set to DE (EU regulatory domain)");
 
     ESP_ERROR_CHECK(esp_wifi_start());
 
