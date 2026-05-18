@@ -7,6 +7,7 @@ static inline uint32_t xTaskGetTickCount(void) { return 0; }
 static inline void vTaskDelay(uint32_t ticks) { (void)ticks; }
 #define pdMS_TO_TICKS(ms) ((ms) / 10)
 #define portTICK_PERIOD_MS 10
+#define configTICK_RATE_HZ 100
 #define portMAX_DELAY 0xFFFFFFFF
 
 #endif
