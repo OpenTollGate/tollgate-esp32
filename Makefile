@@ -13,6 +13,52 @@ PORT ?= $(PORT_A)
 BAUD ?= 460800
 TARGET ?= esp32s3
 
+HARDWARE_LOCK_DIR := /home/c03rad0r/physical-router-test-automation/locks
+
+RED := \033[31m
+GREEN := \033[32m
+YELLOW := \033[33m
+BOLD := \033[1m
+RESET := \033[0m
+
+define require_lock_a
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-a.lock" ]; then \
+		echo "$(RED)$(BOLD)Board A not locked — run 'make lock-a PHASE=\"description\"' first$(RESET)"; \
+		echo "$(YELLOW)Another LLM session may be using Board A.$(RESET)"; \
+		exit 1; \
+	fi
+endef
+
+define require_lock_b
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-b.lock" ]; then \
+		echo "$(RED)$(BOLD)Board B not locked — run 'make lock-b PHASE=\"description\"' first$(RESET)"; \
+		echo "$(YELLOW)Another LLM session may be using Board B.$(RESET)"; \
+		exit 1; \
+	fi
+endef
+
+define _acquire_lock
+	@if [ -f "$(HARDWARE_LOCK_DIR)/$(1).lock" ]; then \
+		echo "$(RED)$(BOLD)Cannot acquire lock — $(1) already locked:$(RESET)"; \
+		echo ""; \
+		cat $(HARDWARE_LOCK_DIR)/$(1).lock | sed 's/^/  /'; \
+		echo ""; \
+		echo "$(YELLOW)Use 'make force-unlock-$(1)' to override.$(RESET)"; \
+		exit 1; \
+	fi; \
+	branch=$$(git branch --show-current 2>/dev/null || echo "unknown"); \
+	worktree=$$(pwd); \
+	echo "locked: true" > $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "board: $(1)" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "branch: $$branch" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "worktree: $$worktree" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "session: $$USER@$$HOSTNAME" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "timestamp: $$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "phase: $(PHASE)" >> $(HARDWARE_LOCK_DIR)/$(1).lock; \
+	echo "$(GREEN)$(BOLD)$(1) lock acquired$(RESET)"; \
+	cat $(HARDWARE_LOCK_DIR)/$(1).lock
+endef
+
 NODE ?= node
 NPM ?= npm
 PYTHON ?= python3
@@ -27,6 +73,7 @@ TOLLGATE_IP ?= 10.192.45.1
 .PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log bootstrap-config
 .PHONY: cvm-pubkey cvm-test-tool cvm-announce
+.PHONY: lock-a lock-b unlock-a unlock-b force-unlock-a force-unlock-b lock-status
 
 help:
 	@echo "TollGate ESP32 — Makefile"
@@ -131,11 +178,15 @@ flash: build
 	@echo "=== Flashing to $(PORT) ==="
 	. $(IDF_PATH)/export.sh && idf.py -p $(PORT) -b $(BAUD) flash
 
-flash-a: PORT=$(PORT_A)
-flash-a: flash
+flash-a: build
+	$(call require_lock_a)
+	@echo "=== Flashing to $(PORT_A) (Board A) ==="
+	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_A) -b $(BAUD) flash
 
-flash-b: PORT=$(PORT_B)
-flash-b: flash
+flash-b: build
+	$(call require_lock_b)
+	@echo "=== Flashing to $(PORT_B) (Board B) ==="
+	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_B) -b $(BAUD) flash
 
 build:
 	@echo "=== Building $(TARGET) ==="
@@ -293,3 +344,56 @@ bootstrap-config:
 	@echo "=== Bootstrapping config.json ==="
 	@echo '{"wifi_networks":[{"ssid":"$(WIFI_SSID)","password":"$(WIFI_PASSWORD)"}],"ap_ssid":"$(AP_SSID)","ap_password":"$(AP_PASSWORD)","mint_url":"$(MINT_URL)","lnurl_url":"$(LNURL_URL)","price_per_step":$(PRICE_PER_STEP),"step_size_ms":$(STEP_SIZE)}' > main/config.json
 	@echo "Config written to main/config.json"
+
+# ──────────────────────────────────────────────
+# Board Lock Management
+# ──────────────────────────────────────────────
+
+lock-a:
+	@$(call _acquire_lock,board-a)
+
+lock-b:
+	@$(call _acquire_lock,board-b)
+
+unlock-a:
+	@if [ -f "$(HARDWARE_LOCK_DIR)/board-a.lock" ]; then \
+		rm $(HARDWARE_LOCK_DIR)/board-a.lock; \
+		echo "$(GREEN)Board A lock released.$(RESET)"; \
+	else \
+		echo "$(YELLOW)Board A not locked.$(RESET)"; \
+	fi
+
+unlock-b:
+	@if [ -f "$(HARDWARE_LOCK_DIR)/board-b.lock" ]; then \
+		rm $(HARDWARE_LOCK_DIR)/board-b.lock; \
+		echo "$(GREEN)Board B lock released.$(RESET)"; \
+	else \
+		echo "$(YELLOW)Board B not locked.$(RESET)"; \
+	fi
+
+force-unlock-a:
+	@echo "$(RED)$(BOLD)WARNING: Force-releasing Board A lock!$(RESET)"
+	@cat $(HARDWARE_LOCK_DIR)/board-a.lock 2>/dev/null | sed 's/^/  /' || true
+	@rm -f $(HARDWARE_LOCK_DIR)/board-a.lock
+	@echo "$(GREEN)Board A lock force-released.$(RESET)"
+
+force-unlock-b:
+	@echo "$(RED)$(BOLD)WARNING: Force-releasing Board B lock!$(RESET)"
+	@cat $(HARDWARE_LOCK_DIR)/board-b.lock 2>/dev/null | sed 's/^/  /' || true
+	@rm -f $(HARDWARE_LOCK_DIR)/board-b.lock
+	@echo "$(GREEN)Board B lock force-released.$(RESET)"
+
+lock-status:
+	@echo "$(BOLD)Board Lock Status$(RESET)"
+	@if [ -f "$(HARDWARE_LOCK_DIR)/board-a.lock" ]; then \
+		echo "Board a: $(YELLOW)LOCKED$(RESET)"; \
+		cat $(HARDWARE_LOCK_DIR)/board-a.lock | sed 's/^/  /'; \
+	else \
+		echo "Board a: $(GREEN)available$(RESET)"; \
+	fi
+	@if [ -f "$(HARDWARE_LOCK_DIR)/board-b.lock" ]; then \
+		echo "Board b: $(YELLOW)LOCKED$(RESET)"; \
+		cat $(HARDWARE_LOCK_DIR)/board-b.lock | sed 's/^/  /'; \
+	else \
+		echo "Board b: $(GREEN)available$(RESET)"; \
+	fi
