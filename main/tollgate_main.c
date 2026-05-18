@@ -54,7 +54,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         s_retry_count++;
         ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d", s_retry_count, MAX_STA_RETRY);
         tollgate_client_on_sta_disconnected();
-        if (s_services_running) stop_services();
+        if (s_services_running) {
+            stop_services();
+            display_set_state(DISPLAY_ERROR);
+        }
+        display_update(NULL, 0, 0, NULL, NULL, 0, "WiFi retry...");
         if (s_retry_count < MAX_STA_RETRY) {
             esp_wifi_connect();
         } else {
@@ -173,7 +177,8 @@ static void start_services(void)
     display_set_state(DISPLAY_READY);
     char portal_url[128];
     snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
-    display_update(cfg->ap_ssid, 0, 0, portal_url);
+    display_update(cfg->ap_ssid, 0, 0, portal_url,
+                   cfg->mint_url, cfg->price_per_step, NULL);
 }
 
 static void stop_services(void)

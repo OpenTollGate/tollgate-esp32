@@ -12,18 +12,28 @@
 static const char *TAG = "display";
 
 #define QR_CYCLE_MS 5000
+#define RENDER_INTERVAL_MS 2000
+
+#define COLOR_BG       0x0000
+#define COLOR_WHITE    0xFFFF
+#define COLOR_CYAN     0x07FF
+#define COLOR_YELLOW   0xFFE0
+#define COLOR_GREEN    0x07E0
+#define COLOR_ORANGE   0xFD20
+#define COLOR_RED      0xF800
+#define COLOR_DIM      0x8410
 
 static volatile display_state_t s_state = DISPLAY_BOOT;
 static char s_ap_ssid[32] = "";
 static char s_portal_url[256] = "";
+static char s_mint_url[256] = "";
+static char s_wifi_status[32] = "starting...";
 static int s_active_clients = 0;
 static uint64_t s_wallet_balance = 0;
+static int s_price_per_step = 0;
 static bool s_initialized = false;
 static int64_t s_last_qr_switch = 0;
 static display_qr_mode_t s_qr_mode = DISPLAY_QR_WIFI;
-static display_state_t s_rendered_state = DISPLAY_BOOT;
-static display_qr_mode_t s_rendered_qr_mode = DISPLAY_QR_WIFI;
-static bool s_force_render = true;
 
 static int qr_version_from_strlen(int len) {
     if (len <= 17) return 1;
@@ -66,6 +76,16 @@ static void build_wifi_qr_string(char *out, int out_size) {
     char escaped_ssid[64];
     escape_wifi_field(s_ap_ssid, escaped_ssid, sizeof(escaped_ssid));
     snprintf(out, out_size, "WIFI:S:%s;T:nopass;;", escaped_ssid);
+}
+
+static void extract_domain(const char *url, char *domain, int domain_size) {
+    const char *start = url;
+    if (strncmp(url, "https://", 8) == 0) start = url + 8;
+    else if (strncmp(url, "http://", 7) == 0) start = url + 7;
+    strncpy(domain, start, domain_size - 1);
+    domain[domain_size - 1] = '\0';
+    char *slash = strchr(domain, '/');
+    if (slash) *slash = '\0';
 }
 
 void display_render_text(int x, int y, const char *text, uint16_t fg, uint16_t bg, int scale) {
@@ -146,54 +166,134 @@ void display_render_qr(const char *text) {
     axs15231b_flush();
 }
 
+static uint16_t wallet_color(void) {
+    if (s_wallet_balance == 0) return COLOR_RED;
+    if (s_wallet_balance < 100) return COLOR_YELLOW;
+    return COLOR_GREEN;
+}
+
 static void render_boot_screen(void) {
-    axs15231b_fill_screen(0x0000);
-    display_render_text(96, 220, "TollGate", 0x07FF, 0x0000, 2);
-    display_render_text(116, 245, "starting...", 0xFFE0, 0x0000, 1);
+    int screen_w = axs15231b_get_width();
+    axs15231b_fill_screen(COLOR_BG);
+
+    const char *title = "TollGate";
+    int title_w = strlen(title) * 8 * 2;
+    display_render_text((screen_w - title_w) / 2, 200, title, COLOR_CYAN, COLOR_BG, 2);
+
+    int status_w = strlen(s_wifi_status) * 8;
+    display_render_text((screen_w - status_w) / 2, 228, s_wifi_status, COLOR_YELLOW, COLOR_BG, 1);
+
     axs15231b_flush();
 }
 
 static void render_ready_screen(void) {
-    axs15231b_fill_screen(0x0000);
-
     int screen_w = axs15231b_get_width();
-    int screen_h = axs15231b_get_height();
-    int text_area_y = screen_h - 55;
+    int text_area_y = 330;
+    axs15231b_fill_screen(COLOR_BG);
 
     char qr_text[320];
-    const char *label;
-
     if (s_qr_mode == DISPLAY_QR_WIFI) {
         build_wifi_qr_string(qr_text, sizeof(qr_text));
-        label = "Scan to connect";
     } else {
         strncpy(qr_text, s_portal_url, sizeof(qr_text) - 1);
         qr_text[sizeof(qr_text) - 1] = '\0';
-        label = "Portal URL";
     }
 
-    render_qr_at(qr_text, 0, 0, screen_w, text_area_y - 5);
+    render_qr_at(qr_text, 0, 5, screen_w, text_area_y - 10);
 
-    display_render_text(10, text_area_y, label, 0xB5B6, 0x0000, 2);
+    int y = text_area_y;
+    char line[48];
 
-    char line[64];
-    snprintf(line, sizeof(line), "SSID: %s", s_ap_ssid);
-    display_render_text(10, text_area_y + 20, line, 0xB5B6, 0x0000, 2);
+    if (s_qr_mode == DISPLAY_QR_WIFI) {
+        snprintf(line, sizeof(line), "Scan to connect");
+        display_render_text(10, y, line, COLOR_CYAN, COLOR_BG, 1);
+        y += 16;
+
+        snprintf(line, sizeof(line), "SSID: %s", s_ap_ssid);
+        display_render_text(10, y, line, COLOR_WHITE, COLOR_BG, 1);
+        y += 16;
+    } else {
+        snprintf(line, sizeof(line), "Portal URL");
+        display_render_text(10, y, line, COLOR_CYAN, COLOR_BG, 1);
+        y += 16;
+
+        char domain[48];
+        extract_domain(s_mint_url, domain, sizeof(domain));
+        snprintf(line, sizeof(line), "Mint: %.30s", domain);
+        display_render_text(10, y, line, COLOR_ORANGE, COLOR_BG, 1);
+        y += 16;
+    }
+
+    snprintf(line, sizeof(line), "%d sats/min", s_price_per_step);
+    display_render_text(10, y, line, COLOR_ORANGE, COLOR_BG, 1);
+    y += 16;
+
+    snprintf(line, sizeof(line), "Wallet: %llu sats", (unsigned long long)s_wallet_balance);
+    display_render_text(10, y, line, wallet_color(), COLOR_BG, 1);
+    y += 16;
+
+    if (s_active_clients > 0) {
+        snprintf(line, sizeof(line), "Clients: %d", s_active_clients);
+        display_render_text(10, y, line, COLOR_GREEN, COLOR_BG, 1);
+    }
 
     axs15231b_flush();
 }
 
 static void render_payment_screen(void) {
-    axs15231b_fill_screen(0x07E0);
-    display_render_text(128, 225, "Paid!", 0x0000, 0x07E0, 2);
-    display_render_text(104, 245, "Access granted", 0x0000, 0x07E0, 1);
+    int screen_w = axs15231b_get_width();
+    axs15231b_fill_screen(COLOR_BG);
+
+    axs15231b_fill_rect(0, 190, screen_w, 50, COLOR_GREEN);
+    const char *msg = "ACCESS GRANTED";
+    int msg_w = strlen(msg) * 8 * 2;
+    display_render_text((screen_w - msg_w) / 2, 202, msg, COLOR_WHITE, COLOR_GREEN, 2);
+
+    char line[48];
+
+    snprintf(line, sizeof(line), "Paid: %d sats", s_price_per_step);
+    int lw = strlen(line) * 8;
+    display_render_text((screen_w - lw) / 2, 270, line, COLOR_WHITE, COLOR_BG, 1);
+
+    const char *time_msg = "Time: 1 min";
+    int tw = strlen(time_msg) * 8;
+    display_render_text((screen_w - tw) / 2, 290, time_msg, COLOR_WHITE, COLOR_BG, 1);
+
+    snprintf(line, sizeof(line), "Wallet: %llu sats", (unsigned long long)s_wallet_balance);
+    lw = strlen(line) * 8;
+    display_render_text((screen_w - lw) / 2, 320, line, wallet_color(), COLOR_BG, 1);
+
     axs15231b_flush();
 }
 
 static void render_error_screen(void) {
-    axs15231b_fill_screen(0xF800);
-    display_render_text(104, 225, "No upstream", 0xFFFF, 0xF800, 2);
-    display_render_text(120, 245, "Check config", 0xFFFF, 0xF800, 1);
+    int screen_w = axs15231b_get_width();
+    axs15231b_fill_screen(COLOR_BG);
+
+    axs15231b_fill_rect(0, 190, screen_w, 50, COLOR_RED);
+    const char *msg = "NO UPSTREAM";
+    int msg_w = strlen(msg) * 8 * 2;
+    display_render_text((screen_w - msg_w) / 2, 202, msg, COLOR_WHITE, COLOR_RED, 2);
+
+    char line[48];
+    int lw;
+
+    const char *l1 = "Internet unavailable";
+    lw = strlen(l1) * 8;
+    display_render_text((screen_w - lw) / 2, 270, l1, COLOR_WHITE, COLOR_BG, 1);
+
+    const char *l2 = "Check WiFi config";
+    lw = strlen(l2) * 8;
+    display_render_text((screen_w - lw) / 2, 290, l2, COLOR_YELLOW, COLOR_BG, 1);
+
+    const char *l3 = "AP still active";
+    lw = strlen(l3) * 8;
+    display_render_text((screen_w - lw) / 2, 320, l3, COLOR_GREEN, COLOR_BG, 1);
+
+    snprintf(line, sizeof(line), "SSID: %s", s_ap_ssid);
+    lw = strlen(line) * 8;
+    display_render_text((screen_w - lw) / 2, 340, line, COLOR_DIM, COLOR_BG, 1);
+
     axs15231b_flush();
 }
 
@@ -220,7 +320,7 @@ static void display_task(void *pvParameters) {
                 break;
             case DISPLAY_PAYMENT_RECEIVED:
                 render_payment_screen();
-                vTaskDelay(pdMS_TO_TICKS(2000));
+                vTaskDelay(pdMS_TO_TICKS(3000));
                 s_state = DISPLAY_READY;
                 break;
             case DISPLAY_ERROR:
@@ -228,7 +328,7 @@ static void display_task(void *pvParameters) {
                 break;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(RENDER_INTERVAL_MS));
     }
 }
 
@@ -252,11 +352,12 @@ esp_err_t display_init(void) {
 
 void display_set_state(display_state_t state) {
     s_state = state;
-    s_force_render = true;
 }
 
 void display_update(const char *ap_ssid, int active_clients,
-                    uint64_t wallet_balance, const char *portal_url) {
+                    uint64_t wallet_balance, const char *portal_url,
+                    const char *mint_url, int price_per_step,
+                    const char *wifi_status) {
     if (ap_ssid) {
         strncpy(s_ap_ssid, ap_ssid, sizeof(s_ap_ssid) - 1);
         s_ap_ssid[sizeof(s_ap_ssid) - 1] = '\0';
@@ -265,6 +366,15 @@ void display_update(const char *ap_ssid, int active_clients,
         strncpy(s_portal_url, portal_url, sizeof(s_portal_url) - 1);
         s_portal_url[sizeof(s_portal_url) - 1] = '\0';
     }
+    if (mint_url) {
+        strncpy(s_mint_url, mint_url, sizeof(s_mint_url) - 1);
+        s_mint_url[sizeof(s_mint_url) - 1] = '\0';
+    }
+    if (wifi_status) {
+        strncpy(s_wifi_status, wifi_status, sizeof(s_wifi_status) - 1);
+        s_wifi_status[sizeof(s_wifi_status) - 1] = '\0';
+    }
+    if (price_per_step > 0) s_price_per_step = price_per_step;
     s_active_clients = active_clients;
     s_wallet_balance = wallet_balance;
 }
