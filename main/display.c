@@ -148,8 +148,8 @@ void display_render_qr(const char *text) {
 
 static void render_boot_screen(void) {
     axs15231b_fill_screen(0x0000);
-    display_render_text(64, 210, "TollGate", 0xF79F, 0x0000, 3);
-    display_render_text(72, 250, "starting...", 0xB5B6, 0x0000, 2);
+    display_render_text(64, 210, "TollGate", 0x07FF, 0x0000, 3);
+    display_render_text(72, 250, "starting...", 0xFFE0, 0x0000, 2);
     axs15231b_flush();
 }
 
@@ -199,37 +199,47 @@ static void render_error_screen(void) {
 
 static void display_task(void *pvParameters) {
     ESP_LOGI(TAG, "Display task started");
-    vTaskDelay(pdMS_TO_TICKS(500));
 
     while (1) {
         display_state_t state = s_state;
 
+        bool qr_changed = false;
         if (state == DISPLAY_READY) {
             int64_t now = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
             if ((now - s_last_qr_switch) >= QR_CYCLE_MS) {
                 s_qr_mode = (s_qr_mode == DISPLAY_QR_WIFI) ? DISPLAY_QR_PORTAL : DISPLAY_QR_WIFI;
                 s_last_qr_switch = now;
+                qr_changed = true;
             }
         }
 
-        switch (state) {
-            case DISPLAY_BOOT:
-                render_boot_screen();
-                break;
-            case DISPLAY_READY:
-                render_ready_screen();
-                break;
-            case DISPLAY_PAYMENT_RECEIVED:
-                render_payment_screen();
-                vTaskDelay(pdMS_TO_TICKS(2000));
-                s_state = DISPLAY_READY;
-                break;
-            case DISPLAY_ERROR:
-                render_error_screen();
-                break;
+        if (s_force_render || state != s_rendered_state ||
+            (state == DISPLAY_READY && qr_changed)) {
+            s_force_render = false;
+
+            switch (state) {
+                case DISPLAY_BOOT:
+                    render_boot_screen();
+                    break;
+                case DISPLAY_READY:
+                    render_ready_screen();
+                    break;
+                case DISPLAY_PAYMENT_RECEIVED:
+                    render_payment_screen();
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+                    s_state = DISPLAY_READY;
+                    s_force_render = true;
+                    break;
+                case DISPLAY_ERROR:
+                    render_error_screen();
+                    break;
+            }
+
+            s_rendered_state = state;
+            s_rendered_qr_mode = s_qr_mode;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 

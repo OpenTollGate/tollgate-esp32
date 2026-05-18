@@ -37,6 +37,8 @@ static spi_device_handle_t s_spi = NULL;
 static uint16_t *s_fb = NULL;
 static int s_width = AXS15231B_WIDTH;
 static int s_height = AXS15231B_HEIGHT;
+static uint8_t *s_swap_buf = NULL;
+#define SWAP_BUF_PIXELS 2048
 
 typedef struct {
     uint8_t cmd;
@@ -248,6 +250,13 @@ esp_err_t axs15231b_init(void) {
     memset(s_fb, 0, fb_size);
     ESP_LOGI(TAG, "Framebuffer allocated: %zu bytes in PSRAM", fb_size);
 
+    s_swap_buf = heap_caps_aligned_alloc(16, SWAP_BUF_PIXELS * 2, MALLOC_CAP_DMA);
+    if (!s_swap_buf) {
+        ESP_LOGE(TAG, "Failed to allocate DMA swap buffer (%d bytes)", SWAP_BUF_PIXELS * 2);
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGI(TAG, "DMA swap buffer: %d bytes in internal RAM", SWAP_BUF_PIXELS * 2);
+
     gpio_config_t bl_cfg = {
         .pin_bit_mask = (1ULL << AXS15231B_PIN_BL),
         .mode = GPIO_MODE_OUTPUT,
@@ -303,23 +312,26 @@ void axs15231b_fill_rect(int x, int y, int w, int h, uint16_t color) {
 }
 
 void axs15231b_flush(void) {
-    if (!s_spi || !s_fb) return;
-
-    ESP_LOGI(TAG, "Flush %dx%d", s_width, s_height);
+    if (!s_spi || !s_fb || !s_swap_buf) return;
 
     qspi_write_cmd_d16d16(CASET, 0, s_width - 1);
     qspi_write_cmd_d16d16(RASET, 0, s_height - 1);
 
-    int total_bytes = s_width * s_height * 2;
-    int chunk_size = 32768;
-    int offset = 0;
-    uint8_t *fb_bytes = (uint8_t *)s_fb;
+    int total_pixels = s_width * s_height;
+    int pixel_offset = 0;
     bool first = true;
 
     cs_low();
-    while (offset < total_bytes) {
-        int remaining = total_bytes - offset;
-        int this_chunk = remaining < chunk_size ? remaining : chunk_size;
+    while (pixel_offset < total_pixels) {
+        int remaining = total_pixels - pixel_offset;
+        int chunk_pixels = remaining < SWAP_BUF_PIXELS ? remaining : SWAP_BUF_PIXELS;
+        int chunk_bytes = chunk_pixels * 2;
+
+        uint8_t *src = (uint8_t *)(s_fb + pixel_offset);
+        for (int i = 0; i < chunk_bytes; i += 2) {
+            s_swap_buf[i] = src[i + 1];
+            s_swap_buf[i + 1] = src[i];
+        }
 
         spi_transaction_ext_t t = {0};
         if (first) {
@@ -331,10 +343,10 @@ void axs15231b_flush(void) {
             t.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD |
                            SPI_TRANS_VARIABLE_ADDR | SPI_TRANS_VARIABLE_DUMMY;
         }
-        t.base.tx_buffer = fb_bytes + offset;
-        t.base.length = this_chunk * 8;
+        t.base.tx_buffer = s_swap_buf;
+        t.base.length = chunk_pixels * 16;
         spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
-        offset += this_chunk;
+        pixel_offset += chunk_pixels;
     }
     cs_high();
 }
