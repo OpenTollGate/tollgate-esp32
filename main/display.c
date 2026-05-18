@@ -631,33 +631,43 @@ static void display_task(void *pvParameters) {
 
         if (s_wifi_scan_pending && s_wifi_setup.state == SETUP_SCAN) {
             s_wifi_scan_pending = false;
+            esp_wifi_disconnect();
+            vTaskDelay(pdMS_TO_TICKS(500));
             wifi_scan_config_t scan_cfg = {0};
-            esp_wifi_scan_start(&scan_cfg, true);
-            uint16_t ap_count = 0;
-            esp_wifi_scan_get_ap_num(&ap_count);
-            if (ap_count > WIFI_SETUP_MAX_APS) ap_count = WIFI_SETUP_MAX_APS;
-            wifi_ap_record_t ap_records[WIFI_SETUP_MAX_APS];
-            esp_wifi_scan_get_ap_records(&ap_count, ap_records);
+            scan_cfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+            scan_cfg.scan_time.active.min = 100;
+            scan_cfg.scan_time.active.max = 300;
+            esp_err_t scan_ret = esp_wifi_scan_start(&scan_cfg, true);
+            if (scan_ret != ESP_OK) {
+                ESP_LOGE(TAG, "WiFi scan failed: %s", esp_err_to_name(scan_ret));
+                wifi_setup_set_aps(&s_wifi_setup, NULL, 0);
+            } else {
+                uint16_t ap_count = 0;
+                esp_wifi_scan_get_ap_num(&ap_count);
+                if (ap_count > WIFI_SETUP_MAX_APS) ap_count = WIFI_SETUP_MAX_APS;
+                wifi_ap_record_t ap_records[WIFI_SETUP_MAX_APS];
+                esp_wifi_scan_get_ap_records(&ap_count, ap_records);
 
-            wifi_ap_info_t aps[WIFI_SETUP_MAX_APS];
-            for (int i = 0; i < (int)ap_count; i++) {
-                strncpy(aps[i].ssid, (const char *)ap_records[i].ssid, WIFI_SETUP_SSID_LEN - 1);
-                aps[i].ssid[WIFI_SETUP_SSID_LEN - 1] = '\0';
-                aps[i].rssi = ap_records[i].rssi;
-                aps[i].secured = (ap_records[i].authmode != WIFI_AUTH_OPEN);
-            }
+                wifi_ap_info_t aps[WIFI_SETUP_MAX_APS];
+                for (int i = 0; i < (int)ap_count; i++) {
+                    strncpy(aps[i].ssid, (const char *)ap_records[i].ssid, WIFI_SETUP_SSID_LEN - 1);
+                    aps[i].ssid[WIFI_SETUP_SSID_LEN - 1] = '\0';
+                    aps[i].rssi = ap_records[i].rssi;
+                    aps[i].secured = (ap_records[i].authmode != WIFI_AUTH_OPEN);
+                }
 
-            for (int i = 0; i < (int)ap_count - 1; i++) {
-                for (int j = i + 1; j < (int)ap_count; j++) {
-                    if (aps[j].rssi > aps[i].rssi) {
-                        wifi_ap_info_t tmp = aps[i];
-                        aps[i] = aps[j];
-                        aps[j] = tmp;
+                for (int i = 0; i < (int)ap_count - 1; i++) {
+                    for (int j = i + 1; j < (int)ap_count; j++) {
+                        if (aps[j].rssi > aps[i].rssi) {
+                            wifi_ap_info_t tmp = aps[i];
+                            aps[i] = aps[j];
+                            aps[j] = tmp;
+                        }
                     }
                 }
-            }
 
-            wifi_setup_set_aps(&s_wifi_setup, aps, (int)ap_count);
+                wifi_setup_set_aps(&s_wifi_setup, aps, (int)ap_count);
+            }
         }
 
         if (s_wifi_setup_active && s_wifi_setup.state == SETUP_CONNECTING) {

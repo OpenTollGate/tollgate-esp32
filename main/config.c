@@ -294,6 +294,7 @@ esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config)
 
 esp_err_t tollgate_config_get_next_wifi(wifi_config_t *wifi_config)
 {
+    if (g_config.network_count == 0) return ESP_ERR_NOT_FOUND;
     g_config.current_network = (g_config.current_network + 1) % g_config.network_count;
     return tollgate_config_get_wifi(wifi_config);
 }
