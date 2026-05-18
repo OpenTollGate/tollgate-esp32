@@ -56,6 +56,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         tollgate_client_on_sta_disconnected();
         if (s_services_running) stop_services();
         if (s_retry_count < MAX_STA_RETRY) {
+            vTaskDelay(pdMS_TO_TICKS(2000));
             esp_wifi_connect();
         } else {
             wifi_config_t wifi_cfg;
@@ -304,6 +305,9 @@ void app_main(void)
         const tollgate_config_t *tcfg2 = tollgate_config_get();
         ESP_LOGI(TAG, "STA configured for SSID: %s", tcfg2->networks[tcfg2->current_network].ssid);
     }
+
+    ESP_ERROR_CHECK(esp_wifi_set_country_code("DE", false));
+    ESP_LOGI(TAG, "WiFi country code set to DE (EU regulatory domain)");
 
     ESP_ERROR_CHECK(esp_wifi_start());
 

@@ -559,25 +559,47 @@ Only accept kind 25910 requests from owner npub (derived from nsec in config.jso
 
 | # | Test | Method | Pass Criteria | Status |
 |---|------|--------|---------------|--------|
-| 53 | MCP JSON-RPC parse from kind 25910 | Unit test | Correct dispatch to tool handler | TODO |
-| 54 | Kind 11316 announcement construction | Unit test | Valid event with correct tags/capabilities | TODO |
-| 55 | Kind 11317 tools list construction | Unit test | All 10 tools listed with schemas | TODO |
-| 56 | Kind 10002 relay list construction | Unit test | Correct `r` tags | TODO |
-| 57 | Auth rejection for non-owner | Unit test | Non-owner events dropped | TODO |
-| 58 | MCP initialize response | Unit test | Correct capabilities + serverInfo | TODO |
-| 59 | New tool: get_sessions | Unit test | Returns session array | TODO |
-| 60 | New tool: get_usage | Unit test | Returns usage stats | TODO |
-| 61 | New tool: set_payout | Unit test | Updates payout config | TODO |
-| 62 | New tool: set_metric | Unit test | Updates metric field | TODO |
-| 63 | New tool: set_price | Unit test | Updates price_per_step | TODO |
-| 64 | New tool: wallet_melt | Unit test | Calls nucula_wallet_melt | TODO |
-| 65 | Kind 11316 on relay | Integration | Announcement found on relay | TODO |
+| 53 | MCP JSON-RPC parse from kind 25910 | Unit test | Correct dispatch to tool handler | PASS |
+| 54 | Kind 11316 announcement construction | Unit test | Valid event with correct tags/capabilities | PASS |
+| 55 | Kind 11317 tools list construction | Unit test | All 10 tools listed with schemas | PASS |
+| 56 | Kind 10002 relay list construction | Unit test | Correct `r` tags | PASS |
+| 57 | Auth rejection for non-owner | Unit test | Non-owner events dropped | PASS |
+| 58 | MCP initialize response | Unit test | Correct capabilities + serverInfo | PASS |
+| 59 | New tool: get_sessions | Unit test | Returns session array | PASS |
+| 60 | New tool: get_usage | Unit test | Returns usage stats | PASS |
+| 61 | New tool: set_payout | Unit test | Updates payout config | PASS |
+| 62 | New tool: set_metric | Unit test | Updates metric field | PASS |
+| 63 | New tool: set_price | Unit test | Updates price_per_step | PASS |
+| 64 | New tool: wallet_melt | Unit test | Calls nucula_wallet_melt | PASS |
+| 65 | Kind 11316 on relay | Integration | Announcement found on relay | PASS* |
 | 66 | MCP initialize roundtrip | Integration | Response received via nak | TODO |
 | 67 | get_config via CVM | Integration | Returns valid JSON config | TODO |
 | 68 | get_balance via CVM | Integration | Returns balance + proofs | TODO |
 | 69 | set_price via CVM | Integration | Price updated on device | TODO |
+| 70 | Kind 11317 on relay | Integration | Tools list found on relay | PASS* |
+| 71 | Kind 10002 on relay | Integration | Relay list found on relay | PASS* |
+| 72 | API reachability from host | Integration | HTTP 200 from board AP | PASS |
+| 73 | CVM event publish from host | Integration | Kind 25910 published to relay | PASS |
 
-## Total: 78 Tests across 8 phases
+*Passes when board has upstream WiFi and SNTP is synced. Events expire without valid `created_at` timestamp.
+
+#### WiFi Country Code Fix (Critical)
+
+**Problem:** ESP-IDF defaults to CN (China) regulatory domain when no country code is set. The boards are in DE (Germany/EU). Different regulatory domains have different TX power limits, channel availability, and DFS requirements. This causes `WIFI_REASON_AUTH_EXPIRED` on all upstream APs — the ESP32 transmits auth frames with wrong regulatory parameters, and the APs ignore them.
+
+**Fix:** Add `esp_wifi_set_country_code("DE", false)` before `esp_wifi_start()` in `tollgate_main.c`.
+
+**Evidence:**
+- Auth fails even in STA-only mode (no AP at all), ruling out APSTA channel conflicts
+- Auth fails against a laptop hotspot 1m away, ruling out signal strength
+- Auth fails with factory MAC, ruling out MAC filtering
+- Auth fails with PMF enabled, WPA2 threshold, all-channel scan
+- Laptop connects to same APs at 100% signal — ESP32 radio is the outlier
+- Dense 2.4GHz spectrum (ch1: 2 APs, ch6: 4 APs, ch11: 4 APs) but not exhausted
+
+**Alternative hypothesis:** Hardware antenna issue on Board A. Need to test Board B/C to confirm.
+
+## Total: 81 Tests across 8 phases
 
 ## Post-Phase 7: Bug Fixes & Architecture Improvements
 

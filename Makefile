@@ -7,8 +7,8 @@ export
 IDF_PATH ?= $(HOME)/esp/esp-idf
 PROJECT_DIR := $(shell pwd)
 BUILD_DIR := $(PROJECT_DIR)/build
-PORT_A ?= /dev/ttyACM1
-PORT_B ?= /dev/ttyACM2
+PORT_A ?= /dev/ttyACM0
+PORT_B ?= /dev/ttyACM1
 PORT ?= $(PORT_A)
 BAUD ?= 460800
 TARGET ?= esp32s3
