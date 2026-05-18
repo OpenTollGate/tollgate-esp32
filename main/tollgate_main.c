@@ -50,7 +50,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         s_retry_count++;
         ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d", s_retry_count, MAX_STA_RETRY);
         tollgate_client_on_sta_disconnected();
-        if (s_services_running) stop_services();
         if (s_retry_count < MAX_STA_RETRY) {
             esp_wifi_connect();
         } else {

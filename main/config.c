@@ -53,9 +53,7 @@ esp_err_t tollgate_config_init(void)
         ESP_LOGW(TAG, "No config.json found, generating default");
         const char *default_json = "{"
             "\"nsec\":\"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\","
-            "\"wifi_networks\":["
-              "{\"ssid\":\"c03rad0r\",\"password\":\"c03rad0r123\"}"
-            "],"
+            "\"wifi_networks\":[],"
             "\"ap_password\":\"\","
             "\"mint_url\":\"https://testnut.cashu.space\","
             "\"price_per_step\":21,"
