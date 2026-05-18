@@ -447,22 +447,64 @@ mint_health_task (FreeRTOS, 5min interval)
 
 ---
 
-## 10. Implementation Checklist
+## 10. Git Worktree Strategy
 
-- [ ] Phase 1: Config layer (`config.h`, `config.c`)
-- [ ] Phase 2: Multi-mint acceptance (`cashu.c`)
-- [ ] Phase 3: Mint health tracker (`mint_health.h`, `mint_health.c`)
-- [ ] Phase 4: Health-aware acceptance integration
-- [ ] Phase 5: Multi-mint discovery endpoint (`tollgate_api.c`)
-- [ ] Phase 6: Multi-mint captive portal UI (`captive_portal.c`)
-- [ ] Phase 7: Multi-mint wallet (`nucula_wallet.h`, `nucula_wallet.cpp`)
-- [ ] Phase 8: Service startup integration (`tollgate_main.c`)
-- [ ] Unit tests: `test_mint_health.c`
-- [ ] Unit tests: update `test_cashu.c` for multi-mint
+Multiple LLM sessions work on this repo simultaneously. To avoid conflicts:
+
+### Setup
+
+```
+# Main worktree stays on master for other sessions
+git -C /home/c03rad0r/esp32-tollgate checkout master
+
+# Dedicated worktree for this feature
+git -C /home/c03rad0r/esp32-tollgate worktree add /home/c03rad0r/esp32-tollgate-multi-mint feature/multi-mint-support
+```
+
+### Worktree Locations
+
+| Path | Branch | Purpose |
+|------|--------|---------|
+| `/home/c03rad0r/esp32-tollgate` | `master` | Main worktree, shared with other sessions |
+| `/home/c03rad0r/esp32-tollgate-multi-mint` | `feature/multi-mint-support` | This feature's isolated workspace |
+
+### Conflict Avoidance Rules
+
+| Rule | Why |
+|------|-----|
+| All edits happen in `/home/c03rad0r/esp32-tollgate-multi-mint` | Other sessions keep their own checkout untouched |
+| Push after every green test | Other sessions can `git pull` to see progress |
+| Never modify `master` directly | Merge only when feature is complete and tested |
+| `git pull --rebase` before push | Avoid merge commits if others pushed to same branch |
+
+### Cleanup (after merge)
+
+```
+git -C /home/c03rad0r/esp32-tollgate worktree remove /home/c03rad0r/esp32-tollgate-multi-mint
+```
+
+---
+
+## 11. Implementation Checklist
+
+- [x] Create feature branch `feature/multi-mint-support`
+- [x] Write design document `docs/MULTI_MINT_DESIGN.md`
+- [x] Set up git worktree at `/home/c03rad0r/esp32-tollgate-multi-mint`
+- [ ] Phase 1: Config layer (`config.h`, `config.c`) — multi-mint array
+- [ ] Phase 2: Multi-mint acceptance (`cashu.c`) — iterate accepted_mints
+- [ ] Phase 3: Mint health tracker (`mint_health.h`, `mint_health.c`) — FreeRTOS probing task
+- [ ] Phase 4: Health-aware acceptance integration — gate on reachability
+- [ ] Phase 5: Multi-mint discovery endpoint (`tollgate_api.c`) — one tag per reachable mint
+- [ ] Phase 6: Multi-mint captive portal UI (`captive_portal.c`) — mint list with indicators
+- [ ] Phase 7: Multi-mint wallet (`nucula_wallet.h`, `nucula_wallet.cpp`) — multi-wallet approach
+- [ ] Phase 8: Service startup integration (`tollgate_main.c`) — init health + multi-wallet
+- [ ] Unit tests: `test_mint_health.c` — health state machine, recovery, callbacks
+- [ ] Unit tests: update `test_cashu.c` for multi-mint acceptance
 - [ ] Build verification (no compiler errors/warnings)
 - [ ] Flash Board A and verify multi-mint discovery
 - [ ] Flash Board B and verify multi-mint discovery
 - [ ] Payment test with token from each supported mint
 - [ ] Health probe test (verify reachable/unreachable transitions)
 - [ ] Captive portal multi-mint display verification
-- [ ] Commit and merge to master
+- [ ] Push after every passing test
+- [ ] Merge to master
