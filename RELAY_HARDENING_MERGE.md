@@ -42,32 +42,32 @@ Master at `abee221` is **broken** — the `eeb9d2d` commit (from cvm-relay-stabi
 - [x] Create backup branch `feature/relay-hardening-backup`
 
 ### Step 2: Compose Final State
-- [ ] Soft-reset hardening worktree to master
-- [ ] Restore `main/CMakeLists.txt` from `81f2dc5` (has all source files and deps)
-- [ ] Restore `main/tollgate_main.c` from `81f2dc5` (has display + relay includes and calls)
-- [ ] Keep `main/cvm_server.c` from master (has keepalive/timeout fixes)
-- [ ] Keep `main/display.c` with non-static `escape_wifi_field`
-- [ ] Stage new files: `negentropy_adapter.c/h`, `test_display.c`, `test_negentropy_adapter.c`, `test-cvm-roundtrip.mjs`, `test-cross-board.mjs`, `RELAY_HARDENING_PLAN.md`
-- [ ] Stage updated files: `Makefile`, `AGENTS.md`, `tests/unit/Makefile`
-- [ ] Delete `CHECKLIST-CVM-RELAY.md`
-- [ ] Delete `PLAN-SQUASH-MERGE.md`
-- [ ] Keep `test-cvm-mcp-relay.mjs` (from master)
-- [ ] Keep `components/esp-miner` removed (from master)
+- [x] Soft-reset hardening worktree to master
+- [x] Restore `main/CMakeLists.txt` from `81f2dc5` (has all source files and deps)
+- [x] Restore `main/tollgate_main.c` from `81f2dc5` (has display + relay includes and calls)
+- [x] Keep `main/cvm_server.c` from master (has keepalive/timeout fixes)
+- [x] Keep `main/display.c` with non-static `escape_wifi_field`
+- [x] Stage new files: `negentropy_adapter.c/h`, `test_display.c`, `test_negentropy_adapter.c`, `test-cvm-roundtrip.mjs`, `test-cross-board.mjs`, `RELAY_HARDENING_PLAN.md`
+- [x] Stage updated files: `Makefile`, `AGENTS.md`, `tests/unit/Makefile`
+- [x] Delete `CHECKLIST-CVM-RELAY.md`
+- [x] Delete `PLAN-SQUASH-MERGE.md`
+- [x] Keep `test-cvm-mcp-relay.mjs` (from master)
+- [x] Keep `components/esp-miner` removed (from master)
 
 ### Step 3: Verify
-- [ ] `git diff --cached --stat` matches expected file list
-- [ ] `git diff --cached -- main/cvm_server.c` shows master's keepalive version
-- [ ] `git diff --cached -- main/CMakeLists.txt` shows all source files restored
-- [ ] `git diff --cached -- main/tollgate_main.c` shows display + relay includes restored
-- [ ] No `components/esp-miner` in staged diff
-- [ ] `make test-unit` passes (all 63+ tests)
+- [x] `git diff --cached --stat` matches expected file list
+- [x] `git diff --cached -- main/cvm_server.c` shows master's keepalive version
+- [x] `git diff --cached -- main/CMakeLists.txt` shows all source files restored
+- [x] `git diff --cached -- main/tollgate_main.c` shows display + relay includes restored
+- [x] No `components/esp-miner` in staged diff
+- [x] `make test-unit` passes (all 63+ tests)
 
 ### Step 4: Commit + Merge
-- [ ] Create single squash commit on hardening branch
-- [ ] Fast-forward merge to master
-- [ ] Push master to origin
-- [ ] Delete hardening worktree
-- [ ] Delete `feature/relay-hardening` branch
+- [x] Create single squash commit on hardening branch
+- [x] Fast-forward merge to master
+- [x] Push master to origin
+- [x] Delete hardening worktree
+- [x] Delete `feature/relay-hardening` branch
 
 ---
 
