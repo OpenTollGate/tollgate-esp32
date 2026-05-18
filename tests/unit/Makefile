@@ -22,7 +22,7 @@ LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_display test_negentropy_adapter
 
 .PHONY: all test clean $(TESTS)
 
@@ -79,6 +79,12 @@ test_nip04: test_nip04.c $(REPO_ROOT)/main/nip04.c $(SECP256K1_OBJ)
 	$(CC) $(CFLAGS) -I $(SECP256K1_PRIV_INC) $< $(REPO_ROOT)/main/nip04.c $(SECP256K1_OBJ) -o $@ $(LDFLAGS)
 
 test_cvm_server: test_cvm_server.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_display: test_display.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_negentropy_adapter: test_negentropy_adapter.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 clean:

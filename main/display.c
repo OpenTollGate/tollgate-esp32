@@ -42,7 +42,7 @@ static int qr_pixel_size(int len) {
     return 2;
 }
 
-static int escape_wifi_field(const char *src, char *dst, int dst_size) {
+int escape_wifi_field(const char *src, char *dst, int dst_size) {
     int si = 0, di = 0;
     while (src[si] && di < dst_size - 2) {
         char c = src[si];

@@ -69,6 +69,8 @@ nvs_flash_init()
 - `local_relay.c/h` — Thin wrapper: inits wisp_relay storage/sub/rate-limiter on port 4869, publishes events to LittleFS + broadcasts to WS subscribers
 - `relay_selector.c/h` — NIP-11 HTTP probing of seed relays, latency + NIP-77 scoring, auto-failover after 3 disconnects, 6h re-probe cycle
 - `sync_manager.c/h` — REQ-diff sync: primary every 30min, fallback every 6h, reconciles local events vs remote, dedicated FreeRTOS task
+- `display.c/h` — QSPI TFT display (JC3248W535/AXS15231B): boot/ready/payment/error states, Wi-Fi and portal URL QR cycling every 5s, `escape_wifi_field()` for special chars
+- `font.c/h` — Bitmap font rendering for display text output
 
 ### Components
 - `nucula_lib/` — C++ bridge to nucula::Wallet (C API in nucula_wallet.h)
@@ -163,6 +165,13 @@ make test-all
 
 # Quick smoke (30s, needs hardware)
 make smoke
+
+# Local relay tests (needs board)
+make test-local-relay
+make test-relay-nip11
+
+# CVM MCP roundtrip (needs board + internet)
+make test-cvm-roundtrip
 ```
 
 ## Build & Flash

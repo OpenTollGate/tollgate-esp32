@@ -80,6 +80,7 @@ endef
 .PHONY: test test-unit test-integration test-e2e test-all
 .PHONY: test-smoke test-api test-network test-portal test-payment
 .PHONY: test-reset-auth test-session-expiry test-dns-firewall test-cvm
+.PHONY: test-local-relay test-relay-nip11 test-cvm-roundtrip test-cross-board test-cvm-mcp
 .PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log bootstrap-config
 .PHONY: cvm-pubkey cvm-test-tool cvm-announce
@@ -109,6 +110,11 @@ help:
 	@echo "  test-dns-firewall DNS hijack + NAT filter test"
 	@echo "  test-session-expiry Session lifecycle with 65s expiry wait"
 	@echo "  test-cvm          ContextVM protocol integration test"
+	@echo "  test-local-relay  Local relay pub/sub WebSocket test"
+	@echo "  test-relay-nip11  Local relay NIP-11 info document test"
+	@echo "  test-cvm-roundtrip CVM MCP request/response via public relay"
+	@echo "  test-cvm-mcp      CVM MCP relay integration test"
+	@echo "  test-cross-board  Cross-board payment test"
 	@echo ""
 	@echo "ContextVM:"
 	@echo "  cvm-pubkey        Print board's ContextVM npub"
@@ -284,6 +290,26 @@ test-cvm-mcp:
 	$(call _require_board_lock)
 	@echo "=== Running CVM MCP relay integration test ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-cvm-mcp-relay.mjs
+
+test-local-relay:
+	$(call _require_board_lock)
+	@echo "=== Running local relay pub/sub test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-local-relay.mjs
+
+test-relay-nip11:
+	$(call _require_board_lock)
+	@echo "=== Running relay NIP-11 test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-relay-nip11.mjs
+
+test-cvm-roundtrip:
+	$(call _require_board_lock)
+	@echo "=== Running CVM MCP roundtrip test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-cvm-roundtrip.mjs
+
+test-cross-board:
+	$(call _require_board_lock)
+	@echo "=== Running cross-board payment test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-cross-board.mjs
 
 # ──────────────────────────────────────────────
 # Wallet
