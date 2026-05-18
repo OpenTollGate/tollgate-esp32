@@ -58,10 +58,10 @@ test_nostr_event: test_nostr_event.c $(REPO_ROOT)/main/nostr_event.c $(REPO_ROOT
 	$(CC) $(CFLAGS) -I $(SECP256K1_PRIV_INC) $< $(REPO_ROOT)/main/nostr_event.c $(REPO_ROOT)/main/identity.c $(SECP256K1_OBJ) -o $@ $(LDFLAGS)
 
 test_cashu: test_cashu.c $(REPO_ROOT)/main/cashu.c
-	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -include stubs/mint_health.h $< $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
 
 test_session: test_session.c $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c
-	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -include stubs/mint_health.h $< $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
 
 test_tollgate_client: test_tollgate_client.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
