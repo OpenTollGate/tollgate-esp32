@@ -67,26 +67,26 @@ Add `DISPLAY_WIFI_SETUP` to `display_state_t`.
 ## Implementation Checklist
 
 ### Phase 1: Touch Driver
-- [ ] Create `main/touch.h` with API
-- [ ] Create `main/touch.c` with ESP-IDF I2C v5 implementation
-- [ ] Create `tests/unit/test_touch.c` with coordinate parsing tests
-- [ ] Run `make test-unit`, verify all pass
+- [x] Create `main/touch.h` with API
+- [x] Create `main/touch.c` with ESP-IDF I2C v5 implementation
+- [x] Create `tests/unit/test_touch.c` with coordinate parsing tests
+- [x] Run `make test-unit`, verify all pass
 
 ### Phase 2: On-Screen Keyboard
-- [ ] Create `main/keyboard.h` with API
-- [ ] Create `main/keyboard.c` with QWERTY layout + hit detection
-- [ ] Create `tests/unit/test_keyboard.c` with layout + key lookup tests
-- [ ] Run `make test-unit`, verify all pass
+- [x] Create `main/keyboard.h` with API
+- [x] Create `main/keyboard.c` with QWERTY layout + hit detection
+- [x] Create `tests/unit/test_keyboard.c` with layout + key lookup tests
+- [x] Run `make test-unit`, verify all pass
 
 ### Phase 3: WiFi Setup Flow
-- [ ] Create `main/wifi_setup.h` with API
-- [ ] Create `main/wifi_setup.c` with scan/list/connect state machine
-- [ ] Add `tollgate_config_add_wifi()` to config.c + config.h
-- [ ] Create `tests/unit/test_wifi_setup.c` with state machine tests
-- [ ] Run `make test-unit`, verify all pass
+- [x] Create `main/wifi_setup.h` with API
+- [x] Create `main/wifi_setup.c` with scan/list/connect state machine
+- [x] Add `tollgate_config_add_wifi()` to config.c + config.h
+- [x] Create `tests/unit/test_wifi_setup.c` with state machine tests
+- [x] Run `make test-unit`, verify all pass
 
 ### Phase 4: Integration
-- [ ] Add `DISPLAY_WIFI_SETUP` to display.h
-- [ ] Update display.c with WiFi setup rendering + touch input
-- [ ] Update `main/CMakeLists.txt` with new source files
+- [x] Add `DISPLAY_WIFI_SETUP` to display.h
+- [x] Update display.c with WiFi setup rendering + touch input
+- [x] Update `main/CMakeLists.txt` with new source files
 - [ ] Build, flash to Board C, verify full flow

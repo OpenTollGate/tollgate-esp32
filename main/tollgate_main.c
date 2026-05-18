@@ -54,6 +54,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         s_retry_count++;
         ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d", s_retry_count, MAX_STA_RETRY);
         tollgate_client_on_sta_disconnected();
+        display_notify_wifi_disconnected();
         if (s_services_running) {
             stop_services();
             display_set_state(DISPLAY_ERROR);
@@ -101,6 +102,10 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Got IP:" IPSTR ", GW:" IPSTR, IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.gw));
         s_retry_count = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+        char ip_str[16];
+        snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&event->ip_info.ip));
+        display_notify_wifi_connected(ip_str);
 
         esp_sntp_stop();
         esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
@@ -320,7 +325,8 @@ void app_main(void)
                    tcfg->mint_url, tcfg->price_per_step, "connecting...");
 
     if (tollgate_config_get_wifi(&(wifi_config_t){0}) != ESP_OK) {
-        ESP_LOGI(TAG, "No STA network configured, starting services immediately");
+        ESP_LOGI(TAG, "No STA network configured, entering WiFi setup");
+        display_enter_wifi_setup();
         xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
     }
 

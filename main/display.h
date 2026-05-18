@@ -9,7 +9,8 @@ typedef enum {
     DISPLAY_BOOT,
     DISPLAY_READY,
     DISPLAY_PAYMENT_RECEIVED,
-    DISPLAY_ERROR
+    DISPLAY_ERROR,
+    DISPLAY_WIFI_SETUP
 } display_state_t;
 
 typedef enum {
@@ -24,6 +25,9 @@ void display_update(const char *ap_ssid, int active_clients,
                     const char *mint_url, int price_per_step,
                     const char *wifi_status);
 void display_notify_payment(int amount_sats, int64_t allotment_ms);
+void display_notify_wifi_connected(const char *ip);
+void display_notify_wifi_disconnected(void);
+void display_enter_wifi_setup(void);
 void display_render_text(int x, int y, const char *text, uint16_t fg, uint16_t bg, int scale);
 void display_render_qr(const char *text);
 
