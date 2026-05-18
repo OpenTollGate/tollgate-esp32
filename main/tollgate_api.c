@@ -6,6 +6,7 @@
 #include "nucula_wallet.h"
 #include "mint_health.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "cJSON.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
@@ -524,7 +525,8 @@ esp_err_t tollgate_api_start(void)
 
     esp_err_t ret = httpd_start(&s_api_server, &config);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start API server: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to start API server: %s (heap: %lu)", esp_err_to_name(ret), (unsigned long)esp_get_free_heap_size());
+        s_api_server = NULL;
         return ret;
     }
 

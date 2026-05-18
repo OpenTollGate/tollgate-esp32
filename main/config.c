@@ -126,6 +126,16 @@ esp_err_t tollgate_config_init(void)
         }
     }
 
+    if (g_config.network_count == 0) {
+        cJSON *ssid = cJSON_GetObjectItem(root, "wifi_ssid");
+        cJSON *pass = cJSON_GetObjectItem(root, "wifi_password");
+        if (ssid && cJSON_IsString(ssid) && pass && cJSON_IsString(pass)) {
+            strncpy(g_config.networks[0].ssid, ssid->valuestring, sizeof(g_config.networks[0].ssid) - 1);
+            strncpy(g_config.networks[0].password, pass->valuestring, sizeof(g_config.networks[0].password) - 1);
+            g_config.network_count = 1;
+        }
+    }
+
     cJSON *ap_pass = cJSON_GetObjectItem(root, "ap_password");
     if (ap_pass) strncpy(g_config.ap_password, ap_pass->valuestring, sizeof(g_config.ap_password) - 1);
 
@@ -315,6 +325,7 @@ esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config)
 
 esp_err_t tollgate_config_get_next_wifi(wifi_config_t *wifi_config)
 {
+    if (g_config.network_count == 0) return ESP_ERR_NOT_FOUND;
     g_config.current_network = (g_config.current_network + 1) % g_config.network_count;
     return tollgate_config_get_wifi(wifi_config);
 }
