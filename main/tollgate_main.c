@@ -47,8 +47,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         }
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t *disconn = (wifi_event_sta_disconnected_t *)event_data;
         s_retry_count++;
-        ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d", s_retry_count, MAX_STA_RETRY);
+        ESP_LOGW(TAG, "WiFi disconnected, reason=%d, retry %d/%d", disconn->reason, s_retry_count, MAX_STA_RETRY);
         tollgate_client_on_sta_disconnected();
         if (s_retry_count < MAX_STA_RETRY) {
             esp_wifi_connect();
@@ -285,6 +286,15 @@ void app_main(void)
     if (tollgate_config_get_wifi(&(wifi_config_t){0}) != ESP_OK) {
         ESP_LOGI(TAG, "No STA network configured, starting services immediately");
         xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
+    } else {
+        ESP_LOGI(TAG, "STA configured, waiting up to 30s for connection...");
+        for (int i = 0; i < 30 && !s_services_running; i++) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        if (!s_services_running) {
+            ESP_LOGW(TAG, "STA not connected after 30s, starting services anyway");
+            xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
+        }
     }
 
     while (1) {

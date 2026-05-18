@@ -16,7 +16,7 @@ esp_err_t tollgate_config_init(void)
 {
     memset(&g_config, 0, sizeof(g_config));
     g_config.max_retry = 5;
-    g_config.ap_channel = 1;
+    g_config.ap_channel = 10;
     g_config.ap_max_conn = 4;
     g_config.price_per_step = 21;
     g_config.step_size_ms = 60000;
@@ -53,7 +53,7 @@ esp_err_t tollgate_config_init(void)
         ESP_LOGW(TAG, "No config.json found, generating default");
         const char *default_json = "{"
             "\"nsec\":\"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\","
-            "\"wifi_networks\":[],"
+            "\"wifi_networks\":[{\"ssid\":\"EnterSSID-2.4GHz\",\"password\":\"c03rad0r123!\"}],"
             "\"ap_password\":\"\","
             "\"mint_url\":\"https://testnut.cashu.space\","
             "\"price_per_step\":21,"
