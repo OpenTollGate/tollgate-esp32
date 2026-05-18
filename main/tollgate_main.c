@@ -325,8 +325,11 @@ void app_main(void)
                    tcfg->mint_url, tcfg->price_per_step, "connecting...");
 
     if (tollgate_config_get_wifi(&(wifi_config_t){0}) != ESP_OK) {
-        ESP_LOGI(TAG, "No STA network configured, entering WiFi setup");
-        display_enter_wifi_setup();
+        ESP_LOGI(TAG, "No STA network configured, starting setup mode");
+        char portal_url[128];
+        snprintf(portal_url, sizeof(portal_url), "http://%s/", tcfg->ap_ip_str);
+        display_update(NULL, 0, 0, portal_url, NULL, 0, "setup mode");
+        display_set_state(DISPLAY_SETUP_PENDING);
         xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
     }
 

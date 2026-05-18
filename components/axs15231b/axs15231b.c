@@ -37,8 +37,7 @@ static spi_device_handle_t s_spi = NULL;
 static uint16_t *s_fb = NULL;
 static int s_width = AXS15231B_WIDTH;
 static int s_height = AXS15231B_HEIGHT;
-static int s_rotation = 0;
-static int s_stride = 480;
+static int s_stride = AXS15231B_WIDTH;
 static uint8_t *s_swap_buf = NULL;
 #define SWAP_BUF_PIXELS 2048
 
@@ -243,7 +242,7 @@ esp_err_t axs15231b_init(void) {
 
     cs_init();
 
-    size_t fb_size = (size_t)480 * 480 * 2;
+    size_t fb_size = (size_t)s_width * s_height * 2;
     s_fb = heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_fb) {
         ESP_LOGE(TAG, "Failed to allocate framebuffer (%zu bytes)", fb_size);
@@ -322,7 +321,6 @@ void axs15231b_flush(void) {
     qspi_write_command(RAMWR);
 
     bool first = true;
-
     cs_low();
     for (int row = 0; row < s_height; row++) {
         int chunk_remaining = s_width;
@@ -359,34 +357,3 @@ void axs15231b_flush(void) {
 
 int axs15231b_get_width(void) { return s_width; }
 int axs15231b_get_height(void) { return s_height; }
-
-void axs15231b_set_rotation(int rotation) {
-    uint8_t madctl = MADCTL_RGB;
-    switch (rotation) {
-        case 0:
-            madctl = MADCTL_RGB;
-            s_width = AXS15231B_WIDTH;
-            s_height = AXS15231B_HEIGHT;
-            break;
-        case 1:
-            madctl = MADCTL_MX | MADCTL_MV;
-            s_width = AXS15231B_HEIGHT;
-            s_height = AXS15231B_WIDTH;
-            break;
-        case 2:
-            madctl = MADCTL_MX | MADCTL_MY;
-            s_width = AXS15231B_WIDTH;
-            s_height = AXS15231B_HEIGHT;
-            break;
-        case 3:
-            madctl = MADCTL_MY | MADCTL_MV;
-            s_width = AXS15231B_HEIGHT;
-            s_height = AXS15231B_WIDTH;
-            break;
-        default:
-            return;
-    }
-    s_rotation = rotation;
-    qspi_write_cmd_data8(MADCTL, madctl);
-    ESP_LOGI(TAG, "Rotation set to %d (%dx%d)", rotation, s_width, s_height);
-}
