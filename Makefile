@@ -9,6 +9,7 @@ PROJECT_DIR := $(shell pwd)
 BUILD_DIR := $(PROJECT_DIR)/build
 PORT_A ?= /dev/ttyACM1
 PORT_B ?= /dev/ttyACM2
+PORT_C ?= /dev/ttyACM0
 PORT ?= $(PORT_A)
 BAUD ?= 460800
 TARGET ?= esp32s3
@@ -41,6 +42,14 @@ define require_lock_b
 	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-b.lock" ]; then \
 		echo "$(RED)$(BOLD)Board B not locked — run 'make lock-b PHASE=\"description\"' first$(RESET)"; \
 		echo "$(YELLOW)Another LLM session may be using Board B.$(RESET)"; \
+		exit 1; \
+	fi
+endef
+
+define require_lock_c
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-c.lock" ]; then \
+		echo "$(RED)$(BOLD)Board C not locked — run 'make lock-c PHASE=\"description\"' first$(RESET)"; \
+		echo "$(YELLOW)Another LLM session may be using Board C.$(RESET)"; \
 		exit 1; \
 	fi
 endef
@@ -83,7 +92,7 @@ endef
 .PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log bootstrap-config
 .PHONY: cvm-pubkey cvm-test-tool cvm-announce
-.PHONY: lock-a lock-b unlock-a unlock-b force-unlock-a force-unlock-b lock-status
+.PHONY: lock-a lock-b lock-c unlock-a unlock-b unlock-c force-unlock-a force-unlock-b force-unlock-c lock-status
 
 help:
 	@echo "TollGate ESP32 — Makefile"
@@ -186,7 +195,7 @@ setup:
 
 flash: build
 	@echo "=== Flashing to $(PORT) ==="
-	@echo "$(RED)Error: use 'make flash-a' or 'make flash-b' (per-board lock required)$(RESET)"
+	@echo "$(RED)Error: use 'make flash-a', 'make flash-b', or 'make flash-c' (per-board lock required)$(RESET)"
 	@exit 1
 
 flash-a: build
@@ -198,6 +207,11 @@ flash-b: build
 	$(call require_lock_b)
 	@echo "=== Flashing to $(PORT_B) (Board B) ==="
 	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_B) -b $(BAUD) flash
+
+flash-c: build
+	$(call require_lock_c)
+	@echo "=== Flashing to $(PORT_C) (Board C / Display) ==="
+	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_C) -b $(BAUD) flash
 
 build:
 	@echo "=== Building $(TARGET) ==="
@@ -212,6 +226,10 @@ monitor-a:
 monitor-b:
 	$(call require_lock_b)
 	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_B) monitor
+
+monitor-c:
+	$(call require_lock_c)
+	. $(IDF_PATH)/export.sh && idf.py -p $(PORT_C) monitor
 
 # ──────────────────────────────────────────────
 # Testing
@@ -379,6 +397,9 @@ lock-a: ## Acquire Board A lock (set PHASE="description")
 lock-b: ## Acquire Board B lock (set PHASE="description")
 	$(call _acquire_lock,board-b)
 
+lock-c: ## Acquire Board C lock (set PHASE="description")
+	$(call _acquire_lock,board-c)
+
 unlock-a: ## Release Board A lock
 	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-a.lock" ]; then \
 		echo "$(YELLOW)Board A not locked.$(RESET)"; exit 0; \
@@ -392,6 +413,13 @@ unlock-b: ## Release Board B lock
 	fi; \
 	rm -f $(HARDWARE_LOCK_DIR)/board-b.lock; \
 	echo "$(GREEN)Board B lock released.$(RESET)"
+
+unlock-c: ## Release Board C lock
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-c.lock" ]; then \
+		echo "$(YELLOW)Board C not locked.$(RESET)"; exit 0; \
+	fi; \
+	rm -f $(HARDWARE_LOCK_DIR)/board-c.lock; \
+	echo "$(GREEN)Board C lock released.$(RESET)"
 
 force-unlock-a: ## Force-release Board A lock
 	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-a.lock" ]; then \
@@ -411,8 +439,17 @@ force-unlock-b: ## Force-release Board B lock
 	rm -f $(HARDWARE_LOCK_DIR)/board-b.lock; \
 	echo "$(GREEN)Board B force-released.$(RESET)"
 
+force-unlock-c: ## Force-release Board C lock
+	@if [ ! -f "$(HARDWARE_LOCK_DIR)/board-c.lock" ]; then \
+		echo "$(YELLOW)Board C not locked.$(RESET)"; exit 0; \
+	fi; \
+	echo "$(RED)$(BOLD)WARNING: Force-releasing Board C!$(RESET)"; \
+	cat $(HARDWARE_LOCK_DIR)/board-c.lock | sed 's/^/  /'; \
+	rm -f $(HARDWARE_LOCK_DIR)/board-c.lock; \
+	echo "$(GREEN)Board C force-released.$(RESET)"
+
 lock-status: ## Show all board lock statuses
-	@for board in a b; do \
+	@for board in a b c; do \
 		if [ -f "$(HARDWARE_LOCK_DIR)/board-$$board.lock" ]; then \
 			echo "$(YELLOW)Board $$board: LOCKED$(RESET)"; \
 			cat $(HARDWARE_LOCK_DIR)/board-$$board.lock | sed 's/^/  /'; \

@@ -29,6 +29,10 @@ static const char *TAG = "axs15231b";
 #define MADCTL_MV 0x20
 #define MADCTL_RGB 0x00
 
+#define QSPI_CMD_REG_WRITE  0x02
+#define QSPI_CMD_DATA_WRITE 0x32
+#define QSPI_DATA_ADDR      0x003C00
+
 static spi_device_handle_t s_spi = NULL;
 static uint16_t *s_fb = NULL;
 static int s_width = AXS15231B_WIDTH;
@@ -41,28 +45,92 @@ typedef struct {
     uint16_t delay_ms;
 } init_cmd_t;
 
-static esp_err_t send_cmd(uint8_t cmd) {
-    spi_transaction_t t = {0};
-    t.length = 8;
-    t.tx_data[0] = cmd;
-    t.flags = SPI_TRANS_USE_TXDATA;
-    return spi_device_polling_transmit(s_spi, &t);
+static inline void cs_low(void) {
+    gpio_set_level(AXS15231B_PIN_CS, 0);
 }
 
-static esp_err_t send_data(const uint8_t *data, int len) {
-    if (len == 0) return ESP_OK;
-    spi_transaction_t t = {0};
-    t.length = len * 8;
-    t.tx_buffer = data;
-    t.flags = 0;
-    return spi_device_polling_transmit(s_spi, &t);
+static inline void cs_high(void) {
+    gpio_set_level(AXS15231B_PIN_CS, 1);
 }
 
-static esp_err_t send_cmd_data(uint8_t cmd, const uint8_t *data, int len) {
-    esp_err_t ret = send_cmd(cmd);
-    if (ret != ESP_OK) return ret;
-    if (len > 0) ret = send_data(data, len);
-    return ret;
+static void cs_init(void) {
+    gpio_config_t cfg = {
+        .pin_bit_mask = (1ULL << AXS15231B_PIN_CS),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&cfg);
+    gpio_set_level(AXS15231B_PIN_CS, 1);
+}
+
+static void qspi_write_command(uint8_t lcd_cmd) {
+    spi_transaction_ext_t t = {0};
+    t.base.flags = SPI_TRANS_MULTILINE_CMD | SPI_TRANS_MULTILINE_ADDR;
+    t.base.cmd = QSPI_CMD_REG_WRITE;
+    t.base.addr = ((uint32_t)lcd_cmd) << 8;
+    t.base.tx_buffer = NULL;
+    t.base.length = 0;
+    cs_low();
+    spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
+    cs_high();
+}
+
+static void qspi_write_cmd_data8(uint8_t lcd_cmd, uint8_t d) {
+    spi_transaction_ext_t t = {0};
+    t.base.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_MULTILINE_CMD | SPI_TRANS_MULTILINE_ADDR;
+    t.base.cmd = QSPI_CMD_REG_WRITE;
+    t.base.addr = ((uint32_t)lcd_cmd) << 8;
+    t.base.tx_data[0] = d;
+    t.base.length = 8;
+    cs_low();
+    spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
+    cs_high();
+}
+
+static void qspi_write_cmd_data16(uint8_t lcd_cmd, uint16_t d) {
+    spi_transaction_ext_t t = {0};
+    t.base.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_MULTILINE_CMD | SPI_TRANS_MULTILINE_ADDR;
+    t.base.cmd = QSPI_CMD_REG_WRITE;
+    t.base.addr = ((uint32_t)lcd_cmd) << 8;
+    t.base.tx_data[0] = d >> 8;
+    t.base.tx_data[1] = d & 0xFF;
+    t.base.length = 16;
+    cs_low();
+    spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
+    cs_high();
+}
+
+static void qspi_write_cmd_bytes(uint8_t lcd_cmd, const uint8_t *data, int len) {
+    if (len == 0) {
+        qspi_write_command(lcd_cmd);
+        return;
+    }
+    spi_transaction_ext_t t = {0};
+    t.base.flags = SPI_TRANS_MULTILINE_CMD | SPI_TRANS_MULTILINE_ADDR;
+    t.base.cmd = QSPI_CMD_REG_WRITE;
+    t.base.addr = ((uint32_t)lcd_cmd) << 8;
+    t.base.tx_buffer = data;
+    t.base.length = len * 8;
+    cs_low();
+    spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
+    cs_high();
+}
+
+static void qspi_write_cmd_d16d16(uint8_t lcd_cmd, uint16_t d1, uint16_t d2) {
+    spi_transaction_ext_t t = {0};
+    t.base.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_MULTILINE_CMD | SPI_TRANS_MULTILINE_ADDR;
+    t.base.cmd = QSPI_CMD_REG_WRITE;
+    t.base.addr = ((uint32_t)lcd_cmd) << 8;
+    t.base.tx_data[0] = d1 >> 8;
+    t.base.tx_data[1] = d1 & 0xFF;
+    t.base.tx_data[2] = d2 >> 8;
+    t.base.tx_data[3] = d2 & 0xFF;
+    t.base.length = 32;
+    cs_low();
+    spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
+    cs_high();
 }
 
 static const uint8_t init_bb[] = {0x00,0x00,0x00,0x00,0x00,0x00,0x5A,0xA5};
@@ -145,9 +213,12 @@ esp_err_t axs15231b_init(void) {
     };
 
     spi_device_interface_config_t devcfg = {
+        .command_bits = 8,
+        .address_bits = 24,
+        .dummy_bits = 0,
         .clock_speed_hz = 40 * 1000 * 1000,
         .mode = 0,
-        .spics_io_num = AXS15231B_PIN_CS,
+        .spics_io_num = -1,
         .queue_size = 7,
         .flags = SPI_DEVICE_HALFDUPLEX,
     };
@@ -163,6 +234,10 @@ esp_err_t axs15231b_init(void) {
         ESP_LOGE(TAG, "Failed to add SPI device: %s", esp_err_to_name(ret));
         return ret;
     }
+
+    spi_device_acquire_bus(s_spi, portMAX_DELAY);
+
+    cs_init();
 
     size_t fb_size = (size_t)s_width * s_height * 2;
     s_fb = heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -182,40 +257,28 @@ esp_err_t axs15231b_init(void) {
     };
     gpio_config(&bl_cfg);
 
-    send_cmd(SWRESET);
+    qspi_write_command(SWRESET);
     vTaskDelay(pdMS_TO_TICKS(200));
 
     for (int i = 0; i < INIT_CMD_COUNT; i++) {
-        ret = send_cmd_data(s_init_cmds[i].cmd, s_init_cmds[i].data, s_init_cmds[i].data_len);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Init cmd 0x%02X failed: %s", s_init_cmds[i].cmd, esp_err_to_name(ret));
-            return ret;
-        }
+        qspi_write_cmd_bytes(s_init_cmds[i].cmd, s_init_cmds[i].data, s_init_cmds[i].data_len);
         if (s_init_cmds[i].delay_ms > 0) {
             vTaskDelay(pdMS_TO_TICKS(s_init_cmds[i].delay_ms));
         }
     }
 
-    uint8_t madctl_val = MADCTL_MX | MADCTL_MV | MADCTL_RGB;
-    ret = send_cmd_data(MADCTL, &madctl_val, 1);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set rotation: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    uint8_t madctl_val = MADCTL_RGB;
+    qspi_write_cmd_data8(MADCTL, madctl_val);
 
     uint8_t colmod_val = 0x55;
-    ret = send_cmd_data(COLMOD, &colmod_val, 1);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set pixel format: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    qspi_write_cmd_data8(COLMOD, colmod_val);
 
     axs15231b_fill_screen(0x0000);
     axs15231b_flush();
 
     axs15231b_set_backlight(true);
 
-    ESP_LOGI(TAG, "AXS15231B initialized: %dx%d landscape", s_width, s_height);
+    ESP_LOGI(TAG, "AXS15231B initialized: %dx%d portrait", s_width, s_height);
     return ESP_OK;
 }
 
@@ -242,41 +305,38 @@ void axs15231b_fill_rect(int x, int y, int w, int h, uint16_t color) {
 void axs15231b_flush(void) {
     if (!s_spi || !s_fb) return;
 
-    uint8_t buf[4];
-    buf[0] = 0;
-    buf[1] = 0;
-    buf[2] = (s_width - 1) >> 8;
-    buf[3] = (s_width - 1) & 0xFF;
-    send_cmd_data(CASET, buf, 4);
+    ESP_LOGI(TAG, "Flush %dx%d", s_width, s_height);
 
-    buf[0] = 0;
-    buf[1] = 0;
-    buf[2] = (s_height - 1) >> 8;
-    buf[3] = (s_height - 1) & 0xFF;
-    send_cmd_data(RASET, buf, 4);
-
-    send_cmd(RAMWR);
+    qspi_write_cmd_d16d16(CASET, 0, s_width - 1);
+    qspi_write_cmd_d16d16(RASET, 0, s_height - 1);
 
     int total_bytes = s_width * s_height * 2;
     int chunk_size = 32768;
     int offset = 0;
     uint8_t *fb_bytes = (uint8_t *)s_fb;
+    bool first = true;
 
+    cs_low();
     while (offset < total_bytes) {
         int remaining = total_bytes - offset;
         int this_chunk = remaining < chunk_size ? remaining : chunk_size;
 
         spi_transaction_ext_t t = {0};
-        t.base.length = this_chunk * 8;
-        t.base.tx_buffer = fb_bytes + offset;
-        t.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_MULTILINE_CMD;
-        esp_err_t ret = spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Flush transfer failed at offset %d: %s", offset, esp_err_to_name(ret));
-            return;
+        if (first) {
+            t.base.flags = SPI_TRANS_MODE_QIO;
+            t.base.cmd = QSPI_CMD_DATA_WRITE;
+            t.base.addr = QSPI_DATA_ADDR;
+            first = false;
+        } else {
+            t.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD |
+                           SPI_TRANS_VARIABLE_ADDR | SPI_TRANS_VARIABLE_DUMMY;
         }
+        t.base.tx_buffer = fb_bytes + offset;
+        t.base.length = this_chunk * 8;
+        spi_device_polling_transmit(s_spi, (spi_transaction_t *)&t);
         offset += this_chunk;
     }
+    cs_high();
 }
 
 int axs15231b_get_width(void) { return s_width; }

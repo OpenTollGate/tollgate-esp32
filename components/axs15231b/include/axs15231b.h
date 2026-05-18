@@ -5,8 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define AXS15231B_WIDTH  480
-#define AXS15231B_HEIGHT 320
+#define AXS15231B_WIDTH  320
+#define AXS15231B_HEIGHT 480
 
 #define AXS15231B_PIN_CS   45
 #define AXS15231B_PIN_CLK  47

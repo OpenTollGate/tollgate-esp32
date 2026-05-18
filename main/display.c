@@ -21,6 +21,9 @@ static uint64_t s_wallet_balance = 0;
 static bool s_initialized = false;
 static int64_t s_last_qr_switch = 0;
 static display_qr_mode_t s_qr_mode = DISPLAY_QR_WIFI;
+static display_state_t s_rendered_state = DISPLAY_BOOT;
+static display_qr_mode_t s_rendered_qr_mode = DISPLAY_QR_WIFI;
+static bool s_force_render = true;
 
 static int qr_version_from_strlen(int len) {
     if (len <= 17) return 1;
@@ -145,8 +148,8 @@ void display_render_qr(const char *text) {
 
 static void render_boot_screen(void) {
     axs15231b_fill_screen(0x0000);
-    display_render_text(140, 100, "TollGate", 0xF79F, 0x0000, 3);
-    display_render_text(140, 140, "starting...", 0xB5B6, 0x0000, 2);
+    display_render_text(64, 210, "TollGate", 0xF79F, 0x0000, 3);
+    display_render_text(72, 250, "starting...", 0xB5B6, 0x0000, 2);
     axs15231b_flush();
 }
 
@@ -182,23 +185,32 @@ static void render_ready_screen(void) {
 
 static void render_payment_screen(void) {
     axs15231b_fill_screen(0x07E0);
-    display_render_text(140, 100, "Paid!", 0x0000, 0x07E0, 3);
-    display_render_text(130, 140, "Access granted", 0x0000, 0x07E0, 2);
+    display_render_text(100, 220, "Paid!", 0x0000, 0x07E0, 3);
+    display_render_text(48, 260, "Access granted", 0x0000, 0x07E0, 2);
     axs15231b_flush();
 }
 
 static void render_error_screen(void) {
     axs15231b_fill_screen(0xF800);
-    display_render_text(120, 100, "No upstream", 0xFFFF, 0xF800, 3);
-    display_render_text(130, 140, "Check config", 0xFFFF, 0xF800, 2);
+    display_render_text(28, 220, "No upstream", 0xFFFF, 0xF800, 3);
+    display_render_text(64, 260, "Check config", 0xFFFF, 0xF800, 2);
     axs15231b_flush();
 }
 
 static void display_task(void *pvParameters) {
     ESP_LOGI(TAG, "Display task started");
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     while (1) {
         display_state_t state = s_state;
+
+        if (state == DISPLAY_READY) {
+            int64_t now = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+            if ((now - s_last_qr_switch) >= QR_CYCLE_MS) {
+                s_qr_mode = (s_qr_mode == DISPLAY_QR_WIFI) ? DISPLAY_QR_PORTAL : DISPLAY_QR_WIFI;
+                s_last_qr_switch = now;
+            }
+        }
 
         switch (state) {
             case DISPLAY_BOOT:
@@ -215,12 +227,6 @@ static void display_task(void *pvParameters) {
             case DISPLAY_ERROR:
                 render_error_screen();
                 break;
-        }
-
-        int64_t now = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
-        if (state == DISPLAY_READY && (now - s_last_qr_switch) >= QR_CYCLE_MS) {
-            s_qr_mode = (s_qr_mode == DISPLAY_QR_WIFI) ? DISPLAY_QR_PORTAL : DISPLAY_QR_WIFI;
-            s_last_qr_switch = now;
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -247,6 +253,7 @@ esp_err_t display_init(void) {
 
 void display_set_state(display_state_t state) {
     s_state = state;
+    s_force_render = true;
 }
 
 void display_update(const char *ap_ssid, int active_clients,
