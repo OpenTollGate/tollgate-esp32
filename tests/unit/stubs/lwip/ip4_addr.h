@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+typedef uint32_t u32_t;
+typedef uint16_t u16_t;
+
 typedef struct {
     uint32_t addr;
 } ip4_addr_t;

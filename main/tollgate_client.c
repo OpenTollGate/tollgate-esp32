@@ -127,15 +127,25 @@ static bool parse_discovery_response(const char *json_str, tollgate_discovery_t 
             if (val && cJSON_IsString(val)) {
                 out->step_size_ms = atoi(val->valuestring);
             }
-        } else if (strcmp(tag_name->valuestring, "price_per_step") == 0 && tag_len >= 6) {
-            cJSON *amount = cJSON_GetArrayItem(tag, 2);
-            cJSON *mint = cJSON_GetArrayItem(tag, 4);
+        } else if (strcmp(tag_name->valuestring, "price_per_step") == 0 && tag_len >= 4) {
+            cJSON *payment_type = cJSON_GetArrayItem(tag, 2);
 
-            if (amount && cJSON_IsString(amount)) {
-                out->price_per_step = atoi(amount->valuestring);
-            }
-            if (mint && cJSON_IsString(mint)) {
-                strncpy(out->mint_url, mint->valuestring, sizeof(out->mint_url) - 1);
+            if (cJSON_IsString(payment_type) && strcmp(payment_type->valuestring, "mining") == 0 && tag_len >= 5) {
+                out->mining_available = true;
+                cJSON *port_val = cJSON_GetArrayItem(tag, 3);
+                if (port_val && cJSON_IsString(port_val)) {
+                    out->mining_port = (uint16_t)atoi(port_val->valuestring);
+                }
+            } else {
+                cJSON *amount = cJSON_GetArrayItem(tag, 2);
+                cJSON *mint = cJSON_GetArrayItem(tag, 4);
+
+                if (amount && cJSON_IsString(amount)) {
+                    out->price_per_step = atoi(amount->valuestring);
+                }
+                if (mint && cJSON_IsString(mint)) {
+                    strncpy(out->mint_url, mint->valuestring, sizeof(out->mint_url) - 1);
+                }
             }
         }
     }

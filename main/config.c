@@ -39,6 +39,13 @@ esp_err_t tollgate_config_init(void)
     strncpy(g_config.cvm_relays, "wss://relay.primal.net", sizeof(g_config.cvm_relays) - 1);
     strncpy(g_config.wifi_auth_mode, "WPA2", sizeof(g_config.wifi_auth_mode) - 1);
     g_config.display_enabled = true;
+    g_config.nostr_sync_interval_s = 1800;
+    g_config.nostr_fallback_sync_interval_s = 21600;
+    g_config.mining_enabled = false;
+    g_config.mining_payout_mode = MINING_PAYOUT_AUTO;
+    g_config.stratum_port = 3333;
+    g_config.mining_port = 3334;
+    g_config.mining_sandbox_mint_access = true;
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -314,14 +321,74 @@ esp_err_t tollgate_config_init(void)
         g_config.payout.mint_count = 1;
     }
 
+    cJSON *seed_relays = cJSON_GetObjectItem(root, "nostr_seed_relays");
+    if (seed_relays && cJSON_IsArray(seed_relays)) {
+        int srcount = cJSON_GetArraySize(seed_relays);
+        if (srcount > TOLLGATE_MAX_SEED_RELAYS) srcount = TOLLGATE_MAX_SEED_RELAYS;
+        for (int i = 0; i < srcount; i++) {
+            cJSON *r = cJSON_GetArrayItem(seed_relays, i);
+            if (r && cJSON_IsString(r)) {
+                strncpy(g_config.nostr_seed_relays[i], r->valuestring,
+                        sizeof(g_config.nostr_seed_relays[i]) - 1);
+                g_config.nostr_seed_relay_count++;
+            }
+        }
+    }
+
+    cJSON *sync_interval = cJSON_GetObjectItem(root, "nostr_sync_interval_s");
+    if (sync_interval) g_config.nostr_sync_interval_s = sync_interval->valueint;
+
+    cJSON *fallback_interval = cJSON_GetObjectItem(root, "nostr_fallback_sync_interval_s");
+    if (fallback_interval) g_config.nostr_fallback_sync_interval_s = fallback_interval->valueint;
+
+    cJSON *mining = cJSON_GetObjectItem(root, "mining");
+    if (mining && cJSON_IsObject(mining)) {
+        cJSON *m_en = cJSON_GetObjectItem(mining, "enabled");
+        if (m_en && cJSON_IsBool(m_en)) g_config.mining_enabled = cJSON_IsTrue(m_en);
+
+        cJSON *m_mode = cJSON_GetObjectItem(mining, "payout_mode");
+        if (m_mode && cJSON_IsString(m_mode)) {
+            if (strcmp(m_mode->valuestring, "pool") == 0) g_config.mining_payout_mode = MINING_PAYOUT_POOL;
+            else if (strcmp(m_mode->valuestring, "upstream") == 0) g_config.mining_payout_mode = MINING_PAYOUT_UPSTREAM;
+            else if (strcmp(m_mode->valuestring, "proxy_only") == 0) g_config.mining_payout_mode = MINING_PAYOUT_PROXY_ONLY;
+        }
+
+        cJSON *m_host = cJSON_GetObjectItem(mining, "stratum_host");
+        if (m_host && cJSON_IsString(m_host)) strncpy(g_config.stratum_host, m_host->valuestring, sizeof(g_config.stratum_host) - 1);
+
+        cJSON *m_port = cJSON_GetObjectItem(mining, "stratum_port");
+        if (m_port) g_config.stratum_port = (uint16_t)m_port->valueint;
+
+        cJSON *m_user = cJSON_GetObjectItem(mining, "stratum_user");
+        if (m_user && cJSON_IsString(m_user)) strncpy(g_config.stratum_user, m_user->valuestring, sizeof(g_config.stratum_user) - 1);
+
+        cJSON *m_pass = cJSON_GetObjectItem(mining, "stratum_pass");
+        if (m_pass && cJSON_IsString(m_pass)) strncpy(g_config.stratum_pass, m_pass->valuestring, sizeof(g_config.stratum_pass) - 1);
+
+        cJSON *m_fb_host = cJSON_GetObjectItem(mining, "stratum_fallback_host");
+        if (m_fb_host && cJSON_IsString(m_fb_host)) strncpy(g_config.stratum_fallback_host, m_fb_host->valuestring, sizeof(g_config.stratum_fallback_host) - 1);
+
+        cJSON *m_fb_port = cJSON_GetObjectItem(mining, "stratum_fallback_port");
+        if (m_fb_port) g_config.stratum_fallback_port = (uint16_t)m_fb_port->valueint;
+
+        cJSON *m_mport = cJSON_GetObjectItem(mining, "mining_port");
+        if (m_mport) g_config.mining_port = (uint16_t)m_mport->valueint;
+
+        cJSON *m_hp = cJSON_GetObjectItem(mining, "hashprice_sats_per_ghs_day");
+        if (m_hp) g_config.hashprice_sats_per_ghs_day = (uint64_t)m_hp->valuedouble;
+
+        cJSON *m_sandbox = cJSON_GetObjectItem(mining, "sandbox_mint_access");
+        if (m_sandbox && cJSON_IsBool(m_sandbox)) g_config.mining_sandbox_mint_access = cJSON_IsTrue(m_sandbox);
+    }
+
+    cJSON_Delete(root);
+
     if (g_config.payout.recipient_count == 0) {
         strncpy(g_config.payout.recipients[0].lightning_address, "TollGate@coinos.io",
                 sizeof(g_config.payout.recipients[0].lightning_address) - 1);
         g_config.payout.recipients[0].factor = 1.0;
         g_config.payout.recipient_count = 1;
     }
-
-    cJSON_Delete(root);
 
     if (g_config.accepted_mint_count == 0 && g_config.mint_url[0] != '\0') {
         strncpy(g_config.accepted_mints[0], g_config.mint_url,
@@ -332,7 +399,11 @@ esp_err_t tollgate_config_init(void)
     if (g_config.nostr_relay_count == 0) {
         strncpy(g_config.nostr_relays[0], "wss://relay.damus.io", sizeof(g_config.nostr_relays[0]) - 1);
         strncpy(g_config.nostr_relays[1], "wss://nos.lol", sizeof(g_config.nostr_relays[1]) - 1);
-        g_config.nostr_relay_count = 2;
+        strncpy(g_config.nostr_relays[2], "wss://relay.anzenkodo.workers.dev",
+                sizeof(g_config.nostr_relays[2]) - 1);
+        strncpy(g_config.nostr_relays[3], "wss://nostr.koning-degraaf.nl",
+                sizeof(g_config.nostr_relays[3]) - 1);
+        g_config.nostr_relay_count = 4;
     }
 
     if (g_config.nostr_seed_relay_count == 0) {
@@ -344,7 +415,15 @@ esp_err_t tollgate_config_init(void)
                 sizeof(g_config.nostr_seed_relays[2]) - 1);
         strncpy(g_config.nostr_seed_relays[3], "wss://relay.nostr.band",
                 sizeof(g_config.nostr_seed_relays[3]) - 1);
-        g_config.nostr_seed_relay_count = 4;
+        strncpy(g_config.nostr_seed_relays[4], "wss://relay.anzenkodo.workers.dev",
+                sizeof(g_config.nostr_seed_relays[4]) - 1);
+        strncpy(g_config.nostr_seed_relays[5], "wss://nostr.koning-degraaf.nl",
+                sizeof(g_config.nostr_seed_relays[5]) - 1);
+        strncpy(g_config.nostr_seed_relays[6], "wss://knostr.neutrine.com",
+                sizeof(g_config.nostr_seed_relays[6]) - 1);
+        strncpy(g_config.nostr_seed_relays[7], "wss://nostr.einundzwanzig.space",
+                sizeof(g_config.nostr_seed_relays[7]) - 1);
+        g_config.nostr_seed_relay_count = 8;
     }
 
     ESP_LOGI(TAG, "Config loaded: nsec=%s...%s, %d WiFi networks, %d accepted mints, price=%d sats/%dms",

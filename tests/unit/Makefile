@@ -22,7 +22,7 @@ LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_display test_negentropy_adapter test_beacon_price test_market test_mint_health
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_display test_negentropy_adapter test_beacon_price test_market test_mint_health test_mining_payment test_stratum_proxy test_session_payment_method test_tollgate_client_mining test_firewall_sandbox
 
 .PHONY: all test clean $(TESTS)
 
@@ -89,6 +89,21 @@ test_beacon_price: test_beacon_price.c $(REPO_ROOT)/main/beacon_price.c
 
 test_market: test_market.c $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c
 	$(CC) $(CFLAGS) -I $(REPO_ROOT)/main $< $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c -o $@ $(LDFLAGS)
+
+test_mining_payment: test_mining_payment.c $(REPO_ROOT)/main/mining_payment.c
+	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/mining_payment.c -o $@ $(LDFLAGS)
+
+test_stratum_proxy: test_stratum_proxy.c $(REPO_ROOT)/main/stratum_proxy.c $(REPO_ROOT)/main/mining_payment.c
+	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/stratum_proxy.c $(REPO_ROOT)/main/mining_payment.c -o $@ $(LDFLAGS)
+
+test_session_payment_method: test_session_payment_method.c $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c
+	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
+
+test_tollgate_client_mining: test_tollgate_client_mining.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_firewall_sandbox: test_firewall_sandbox.c $(REPO_ROOT)/main/firewall.c
+	$(CC) $(CFLAGS) -include stubs/dns_server.h $< $(REPO_ROOT)/main/firewall.c -o $@ $(LDFLAGS)
 
 clean:
 	rm -f $(TESTS) $(SECP256K1_OBJ)

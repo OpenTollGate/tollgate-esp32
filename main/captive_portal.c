@@ -2,7 +2,8 @@
 #include "firewall.h"
 #include "session.h"
 #include "config.h"
-#include "mint_health.h"
+#include "mining_payment.h"
+#include "stratum_proxy.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "cJSON.h"
@@ -32,6 +33,12 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 "max-width:400px;width:100%;text-align:center}"
 "h1{font-size:28px;margin-bottom:8px;color:#f7931a}"
 ".subtitle{color:#888;margin-bottom:24px;font-size:14px}"
+".tabs{display:flex;gap:4px;margin-bottom:20px}"
+".tab{flex:1;padding:10px;border:none;border-radius:8px;background:#252525;color:#888;"
+"cursor:pointer;font-size:13px;font-weight:bold}"
+".tab.active{background:#f7931a;color:#000}"
+".tab-content{display:none}"
+".tab-content.active{display:block}"
 ".price{background:#252525;border-radius:12px;padding:16px;margin-bottom:16px}"
 ".price-amount{font-size:36px;font-weight:bold;color:#f7931a}"
 ".price-unit{color:#888;font-size:14px}"
@@ -43,24 +50,26 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 ".btn:disabled{background:#333;color:#666;cursor:not-allowed}"
 ".mints{background:#252525;border-radius:12px;padding:12px;margin-top:16px;text-align:left}"
 ".mints-title{color:#888;font-size:12px;margin-bottom:8px}"
-".mint-item{display:flex;align-items:center;padding:6px 8px;margin-bottom:4px;"
-"background:#1a1a1a;border-radius:6px;cursor:pointer}"
-".mint-item:active{opacity:0.7}"
-".mint-dot{width:8px;height:8px;border-radius:50%;margin-right:8px;flex-shrink:0}"
-".mint-dot.green{background:#4caf50}"
-".mint-dot.grey{background:#666}"
-".mint-url{font-family:monospace;font-size:11px;color:#f7931a;word-break:break-all}"
-".mint-url.dim{color:#666}"
+".mint-url{font-family:monospace;font-size:11px;color:#f7931a;word-break:break-all;"
+"background:#1a1a1a;padding:8px;border-radius:6px;cursor:pointer}"
+".mint-url:active{opacity:0.7}"
 ".mint-hint{color:#666;font-size:10px;margin-top:4px}"
+".mining-stats{background:#252525;border-radius:12px;padding:16px;margin-bottom:16px;text-align:left}"
+".mining-stat{display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px}"
+".mining-stat .label{color:#888}"
+".mining-stat .value{color:#f7931a;font-weight:bold}"
 "#status{margin-top:16px;padding:12px;border-radius:8px;display:none;font-size:14px}"
 "#status.success{display:block;background:#1a472a;color:#4caf50}"
 "#status.error{display:block;background:#471a1a;color:#f44336}"
 "#status.processing{display:block;background:#1a3a47;color:#2196f3}"
+".mining-info{color:#666;font-size:11px;margin-top:12px;line-height:1.5}"
 "</style>"
 "</head><body>"
 "<div class='card'>"
 "<h1>TollGate</h1>"
-"<p class='subtitle'>Pay for internet access with ecash</p>"
+"<p class='subtitle'>Pay for internet access with ecash or mining</p>"
+"__MINING_TABS__"
+"<div id='tab-cashu' class='tab-content __CASHU_ACTIVE__'>"
 "<div class='price'>"
 "<div class='price-amount'>__PRICE__</div>"
 "<div class='price-unit'>sats per minute</div>"
@@ -69,21 +78,40 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 "<button class='btn' id='payBtn' onclick='payToken()'>Pay & Connect</button>"
 "<div class='mints'>"
 "<div class='mints-title'>SUPPORTED MINTS</div>"
-"<div id='mintList'>__MINT_LIST__</div>"
-"<div class='mint-hint'>Tap to copy &bull; Green = reachable</div>"
+"<div class='mint-url' id='mintUrl' onclick='copyMint()'>__MINT_URL__</div>"
+"<div class='mint-hint'>Tap to copy &bull; Mint tokens at this URL before paying</div>"
+"</div>"
+"</div>"
+"<div id='tab-mining' class='tab-content __MINING_ACTIVE__'>"
+"<div class='mining-stats'>"
+"<div class='mining-stat'><span class='label'>Hashrate</span><span class='value' id='hashrate'>0.00 GH/s</span></div>"
+"<div class='mining-stat'><span class='label'>Shares</span><span class='value' id='shareCount'>0</span></div>"
+"<div class='mining-stat'><span class='label'>Hashprice</span><span class='value' id='hashprice'>0.00 sat/GH/s/day</span></div>"
+"<div class='mining-stat'><span class='label'>Time earned</span><span class='value' id='timeEarned'>0 min</span></div>"
+"</div>"
+"<button class='btn' id='mineBtn' onclick='toggleMining()'>Start Mining</button>"
+"<div class='mining-info'>Mining earns internet time by contributing SHA256 hashpower. "
+"Connect a Stratum miner to port __MINING_PORT__ or use the built-in web miner.</div>"
 "</div>"
 "<div id='status'></div>"
 "</div>"
 "<script>"
-"const mintListEl=document.getElementById('mintList');"
+"const mintUrlEl=document.getElementById('mintUrl');"
+"const mintUrl=mintUrlEl.textContent;"
 "const statusEl=document.getElementById('status');"
 "const payBtn=document.getElementById('payBtn');"
 "const tokenInput=document.getElementById('tokenInput');"
-"function copyMint(url){"
-"if(navigator.clipboard){navigator.clipboard.writeText(url);"
-"const el=event.currentTarget;const u=el.querySelector('.mint-url');"
-"const orig=u.textContent;u.textContent='Copied!';"
-"setTimeout(()=>{u.textContent=orig;},1000);}"
+"let miningActive=false;"
+"let miningInterval=null;"
+"function switchTab(tab){"
+"document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));"
+"document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));"
+"event.target.classList.add('active');"
+"document.getElementById('tab-'+tab).classList.add('active');"
+"}"
+"function copyMint(){"
+"if(navigator.clipboard){navigator.clipboard.writeText(mintUrl);"
+"mintUrlEl.textContent='Copied!';setTimeout(()=>{mintUrlEl.textContent=mintUrl;},1000);}"
 "}"
 "function showStatus(msg,type){statusEl.textContent=msg;statusEl.className=type;}"
 "function payToken(){"
@@ -100,20 +128,24 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 "else if(d.kind===21023){showStatus('Error: '+(d.content||'Unknown error'),'error');payBtn.disabled=false;}"
 "}).catch(e=>{showStatus(e.message||'Connection error','error');payBtn.disabled=false;});"
 "}"
-"function refreshMints(){"
-"fetch('http://__AP_IP__:2121/mints').then(r=>r.json()).then(data=>{"
-"let html='';"
-"for(const m of data){"
-"const cls=m.reachable?'green':'grey';"
-"const urlCls=m.reachable?'mint-url':'mint-url dim';"
-"html+='<div class=\"mint-item\" onclick=\"copyMint(\\''+m.url+'\\')\">';"
-"html+='<span class=\"mint-dot '+cls+'\"></span>';"
-"html+='<span class=\"'+urlCls+'\">'+m.url+'</span></div>';"
-"}"
-"if(html)mintListEl.innerHTML=html;"
+"function pollMiningStats(){"
+"fetch('http://__AP_IP__:2121/mining/stats').then(r=>r.json()).then(d=>{"
+"document.getElementById('hashrate').textContent=d.proxy.hashrate_ghs.toFixed(2)+' GH/s';"
+"document.getElementById('shareCount').textContent=d.proxy.total_accepted;"
+"document.getElementById('hashprice').textContent=d.proxy.hashprice.toFixed(2)+' sat/GH/s/day';"
 "}).catch(()=>{});"
+"fetch('http://__AP_IP__:2121/usage').then(r=>r.text()).then(t=>{"
+"if(t&&t!=='-1/-1'){"
+"const parts=t.split('/');const rem=Math.floor(parseInt(parts[0])/60000);"
+"document.getElementById('timeEarned').textContent=rem+' min';"
+"}}).catch(()=>{});"
 "}"
-"setInterval(refreshMints,30000);"
+"function toggleMining(){"
+"if(miningActive){miningActive=false;clearInterval(miningInterval);"
+"document.getElementById('mineBtn').textContent='Start Mining';return;}"
+"miningActive=true;document.getElementById('mineBtn').textContent='Mining...';"
+"miningInterval=setInterval(pollMiningStats,2000);pollMiningStats();"
+"}"
 "</script>"
 "</body></html>";
 
@@ -143,36 +175,25 @@ static esp_err_t portal_handler(httpd_req_t *req)
     const char *tpl = PORTAL_HTML_TEMPLATE;
     size_t tpl_len = strlen(tpl);
 
-    char mint_list_html[4096];
-    size_t mint_list_cap = sizeof(mint_list_html);
-    size_t mint_list_len = 0;
-    mint_list_html[0] = '\0';
-    int mint_count = 0;
-    const mint_status_t *mints = mint_health_get_all(&mint_count);
-    for (int i = 0; i < mint_count; i++) {
-        const char *cls = mints[i].reachable ? "green" : "grey";
-        const char *url_cls = mints[i].reachable ? "mint-url" : "mint-url dim";
-        int written = snprintf(mint_list_html + mint_list_len, mint_list_cap - mint_list_len,
-                 "<div class='mint-item' onclick='copyMint(\"%s\")'>"
-                 "<span class='mint-dot %s'></span>"
-                 "<span class='%s'>%s</span></div>",
-                 mints[i].url, cls, url_cls, mints[i].url);
-        if (written > 0 && (size_t)written < mint_list_cap - mint_list_len) {
-            mint_list_len += (size_t)written;
-        }
-    }
-    if (mint_count == 0) {
-        const tollgate_config_t *cfg = tollgate_config_get();
-        snprintf(mint_list_html, sizeof(mint_list_html),
-                 "<div class='mint-item'><span class='mint-dot grey'></span>"
-                 "<span class='mint-url dim'>%s</span></div>", cfg->mint_url);
-    }
-
     struct { const char *key; const char *val; } subs[] = {
         { "__AP_IP__", s_ap_ip_str },
         { "__PRICE__", price_str },
-        { "__MINT_LIST__", mint_list_html },
+        { "__MINT_URL__", cfg->mint_url },
+        { "__MINING_TABS__", cfg->mining_enabled ?
+            "<div class='tabs'>"
+            "<button class='tab active' onclick=\"switchTab('cashu')\">Cashu</button>"
+            "<button class='tab' onclick=\"switchTab('mining')\">Mine</button>"
+            "</div>" : "" },
+        { "__MINING_PORT__", cfg->mining_enabled ?
+            (char[]){ [0 ... 7] = 0 } : "3333" },
+        { "__CASHU_ACTIVE__", "active" },
+        { "__MINING_ACTIVE__", "" },
     };
+    char mining_port_buf[8] = "3333";
+    if (cfg->mining_enabled) {
+        snprintf(mining_port_buf, sizeof(mining_port_buf), "%d", cfg->mining_port);
+        subs[4].val = mining_port_buf;
+    }
     int nsubs = sizeof(subs) / sizeof(subs[0]);
 
     size_t extra = 0;

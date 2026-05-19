@@ -11,6 +11,8 @@ struct pbuf;
 #define FW_MAX_MAC_LEN 18
 
 esp_err_t firewall_init(esp_ip4_addr_t ap_ip);
+void firewall_set_mining_port(uint16_t port);
+void firewall_set_sandbox_mint_access(bool enabled);
 void firewall_grant_access(uint32_t client_ip);
 void firewall_revoke_access(uint32_t client_ip);
 void firewall_revoke_all(void);

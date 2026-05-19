@@ -54,6 +54,7 @@ session_t *session_create(uint32_t client_ip, uint64_t allotment_ms)
             s_sessions[i].allotment_ms = allotment_ms;
             s_sessions[i].start_time_ms = get_time_ms();
             s_sessions[i].active = true;
+            s_sessions[i].payment_method = PAYMENT_METHOD_CASHU;
             populate_mac(&s_sessions[i], client_ip);
 
             s_session_count++;
@@ -78,6 +79,7 @@ session_t *session_create_bytes(uint32_t client_ip, uint64_t allotment_bytes)
         s->allotment_bytes = allotment_bytes;
         s->bytes_consumed = 0;
         s->allotment_ms = INT64_MAX;
+        s->payment_method = PAYMENT_METHOD_BYTES;
         esp_ip4_addr_t ip = { .addr = client_ip };
         ESP_LOGI(TAG, "Bytes session created: " IPSTR " allotment=%llu bytes", IP2STR(&ip),
                  (unsigned long long)allotment_bytes);
