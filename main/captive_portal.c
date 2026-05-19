@@ -313,7 +313,6 @@ esp_err_t captive_portal_start(const char *ap_ip_str)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 16384;
     config.max_uri_handlers = 20;
-    config.max_open_sockets = 2;
     config.uri_match_fn = httpd_uri_match_wildcard;
 
     esp_err_t ret = httpd_start(&s_server, &config);
