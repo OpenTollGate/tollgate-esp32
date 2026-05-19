@@ -122,16 +122,25 @@ with existing main/ code. The component is ready for consumption by external pro
   - `main/main.cpp:307-313` — task creation (add tollgate tasks)
   - `components/connect/connect.c:162` — APSTA mode already supported
 
-### Step 7: Implement NerdQAxePlus TollGate Integration — IN PROGRESS
+### Step 7: Implement NerdQAxePlus TollGate Integration — COMPLETE (commit `83e09ab9`)
 
-- [ ] Create `main/tollgate_platform.cpp` — implements platform interface with NVS config + ASIC state
-- [ ] Create `main/boards/tollgate_board.h/cpp` — TollGateBoard extends NerdAxe (AP+STA WiFi)
-- [ ] Patch `main/tasks/asic_result_task.cpp` — `#ifdef TOLLGATE` hook on share accepted
-- [ ] Patch `main/main.cpp` — `#ifdef TOLLGATE` init block (AP, DNS, captive portal, stratum proxy)
-- [ ] Create `main/lwip_tollgate_hooks.h` — LWIP hook forwarding to tollgate_core
-- [ ] Update `main/CMakeLists.txt` — conditional TOLLGATE sources
-- [ ] Update top-level `CMakeLists.txt` — `-DTOLLGATE` compile definition when env var set
-- [ ] Build: `BOARD=NERDAXE TOLLGATE=1 idf.py build`
+- [x] Create `main/tollgate_platform.cpp` — implements platform interface with NVS config + ASIC state
+- [x] Create `main/tollgate_nerdqaxe.h` — init declarations for main.cpp/asic_result_task.cpp
+- [x] Patch `main/tasks/asic_result_task.cpp` — `#ifdef TOLLGATE` hook on share accepted
+- [x] Patch `main/main.cpp` — skip `wifi_softap_off()`, call `tollgate_nerdqaxe_init()` after mining starts
+- [x] Update `main/CMakeLists.txt` — conditional TOLLGATE sources via `$ENV{TOLLGATE}`
+- [x] Update top-level `CMakeLists.txt` — `-DTOLLGATE` compile definition when env var set
+- [x] Add TollGate NVS keys to `main/nvs_config.h`
+- [x] Symlink `components/tollgate_core` from esp32-miner-integration worktree
+- [x] Build: `BOARD=NERDAXE TOLLGATE=1 idf.py build` — PASS (2.9MB)
+- [x] Stock build: `BOARD=NERDAXE idf.py build` — PASS (unaffected)
+- [x] tollgate_core: extern "C" guards, stratum_proxy_init name fix, conditional NAPT
+- [x] `ngit init` NerdQAxePlus as separate nostr repo (`esp-miner-nerdqaxeplus-tollgate`)
+- [x] Push to `git.orangesync.tech` GRASP server
+- [x] Cross-reference documentation (REMOTES.md in both repos)
+
+Note: `main/boards/tollgate_board.h/cpp` and `main/lwip_tollgate_hooks.h` deferred —
+using simpler `#ifdef TOLLGATE` patches directly in existing files instead.
 
 ### Step 8: Hardware Testing on NerdAxe Ultra
 
