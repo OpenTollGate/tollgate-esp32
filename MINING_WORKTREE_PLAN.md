@@ -3,15 +3,13 @@
 ## Overview
 Implement Bitcoin mining-for-bandwidth in a proper git worktree so the shared `esp32-tollgate` repo stays clean for other LLM sessions.
 
-## Worktree Location
-- **Shared repo:** `/home/c03rad0r/esp32-tollgate` (stays on `master`, always clean)
-- **Mining worktree:** `/home/c03rad0r/esp32-tollgate-mining` (on `feature/mining-payment` branch)
+## Status: COMPLETED — Squash-merged into master
 
 ## Checklist
 
 ### Phase 1: Cleanup & Setup
 - [x] 1.1 Backup all mining files to `/home/c03rad0r/mining-work-backup/`
-- [x] 1.2 Restore shared repo to clean master (discard edits, remove untracked, delete accidental branches)
+- [x] 1.2 Restore shared repo to clean master
 - [x] 1.3 Create `feature/mining-payment` branch from master
 - [x] 1.4 Create git worktree at `/home/c03rad0r/esp32-tollgate-mining`
 - [x] 1.5 Copy backup files into worktree
@@ -30,43 +28,41 @@ Implement Bitcoin mining-for-bandwidth in a proper git worktree so the shared `e
 - [x] 2.10 Edit `main/tollgate_client.h` — `TG_CLIENT_MINING` state + mining discovery fields
 - [x] 2.11 Edit `main/tollgate_client.c` — mining tag parsing in discovery
 - [x] 2.12 Edit `main/captive_portal.c` — tabbed UI with Cashu/Mine tabs
-- [x] 2.13 N/A — esp-miner not in worktree (not needed as component)
 
 ### Phase 3: Build & Test (in worktree)
-- [x] 3.1 Clean build from scratch (`rm -rf build && idf.py build`)
-  - Note: Pre-existing nucula_lib build error (`save_proofs()` is private) blocks full link
-  - All mining-specific source files passed compilation
-  - nucula_lib error exists in both main repo and worktree (not caused by mining changes)
+- [x] 3.1 Clean build from scratch
 - [x] 3.2 Run existing unit tests (`make test-unit`)
-- [x] 3.3 All tests pass (84/84: 61 existing + 23 new mining_payment)
+- [x] 3.3 All tests pass
 
 ### Phase 4: Missing Unit Tests
-- [ ] 4.1 `test_stratum_proxy.c` — job management, stats
-- [ ] 4.2 `test_session_payment_method.c` — payment_method field
-- [ ] 4.3 `test_tollgate_client_mining.c` — mining discovery tag parsing
-- [ ] 4.4 `test_firewall_sandbox.c` — sandbox allowlist logic
-- [ ] 4.5 All new tests pass
+- [x] 4.1 `test_stratum_proxy.c` — job management, stats
+- [x] 4.2 `test_session_payment_method.c` — payment_method field
+- [x] 4.3 `test_tollgate_client_mining.c` — mining discovery tag parsing
+- [x] 4.4 `test_firewall_sandbox.c` — sandbox allowlist logic
+- [x] 4.5 All new tests pass
 
 ### Phase 5: Commit
-- [x] 5.1 Stage all changes in worktree (2 commits made)
+- [x] 5.1 Stage all changes in worktree (5 commits made)
 - [x] 5.2 Commit with descriptive messages
-- [ ] 5.3 Push branch to origin (Nostr git relay issue — branch exists locally)
+- [x] 5.3 Push branch to origin (state event published to relay.ngit.dev)
 
-### Phase 6: Merge (when ready)
-- [ ] 6.1 Squash-merge `feature/mining-payment` into `master`
-- [ ] 6.2 Remove worktree
-- [ ] 6.3 Push master
+### Phase 6: Merge
+- [x] 6.1 Squash-merge `feature/mining-payment` into `master` (resolved merge conflicts)
+- [x] 6.2 Remove worktree
+- [x] 6.3 Push master to origin
+- [x] 6.4 Delete feature branch
+- [x] 6.5 All 19 unit test suites pass on master
 
-## Commits Made
+## Commits on feature/mining-payment (before squash)
 1. `c75230e` — feat(mining): add new mining source files and unit tests
 2. `beb73a2` — feat(mining): integrate mining subsystem into existing modules
+3. `473b4d1` — fix: build errors in cvm_server, stratum_proxy, sw_miner + nucula visibility
+4. `ef9ae98` — test: add 4 new unit test suites for mining modules
+5. `9d98ba1` — feat: expand nostr relay lists to max capacity
 
-## Known Issues (pre-existing)
-- `nucula_lib/nucula_wallet.cpp` calls private `save_proofs()` — build error in both repos
-- Nostr git relay (`relay.ngit.dev`) rejected push — branch exists locally only
+## Squash commit on master
+- `e366ceb` — feat(mining): Bitcoin mining-for-bandwidth payment system
+- `55917e0` — fix: resolve merge conflicts + test build fixes
 
-## Rules
-- **NEVER** edit files in `/home/c03rad0r/esp32-tollgate/` directly
-- **ALL** work happens in `/home/c03rad0r/esp32-tollgate-mining/`
-- **Commit frequently** — don't lose work again
-- No comments in code unless explicitly requested
+## Backup
+- `/home/c03rad0r/mining-work-backup/feature-mining-payment.bundle` — full branch history
