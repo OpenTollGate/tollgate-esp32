@@ -97,7 +97,7 @@ test_stratum_proxy: test_stratum_proxy.c $(REPO_ROOT)/main/stratum_proxy.c $(REP
 	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/stratum_proxy.c $(REPO_ROOT)/main/mining_payment.c -o $@ $(LDFLAGS)
 
 test_session_payment_method: test_session_payment_method.c $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c
-	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -include stubs/mint_health.h $< $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
 
 test_tollgate_client_mining: test_tollgate_client_mining.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)

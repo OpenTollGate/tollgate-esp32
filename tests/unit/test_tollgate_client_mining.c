@@ -14,6 +14,14 @@ const tollgate_config_t *tollgate_config_get(void) {
 uint64_t nucula_wallet_balance(void) { return 100; }
 esp_err_t nucula_wallet_send(uint64_t a, char *b, size_t c) { (void)a; (void)b; (void)c; return ESP_OK; }
 
+#define TOLLGATE_IE_GEOHASH_MAX 9
+#define MARKET_MAX_ENTRIES 10
+typedef struct { uint8_t bssid[6]; char ssid[33]; int8_t rssi; uint16_t price_per_step; uint32_t step_size; uint8_t metric; uint8_t mint_hash[4]; uint8_t npub_hash[4]; char geohash[10]; int64_t discovered_ms; bool valid; } market_entry_t;
+typedef struct { market_entry_t entries[MARKET_MAX_ENTRIES]; int count; int64_t last_scan_ms; bool scanning; int consecutive_failures; } market_t;
+static inline const market_t *market_get(void) { static market_t m = {0}; return &m; }
+static inline int market_find_cheapest(void) { return -1; }
+#define MARKET_H
+
 #include "freertos/FreeRTOS.h"
 
 #include "../../main/tollgate_client.c"
