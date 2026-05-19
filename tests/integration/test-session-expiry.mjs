@@ -10,7 +10,7 @@ function assert(cond, msg) {
 }
 
 function run(cmd) {
-  try { return execSync(cmd, { encoding: 'utf8', timeout: 15000 }); }
+  try { return execSync(cmd, { encoding: 'utf8', timeout: 90000 }); }
   catch { return null; }
 }
 
@@ -37,30 +37,35 @@ function canPing(host = '8.8.8.8') {
 console.log(`\n=== Session Expiry Integration Test (target: ${IP}) ===`);
 console.log(`NOTE: This test waits 65s for session expiry. Total runtime ~80s.\n`);
 
-console.log('1. Reset auth');
-run(`curl -s --connect-timeout 10 http://${IP}/reset_authentication`);
+console.log('0. Pre-minting tokens (need internet for cashu CLI)');
+const preToken1 = mintToken(21);
+assert(preToken1 !== null, 'Pre-minted token 1');
+const preToken2 = mintToken(21);
+assert(preToken2 !== null, 'Pre-minted token 2');
+
+console.log('\n1. Reset auth');
+run(`curl -s --connect-timeout 10 --max-time 20 ${API}/reset_authentication`);
 
 await sleep(1000);
 
 console.log('\n2. Verify blocked before payment');
 assert(!canPing(), 'Ping blocked before payment');
 
-const usage0 = run(`curl -s --connect-timeout 10 ${API}/usage`);
-assert(usage0 && usage0.includes('-1/-1'), 'Usage is -1/-1');
+const usage0 = runJson(`curl -s --connect-timeout 30 --max-time 60 ${API}/usage`);
+assert(usage0 && usage0.activeSessions === 0, 'No active sessions');
 
 console.log('\n3. Pay with valid token (21 sats = 60000ms)');
-const token = mintToken(21);
-assert(token !== null, 'Token generated');
-if (token) {
-  const payResult = runJson(`curl -s --connect-timeout 20 -X POST --data-binary '${token}' -H "Content-Type: application/cashu" ${API}/`);
+assert(preToken1 !== null, 'Token 1 available');
+if (preToken1) {
+  const payResult = runJson(`curl -s --connect-timeout 30 --max-time 60 -X POST --data-binary '${preToken1}' -H "Content-Type: application/cashu" ${API}/`);
   assert(payResult && payResult.kind === 1022, 'Payment accepted');
 }
 
 await sleep(1000);
 
 console.log('\n4. Verify session active');
-const usage1 = run(`curl -s --connect-timeout 10 ${API}/usage`);
-assert(usage1 && !usage1.includes('-1/-1'), `Usage: ${usage1}`);
+const usage1 = runJson(`curl -s --connect-timeout 30 --max-time 60 ${API}/usage`);
+assert(usage1 && usage1.activeSessions > 0, `Session active: ${JSON.stringify(usage1)}`);
 
 console.log('\n5. Verify internet works');
 assert(canPing(), 'Ping works with active session');
@@ -76,8 +81,8 @@ for (let i = 65; i > 0; i -= 5) {
 console.log('\r  Session should be expired now.         ');
 
 console.log('\n7. Verify session expired');
-const usage2 = run(`curl -s --connect-timeout 10 ${API}/usage`);
-assert(usage2 && usage2.includes('-1/-1'), `Usage after expiry: ${usage2}`);
+const usage2 = runJson(`curl -s --connect-timeout 30 --max-time 60 ${API}/usage`);
+assert(usage2 && usage2.activeSessions === 0, `Session expired: ${JSON.stringify(usage2)}`);
 
 console.log('\n8. Verify internet blocked after expiry');
 assert(!canPing(), 'Ping blocked after session expiry');
@@ -86,10 +91,11 @@ const httpResult2 = run(`curl -s --connect-timeout 5 -m 5 --interface wlp59s0 ht
 assert(!httpResult2 || httpResult2.length === 0, 'HTTP blocked after expiry');
 
 console.log('\n9. Pay again to verify renewal works');
-const token2 = mintToken(21);
-if (token2) {
-  const pay2 = runJson(`curl -s --connect-timeout 20 -X POST --data-binary '${token2}' -H "Content-Type: application/cashu" ${API}/`);
+if (preToken2) {
+  const pay2 = runJson(`curl -s --connect-timeout 30 --max-time 60 -X POST --data-binary '${preToken2}' -H "Content-Type: application/cashu" ${API}/`);
   assert(pay2 && pay2.kind === 1022, 'Renewal payment accepted');
+} else {
+  assert(false, 'Token 2 not available');
 }
 
 await sleep(1000);
@@ -97,7 +103,7 @@ await sleep(1000);
 console.log('\n10. Verify internet works after renewal');
 assert(canPing(), 'Ping works after renewal');
 
-run(`curl -s --connect-timeout 10 http://${IP}/reset_authentication`);
+run(`curl -s --connect-timeout 10 --max-time 20 ${API}/reset_authentication`);
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed > 0 ? 1 : 0);

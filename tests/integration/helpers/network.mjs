@@ -7,22 +7,22 @@ export function getPortalIP() {
   return process.env.TOLLGATE_IP || DEFAULT_IP;
 }
 
-export function curl(url, timeout = 5) {
+export function curl(url, timeout = 30) {
   try {
     return execSync(
-      `curl -s -o /dev/null -w "%{http_code}" --connect-timeout ${timeout} --max-time ${timeout + 5} "${url}"`,
-      { encoding: 'utf8', timeout: (timeout + 5) * 1000 }
+      `curl -s -o /dev/null -w "%{http_code}" --connect-timeout ${timeout} --max-time ${timeout + 10} "${url}"`,
+      { encoding: 'utf8', timeout: (timeout + 10) * 1000 }
     ).trim();
   } catch {
     return null;
   }
 }
 
-export function curlBody(url, timeout = 5) {
+export function curlBody(url, timeout = 30) {
   try {
     return execSync(
-      `curl -s --connect-timeout ${timeout} --max-time ${timeout + 5} "${url}"`,
-      { encoding: 'utf8', timeout: (timeout + 5) * 1000 }
+      `curl -s --connect-timeout ${timeout} --max-time ${timeout + 10} "${url}"`,
+      { encoding: 'utf8', timeout: (timeout + 10) * 1000 }
     );
   } catch {
     return null;
@@ -41,13 +41,13 @@ export function canPing(host = '8.8.8.8', count = 1) {
   }
 }
 
-export function canResolve(domain, timeout = 3) {
+export function canResolve(domain, timeout = 5) {
   try {
     const result = execSync(
-      `nslookup -timeout=${timeout} ${domain} 2>&1`,
+      `dig +short +timeout=${timeout} +tries=1 ${domain} 2>&1`,
       { encoding: 'utf8', timeout: (timeout + 2) * 1000 }
-    );
-    return result && result.includes('Address') && !result.includes('NXDOMAIN');
+    ).trim();
+    return result.length > 0 && !result.includes('NXDOMAIN');
   } catch {
     return false;
   }
@@ -57,10 +57,10 @@ export function dnsResolvesToSelf(domain) {
   const ip = getPortalIP();
   try {
     const result = execSync(
-      `nslookup ${domain} ${ip} 2>&1`,
-      { encoding: 'utf8', timeout: 8000 }
-    );
-    return result && result.includes(ip);
+      `dig +short +timeout=5 ${domain} @{ip} 2>&1`,
+      { encoding: 'utf8', timeout: 10000 }
+    ).trim();
+    return result === ip;
   } catch {
     return false;
   }

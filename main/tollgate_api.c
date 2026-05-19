@@ -1,5 +1,8 @@
 #include "tollgate_api.h"
 #include "tollgate_core.h"
+#include "tollgate_core_firewall.h"
+#include "tollgate_core_session.h"
+#include "tollgate_core_cashu.h"
 #include "config.h"
 #include "nucula_wallet.h"
 #include "esp_log.h"
@@ -333,6 +336,41 @@ static esp_err_t api_post_wallet_send(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t api_grant_access(httpd_req_t *req)
+{
+    uint32_t client_ip = 0;
+    if (get_client_ip(req, &client_ip) == ESP_OK) {
+        tollgate_core_fw_grant(client_ip);
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"granted\"}", 20);
+    return ESP_OK;
+}
+
+static esp_err_t api_reset_auth(httpd_req_t *req)
+{
+    tollgate_core_session_revoke_all();
+    tollgate_core_fw_revoke_all();
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"reset\"}", 18);
+    return ESP_OK;
+}
+
+static esp_err_t api_get_portal_config(httpd_req_t *req)
+{
+    char *cfg_json = tollgate_core_get_config_json();
+    if (cfg_json) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+        httpd_resp_send(req, cfg_json, strlen(cfg_json));
+        cJSON_free(cfg_json);
+    } else {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, "{}", 2);
+    }
+    return ESP_OK;
+}
+
 static const httpd_uri_t uri_discovery = { .uri = "/", .method = HTTP_GET, .handler = api_get_discovery };
 static const httpd_uri_t uri_payment = { .uri = "/", .method = HTTP_POST, .handler = api_post_payment };
 static const httpd_uri_t uri_usage = { .uri = "/usage", .method = HTTP_GET, .handler = api_get_usage };
@@ -340,6 +378,9 @@ static const httpd_uri_t uri_whoami = { .uri = "/whoami", .method = HTTP_GET, .h
 static const httpd_uri_t uri_wallet = { .uri = "/wallet", .method = HTTP_GET, .handler = api_get_wallet };
 static const httpd_uri_t uri_wallet_swap = { .uri = "/wallet/swap", .method = HTTP_POST, .handler = api_post_wallet_swap };
 static const httpd_uri_t uri_wallet_send = { .uri = "/wallet/send", .method = HTTP_POST, .handler = api_post_wallet_send };
+static const httpd_uri_t uri_grant = { .uri = "/grant_access", .method = HTTP_GET, .handler = api_grant_access };
+static const httpd_uri_t uri_reset = { .uri = "/reset_authentication", .method = HTTP_GET, .handler = api_reset_auth };
+static const httpd_uri_t uri_portal_config = { .uri = "/portal-config", .method = HTTP_GET, .handler = api_get_portal_config };
 
 esp_err_t tollgate_api_start(void)
 {
@@ -348,7 +389,8 @@ esp_err_t tollgate_api_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 2121;
     config.ctrl_port = 32769;
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 16;
+    config.max_open_sockets = 2;
     config.stack_size = 16384;
 
     esp_err_t ret = httpd_start(&s_api_server, &config);
@@ -357,13 +399,26 @@ esp_err_t tollgate_api_start(void)
         return ret;
     }
 
-    httpd_register_uri_handler(s_api_server, &uri_discovery);
-    httpd_register_uri_handler(s_api_server, &uri_payment);
-    httpd_register_uri_handler(s_api_server, &uri_usage);
-    httpd_register_uri_handler(s_api_server, &uri_whoami);
-    httpd_register_uri_handler(s_api_server, &uri_wallet);
-    httpd_register_uri_handler(s_api_server, &uri_wallet_swap);
-    httpd_register_uri_handler(s_api_server, &uri_wallet_send);
+    ret = httpd_register_uri_handler(s_api_server, &uri_discovery);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register discovery: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_api_server, &uri_payment);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register payment: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_api_server, &uri_usage);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register usage: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_api_server, &uri_whoami);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register whoami: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_api_server, &uri_wallet);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register wallet: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_api_server, &uri_wallet_swap);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register wallet_swap: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_api_server, &uri_wallet_send);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register wallet_send: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_api_server, &uri_grant);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register grant: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_api_server, &uri_reset);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register reset: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_api_server, &uri_portal_config);
+    if (ret != ESP_OK) ESP_LOGE(TAG, "Failed to register portal_config: %s", esp_err_to_name(ret));
 
     ESP_LOGI(TAG, "TollGate API started on port 2121");
     return ESP_OK;

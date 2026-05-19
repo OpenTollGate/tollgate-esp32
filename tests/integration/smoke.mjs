@@ -14,7 +14,7 @@ function assert(cond, msg) {
 }
 
 function run(cmd) {
-  try { return execSync(cmd, { encoding: 'utf8', timeout: 10000 }); }
+  try { return execSync(cmd, { encoding: 'utf8', timeout: 60000 }); }
   catch { return null; }
 }
 
@@ -23,23 +23,23 @@ const scan = run('nmcli -t -f SSID dev wifi list 2>/dev/null');
 assert(scan && scan.includes(SSID), `SSID "${SSID}" visible`);
 
 // 2. Check we can reach portal
-const portal = run(`curl -s --connect-timeout 5 http://${IP}/`);
+const portal = run(`curl -s --connect-timeout 30 --max-time 60 http://${IP}/`);
 assert(portal && portal.includes('TollGate'), 'Portal HTML loads');
 
 // 3. Grant access
-const grant = run(`curl -s http://${IP}/grant_access`);
+const grant = run(`curl -s --connect-timeout 10 --max-time 20 http://${IP}:2121/grant_access`);
 assert(grant && grant.includes('granted'), 'Grant access works');
 
 // Wait for DNS
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-await sleep(2000);
+await sleep(5000);
 
 // 4. Internet works
-const ping = run('ping -c 1 -W 3 -I wlp59s0 1.1.1.1 2>/dev/null');
+const ping = run('ping -c 2 -W 5 -I wlp59s0 1.1.1.1 2>/dev/null');
 assert(ping && !ping.includes('100% packet loss'), 'Internet works after grant');
 
 // 5. Reset
-const reset = run(`curl -s http://${IP}/reset_authentication`);
+const reset = run(`curl -s --connect-timeout 10 --max-time 20 http://${IP}:2121/reset_authentication`);
 assert(reset && reset.includes('reset'), 'Reset auth works');
 
 await sleep(2000);

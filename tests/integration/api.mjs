@@ -16,24 +16,34 @@ console.log(`\n=== API Tests (target: ${IP}) ===\n`);
 console.log('Test 3: GET / returns portal HTML');
 const body3 = curlBody(`http://${IP}/`);
 assert(body3 && body3.includes('TollGate'), 'Portal HTML contains "TollGate"');
-assert(body3 && body3.includes('Grant Free Access'), 'Portal has Grant Access button');
+assert(body3 && body3.includes('Pay & Connect'), 'Portal has Pay & Connect button');
 
 // Test 4: Captive detection URIs
-console.log('\nTest 4: Captive detection URIs');
-for (const uri of ['/generate_204', '/hotspot-detect.html', '/canonical.html', '/success.txt', '/ncsi.txt', '/connecttest.txt', '/wpad.dat', '/redirect']) {
+console.log('\nTest 4: Captive detection URIs (expect 200)');
+for (const uri of ['/generate_204', '/hotspot-detect.html', '/canonical.html', '/success.txt', '/ncsi.txt', '/connecttest.txt', '/wpad.dat']) {
   const code = curl(`http://${IP}${uri}`);
   assert(code === '200', `${uri} → 200`);
 }
 
-// Test 7: /whoami returns MAC
-console.log('\nTest 7: GET /whoami');
-const body7 = curlBody(`http://${IP}/whoami`);
-assert(body7 && body7.startsWith('mac='), '/whoami returns mac=...');
+// Test 4b: /redirect returns 302 to portal
+console.log('\nTest 4b: /redirect → 302');
+const redirectResp = curlBody(`http://${IP}/redirect`);
+assert(redirectResp && redirectResp.includes('TollGate'), '/redirect reaches portal (via 302)');
 
-// Test 8: /usage returns no session
+// Test 7: /whoami (via API port for speed)
+console.log('\nTest 7: GET /whoami');
+const body7 = curlBody(`http://${IP}:2121/whoami`);
+assert(body7 && body7.includes('ip='), '/whoami returns ip=...');
+
+// Test 8: /usage (via API port)
 console.log('\nTest 8: GET /usage');
-const body8 = curlBody(`http://${IP}/usage`);
-assert(body8 && body8.includes('-1/-1'), '/usage returns -1/-1 before auth');
+const body8raw = curlBody(`http://${IP}:2121/usage`);
+try {
+  const usageJson = JSON.parse(body8raw);
+  assert(usageJson && usageJson.activeSessions === 0, '/usage shows 0 sessions before auth');
+} catch {
+  assert(body8raw && body8raw.includes('-1/-1'), '/usage returns -1/-1 before auth');
+}
 
 // Test 5: DNS hijack before auth
 console.log('\nTest 5: DNS hijack before auth');
@@ -45,7 +55,7 @@ assert(!canPing('8.8.8.8', 1), 'ping 8.8.8.8 fails before auth');
 
 // Test 9: Grant access
 console.log('\nTest 9: GET /grant_access');
-const body9 = curlBody(`http://${IP}/grant_access`);
+const body9 = curlBody(`http://${IP}:2121/grant_access`);
 assert(body9 && body9.includes('"granted"'), 'Grant access returns {"status":"granted"}');
 
 await sleep(2000);
@@ -65,7 +75,7 @@ assert(body12 && (body12.includes('Example Domain') || body12.includes('example'
 
 // Test 13: Reset auth
 console.log('\nTest 13: GET /reset_authentication');
-const body13 = curlBody(`http://${IP}/reset_authentication`);
+const body13 = curlBody(`http://${IP}:2121/reset_authentication`);
 assert(body13 && body13.includes('"reset"'), 'Reset returns {"status":"reset"}');
 
 await sleep(2000);

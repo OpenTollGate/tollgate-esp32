@@ -128,8 +128,6 @@ void tollgate_core_client_connected(const uint8_t *mac, uint32_t client_ip)
         s_owner_ip = client_ip;
         if (mac) memcpy(s_owner_mac, mac, 6);
 
-        tollgate_core_fw_grant(client_ip);
-
         esp_ip4_addr_t ip = { .addr = client_ip };
         ESP_LOGI(TAG, "First client = owner: " IPSTR, IP2STR(&ip));
         return;
