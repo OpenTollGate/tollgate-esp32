@@ -243,4 +243,17 @@ make flash-b        # flash to Board B
 - Portal HTML has server-side template substitution (`__AP_IP__`, `__PRICE__`, `__MINT_URL__`) — no JS fetch
 - **WiFi country code:** Must set `esp_wifi_set_country_code("DE")` before `esp_wifi_start()` — defaults to CN which causes auth failures on EU APs
 - Default nsec: `a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2`
+
+## Git Remotes & Repositories
+
+Full details in `REMOTES.md`. Key facts:
+
+- **This repo** (`esp32-tollgate`): `nostr://npub12m5.../git.orangesync.tech/esp32-tollgate`
+- **GRASP server:** `git.orangesync.tech` (git smart HTTP)
+- **Nostr relay:** `wss://ngit.orangesync.tech` (state events)
+- **GitWorkshop:** `workshop.orangesync.tech` (web UI)
+- **NerdQAxePlus fork:** `nostr://npub12m5.../git.orangesync.tech/esp-miner-nerdqaxeplus-tollgate`
+- **Worktrees:** `esp32-miner-integration` (feature/miner-integration), `esp32-tollgate-arch` (feature/tollgate-core-component)
+- **Push commands:** `git push orangesync --all` (esp32-tollgate), `git push ngit-origin develop` (NerdQAxePlus)
+- **Backup bundles:** `/home/c03rad0r/mining-work-backup/`
 - Board A nsec: `9af47906b45aca5e238390f3d03c8274e154198e81aa2095065627d1e61ca968`
