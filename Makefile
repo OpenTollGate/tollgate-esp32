@@ -7,9 +7,9 @@ export
 IDF_PATH ?= $(HOME)/esp/esp-idf
 PROJECT_DIR := $(shell pwd)
 BUILD_DIR := $(PROJECT_DIR)/build
-PORT_A ?= /dev/ttyACM1
-PORT_B ?= /dev/ttyACM2
-PORT_C ?= /dev/ttyACM0
+PORT_A ?= /dev/ttyACM0
+PORT_B ?= /dev/ttyACM1
+PORT_C ?= /dev/ttyACM2
 PORT ?= $(PORT_A)
 BAUD ?= 460800
 TARGET ?= esp32s3
@@ -87,7 +87,7 @@ endef
 .PHONY: help setup detect-ports detect-chip detect-all
 .PHONY: flash flash-a flash-b monitor monitor-a monitor-b
 .PHONY: test test-unit test-integration test-e2e test-all
-.PHONY: test-smoke test-api test-network test-portal test-payment
+.PHONY: test-smoke test-api test-network test-portal test-payment test-wifi-setup
 .PHONY: test-reset-auth test-session-expiry test-dns-firewall test-cvm
 .PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log bootstrap-config
@@ -118,6 +118,7 @@ help:
 	@echo "  test-dns-firewall DNS hijack + NAT filter test"
 	@echo "  test-session-expiry Session lifecycle with 65s expiry wait"
 	@echo "  test-cvm          ContextVM protocol integration test"
+	@echo "  test-wifi-setup   WiFi setup page E2E tests (Playwright)"
 	@echo ""
 	@echo "ContextVM:"
 	@echo "  cvm-pubkey        Print board's ContextVM npub"
@@ -272,6 +273,11 @@ test-portal:
 	$(call _require_board_lock)
 	@echo "=== Running Playwright portal tests ==="
 	cd tests/e2e && npx playwright test captive-portal.spec.mjs
+
+test-wifi-setup:
+	$(call _require_board_lock)
+	@echo "=== Running WiFi setup E2E tests ==="
+	cd tests/e2e && npx playwright test wifi-setup.spec.mjs
 
 test-payment:
 	$(call _require_board_lock)

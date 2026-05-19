@@ -37,11 +37,13 @@ static esp_netif_t *s_ap_netif = NULL;
 static int s_retry_count = 0;
 static int s_total_retries = 0;
 static bool s_services_running = false;
+static bool s_start_in_error_state = false;
 static SemaphoreHandle_t s_services_mutex = NULL;
 static char s_ap_ip_str[16] = "10.0.0.1";
 
 static void start_services(void);
 static void stop_services(void);
+static void services_start_task(void *pvParameters);
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                 int32_t event_id, void *event_data)
@@ -60,11 +62,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         tollgate_client_on_sta_disconnected();
         display_notify_wifi_disconnected();
         if (s_services_running) {
-            stop_services();
             display_set_state(DISPLAY_ERROR);
         }
         if (s_total_retries >= MAX_TOTAL_RETRIES) {
             ESP_LOGW(TAG, "All WiFi retries exhausted");
+            if (!s_services_running) {
+                s_start_in_error_state = true;
+                ESP_LOGI(TAG, "Starting services for /setup access (no upstream)");
+                xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
+            }
             const tollgate_config_t *cfg = tollgate_config_get();
             char portal_url[128];
             snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
@@ -86,6 +92,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 esp_wifi_connect();
             } else {
                 ESP_LOGW(TAG, "No more WiFi networks to try");
+                if (!s_services_running) {
+                    s_start_in_error_state = true;
+                    ESP_LOGI(TAG, "Starting services for /setup access (no upstream)");
+                    xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
+                }
                 const tollgate_config_t *cfg = tollgate_config_get();
                 char portal_url[128];
                 snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
@@ -143,7 +154,6 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
         ESP_LOGW(TAG, "Lost IP address");
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-        stop_services();
     }
 }
 
@@ -201,6 +211,12 @@ static void start_services(void)
     s_services_running = true;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services started ===");
+
+    if (s_start_in_error_state) {
+        s_start_in_error_state = false;
+        ESP_LOGI(TAG, "Services started in error state (no upstream), keeping DISPLAY_ERROR");
+        return;
+    }
 
     display_set_state(DISPLAY_READY);
     char portal_url[128];

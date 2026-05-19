@@ -277,17 +277,19 @@ static esp_err_t redirect_to_portal_handler(httpd_req_t *req)
     return portal_handler(req);
 }
 
-static esp_err_t catchall_handler(httpd_req_t *req)
+static esp_err_t catchall_err_handler(httpd_req_t *req, httpd_err_code_t err)
 {
-    ESP_LOGI(TAG, "Catchall: GET %s → 302 → http://%s/", req->uri, s_ap_ip_str);
-    httpd_resp_set_status(req, "302 Found");
-
-    char location[64];
-    snprintf(location, sizeof(location), "http://%s/", s_ap_ip_str);
-    httpd_resp_set_hdr(req, "Location", location);
-    httpd_resp_set_hdr(req, "Connection", "close");
-    httpd_resp_send(req, NULL, 0);
-    return ESP_OK;
+    if (err == HTTPD_404_NOT_FOUND) {
+        ESP_LOGI(TAG, "Catchall 404: GET %s → 302 → http://%s/", req->uri, s_ap_ip_str);
+        httpd_resp_set_status(req, "302 Found");
+        char location[64];
+        snprintf(location, sizeof(location), "http://%s/", s_ap_ip_str);
+        httpd_resp_set_hdr(req, "Location", location);
+        httpd_resp_set_hdr(req, "Connection", "close");
+        httpd_resp_send(req, NULL, 0);
+        return ESP_OK;
+    }
+    return ESP_FAIL;
 }
 
 static const httpd_uri_t uri_portal = { .uri = "/", .method = HTTP_GET, .handler = portal_handler };
@@ -303,7 +305,6 @@ static const httpd_uri_t uri_success = { .uri = "/success.txt", .method = HTTP_G
 static const httpd_uri_t uri_ncsi = { .uri = "/ncsi.txt", .method = HTTP_GET, .handler = redirect_to_portal_handler };
 static const httpd_uri_t uri_connecttest = { .uri = "/connecttest.txt", .method = HTTP_GET, .handler = redirect_to_portal_handler };
 static const httpd_uri_t uri_wpad = { .uri = "/wpad.dat", .method = HTTP_GET, .handler = redirect_to_portal_handler };
-static const httpd_uri_t uri_catchall = { .uri = "/*", .method = HTTP_GET, .handler = catchall_handler };
 
 static const char SETUP_HTML_TEMPLATE[] = \
 "<!DOCTYPE html>"
@@ -545,7 +546,7 @@ static esp_err_t wifi_connect_handler(httpd_req_t *req) {
     int content_len = req->content_len;
     if (content_len <= 0 || content_len > 1024) {
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid request\"}", 33);
+        httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid request\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -566,7 +567,7 @@ static esp_err_t wifi_connect_handler(httpd_req_t *req) {
     free(body);
     if (!json) {
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid JSON\"}", 33);
+        httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid JSON\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -575,7 +576,7 @@ static esp_err_t wifi_connect_handler(httpd_req_t *req) {
     if (!ssid_item || !cJSON_IsString(ssid_item)) {
         cJSON_Delete(json);
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"ok\":false,\"error\":\"missing ssid\"}", 32);
+        httpd_resp_send(req, "{\"ok\":false,\"error\":\"missing ssid\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -586,7 +587,7 @@ static esp_err_t wifi_connect_handler(httpd_req_t *req) {
     if (err != ESP_OK) {
         cJSON_Delete(json);
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"ok\":false,\"error\":\"save failed\"}", 33);
+        httpd_resp_send(req, "{\"ok\":false,\"error\":\"save failed\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -600,7 +601,7 @@ static esp_err_t wifi_connect_handler(httpd_req_t *req) {
     cJSON_Delete(json);
 
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, "{\"ok\":true}", 10);
+    httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -644,7 +645,6 @@ esp_err_t captive_portal_start(const char *ap_ip_str)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = 20;
-    config.uri_match_fn = httpd_uri_match_wildcard;
 
     esp_err_t ret = httpd_start(&s_server, &config);
     if (ret != ESP_OK) {
@@ -666,10 +666,14 @@ esp_err_t captive_portal_start(const char *ap_ip_str)
     httpd_register_uri_handler(s_server, &uri_connecttest);
     httpd_register_uri_handler(s_server, &uri_wpad);
     httpd_register_uri_handler(s_server, &uri_setup);
-    httpd_register_uri_handler(s_server, &uri_wifi_scan);
-    httpd_register_uri_handler(s_server, &uri_wifi_connect);
-    httpd_register_uri_handler(s_server, &uri_wifi_status);
-    httpd_register_uri_handler(s_server, &uri_catchall);
+    ret = httpd_register_uri_handler(s_server, &uri_wifi_scan);
+    ESP_LOGI(TAG, "Registered /wifi/scan: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_server, &uri_wifi_connect);
+    ESP_LOGI(TAG, "Registered /wifi/connect: %s", esp_err_to_name(ret));
+    ret = httpd_register_uri_handler(s_server, &uri_wifi_status);
+    ESP_LOGI(TAG, "Registered /wifi/status: %s", esp_err_to_name(ret));
+
+    httpd_register_err_handler(s_server, HTTPD_404_NOT_FOUND, catchall_err_handler);
 
     ESP_LOGI(TAG, "Captive portal started on port 80");
     return ESP_OK;
