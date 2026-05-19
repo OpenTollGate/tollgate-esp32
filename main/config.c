@@ -46,6 +46,9 @@ esp_err_t tollgate_config_init(void)
     g_config.stratum_port = 3333;
     g_config.mining_port = 3334;
     g_config.mining_sandbox_mint_access = true;
+    g_config.market_enabled = true;
+    g_config.market_scan_interval_s = 30;
+    g_config.client_auto_switch = false;
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -360,6 +363,15 @@ esp_err_t tollgate_config_init(void)
         cJSON *m_sandbox = cJSON_GetObjectItem(mining, "sandbox_mint_access");
         if (m_sandbox && cJSON_IsBool(m_sandbox)) g_config.mining_sandbox_mint_access = cJSON_IsTrue(m_sandbox);
     }
+
+    cJSON *market_enabled = cJSON_GetObjectItem(root, "market_enabled");
+    if (market_enabled && cJSON_IsBool(market_enabled)) g_config.market_enabled = cJSON_IsTrue(market_enabled);
+
+    cJSON *market_scan_interval = cJSON_GetObjectItem(root, "market_scan_interval_s");
+    if (market_scan_interval) g_config.market_scan_interval_s = market_scan_interval->valueint;
+
+    cJSON *client_auto_switch = cJSON_GetObjectItem(root, "client_auto_switch");
+    if (client_auto_switch && cJSON_IsBool(client_auto_switch)) g_config.client_auto_switch = cJSON_IsTrue(client_auto_switch);
 
     cJSON_Delete(root);
 
