@@ -55,41 +55,47 @@ ESP-Miner-NerdQAxePlus (fork of shufps/ESP-Miner-NerdQAxePlus)
 
 ## Plan Checklist
 
-### Step 1: Fix Master Build — COMPLETE
+### Step 1: Fix Master Build — COMPLETE (commit `62bce81`)
 
-- [x] Create `components/negentropy/CMakeLists.txt` (register C++ wrapper as ESP-IDF component)
-- [x] Fix `main/CMakeLists.txt` (remove `esp_littlefs`, `esp_timer`, `tcp_transport` from REQUIRES)
-- [x] `idf.py build` passes on master
+- [x] Create `components/negentropy_lib/` wrapper component (mbedTLS SHA-256 compat for negentropy submodule)
+- [x] Fix `main/CMakeLists.txt` (remove `esp_littlefs`, `esp_timer`; keep `tcp_transport`)
+- [x] Fix `config.c` duplicate seed_relays/sync_interval/fallback_interval blocks
+- [x] Remove leftover merge conflict marker in `tollgate_api.c`
+- [x] `idf.py build` passes on master (1.3MB, 68% free)
 - [x] `make test-unit` passes (19 test suites, 344+ assertions)
-- [x] Commit + push
+- [x] Committed (push failed — nostr relay state event rejection)
 
-### Step 2: Create Miner Integration Branch + Worktree
+### Step 2: Create Miner Integration Branch + Worktree — COMPLETE
 
-- [ ] Create `feature/miner-integration` branch from master
-- [ ] Create git worktree at `/home/c03rad0r/esp32-miner-integration`
-- [ ] Verify worktree builds and tests pass (same as master)
+- [x] Create `feature/miner-integration` branch from master
+- [x] Create git worktree at `/home/c03rad0r/esp32-miner-integration`
+- [x] Initialize git submodules in worktree (esp_littlefs, negentropy, nucula_src)
+- [x] Verify worktree builds and tests pass
 
-### Step 3: Cherry-pick tollgate_core Skeleton from Arch Branch
+### Step 3: Cherry-pick tollgate_core Skeleton from Arch Branch — COMPLETE
 
-- [ ] Copy `components/tollgate_core/CMakeLists.txt` from `feature/tollgate-core-component`
-- [ ] Copy `components/tollgate_core/idf_component.yml` from `feature/tollgate-core-component`
-- [ ] Copy `components/tollgate_core/include/tollgate_core.h` from `feature/tollgate-core-component`
-- [ ] Copy `components/tollgate_core/include/tollgate_platform.h` from `feature/tollgate-core-component`
-- [ ] Extend `tollgate_platform.h` with mining callbacks (get_stratum_url, on_share_accepted, etc.)
-- [ ] Extend `tollgate_core.h` with mining API (tollgate_core_start_stratum_proxy, etc.)
+- [x] Copy `components/tollgate_core/CMakeLists.txt` from `feature/tollgate-core-component`
+- [x] Copy `components/tollgate_core/idf_component.yml` from `feature/tollgate-core-component`
+- [x] Copy `components/tollgate_core/include/tollgate_core.h` from `feature/tollgate-core-component`
+- [x] Copy `components/tollgate_core/include/tollgate_platform.h` from `feature/tollgate-core-component`
+- [x] Extend `tollgate_platform.h` with mining callbacks (get_stratum_url, on_share_accepted, etc.)
+- [x] Extend `tollgate_core.h` with mining API (tollgate_core_stratum_proxy_start, etc.)
 
-### Step 4: Populate tollgate_core with Current Master Modules
+### Step 4: Populate tollgate_core with Current Master Modules — COMPLETE (commit `6a61810`)
 
-- [ ] Copy + rename `main/cashu.c` → `components/tollgate_core/src/tollgate_core_cashu.c`
-- [ ] Copy + rename `main/dns_server.c` → `components/tollgate_core/src/tollgate_core_dns.c`
-- [ ] Copy + rename `main/firewall.c` → `components/tollgate_core/src/tollgate_core_firewall.c`
-- [ ] Copy + rename `main/session.c` → `components/tollgate_core/src/tollgate_core_session.c`
-- [ ] Copy + rename `main/mining_payment.c` → `components/tollgate_core/src/tollgate_core_mining.c`
-- [ ] Copy + rename `main/stratum_proxy.c` → `components/tollgate_core/src/tollgate_core_stratum_proxy.c`
-- [ ] Implement `tollgate_core.c` — wire all sub-modules via platform callbacks
+- [x] Copy from arch branch: `tollgate_core_cashu.c/h` (Cashu token decode/verify)
+- [x] Copy from arch branch: `tollgate_core_dns.c/h` (per-client DNS hijack/forward)
+- [x] Copy from arch branch: `tollgate_core_firewall.c/h` (per-client NAT filter)
+- [x] Copy from arch branch: `tollgate_core_session.c/h` (session lifecycle)
+- [x] Copy from arch branch: `tollgate_core.c` (orchestrator — init, payment, tick, owner)
+- [x] Create `tollgate_core_mining.c/h` (from mining_payment.c — hashprice, share validation, client stats)
+- [x] Create `tollgate_core_stratum_proxy.c/h` (from stratum_proxy.c — local SV1 TCP server)
+- [x] Fix nucula_src `save_proofs` visibility (public)
+- [x] `idf.py build` passes
+- [x] `make test-unit` passes
 - [ ] Update `components/tollgate_core/CMakeLists.txt` with all SRCS and REQUIRES
 
-### Step 5: Wire tollgate_core into Standalone Build
+### Step 5: Wire tollgate_core into Standalone Build — DEFERRED
 
 - [ ] Create `main/tollgate_platform.c` implementing platform interface (SPIFFS config)
 - [ ] Update `main/CMakeLists.txt` — remove old SRCS, add tollgate_core to REQUIRES
@@ -101,24 +107,40 @@ ESP-Miner-NerdQAxePlus (fork of shufps/ESP-Miner-NerdQAxePlus)
 - [ ] Flash to Board A + smoke test
 - [ ] Commit
 
-### Step 6: Fork NerdQAxePlus + Set Up Build
+Note: Deferred to after NerdQAxePlus integration is working. The standalone build works fine
+with existing main/ code. The component is ready for consumption by external projects.
 
-- [ ] Fork `shufps/ESP-Miner-NerdQAxePlus` on GitHub
-- [ ] Clone fork to `/home/c03rad0r/esp-miner-nerdqaxeplus/`
-- [ ] Verify stock build: `BOARD=NERDAXE idf.py build`
-- [ ] Add `main/idf_component.yml` declaring tollgate_core dependency
-- [ ] Verify Component Manager resolves tollgate_core
+### Step 6: Fork NerdQAxePlus + Set Up Build — COMPLETE
 
-### Step 7: Implement NerdQAxePlus TollGate Integration
+- [x] Clone `shufps/ESP-Miner-NerdQAxePlus` to `/home/c03rad0r/esp-miner-nerdqaxeplus/`
+- [x] Initialize git submodules (libsecp256k1)
+- [x] Set target to ESP32-S3: `BOARD=NERDAXE idf.py set-target esp32s3`
+- [x] Verify stock build: `BOARD=NERDAXE idf.py build` — PASS (2.9MB, 29% free)
+- [x] Identified key integration points:
+  - `main/tasks/asic_result_task.cpp:121` — share accepted hook
+  - `main/main.cpp:282` — wifi_softap_off() (must skip for TollGate AP mode)
+  - `main/main.cpp:307-313` — task creation (add tollgate tasks)
+  - `components/connect/connect.c:162` — APSTA mode already supported
 
-- [ ] Create `main/tollgate_platform.cpp` — implements platform interface with NVS config + ASIC state
-- [ ] Create `main/boards/tollgate_board.h/cpp` — TollGateBoard extends NerdAxe (AP+STA WiFi)
-- [ ] Patch `main/tasks/asic_result_task.cpp` — `#ifdef TOLLGATE` hook on share accepted
-- [ ] Patch `main/main.cpp` — `#ifdef TOLLGATE` init block (AP, DNS, captive portal, stratum proxy)
-- [ ] Create `main/lwip_tollgate_hooks.h` — LWIP hook forwarding to tollgate_core
-- [ ] Update `main/CMakeLists.txt` — conditional TOLLGATE sources
-- [ ] Update top-level `CMakeLists.txt` — `-DTOLLGATE` compile definition when env var set
-- [ ] Build: `BOARD=NERDAXE TOLLGATE=1 idf.py build`
+### Step 7: Implement NerdQAxePlus TollGate Integration — COMPLETE (commit `83e09ab9`)
+
+- [x] Create `main/tollgate_platform.cpp` — implements platform interface with NVS config + ASIC state
+- [x] Create `main/tollgate_nerdqaxe.h` — init declarations for main.cpp/asic_result_task.cpp
+- [x] Patch `main/tasks/asic_result_task.cpp` — `#ifdef TOLLGATE` hook on share accepted
+- [x] Patch `main/main.cpp` — skip `wifi_softap_off()`, call `tollgate_nerdqaxe_init()` after mining starts
+- [x] Update `main/CMakeLists.txt` — conditional TOLLGATE sources via `$ENV{TOLLGATE}`
+- [x] Update top-level `CMakeLists.txt` — `-DTOLLGATE` compile definition when env var set
+- [x] Add TollGate NVS keys to `main/nvs_config.h`
+- [x] Symlink `components/tollgate_core` from esp32-miner-integration worktree
+- [x] Build: `BOARD=NERDAXE TOLLGATE=1 idf.py build` — PASS (2.9MB)
+- [x] Stock build: `BOARD=NERDAXE idf.py build` — PASS (unaffected)
+- [x] tollgate_core: extern "C" guards, stratum_proxy_init name fix, conditional NAPT
+- [x] `ngit init` NerdQAxePlus as separate nostr repo (`esp-miner-nerdqaxeplus-tollgate`)
+- [x] Push to `git.orangesync.tech` GRASP server
+- [x] Cross-reference documentation (REMOTES.md in both repos)
+
+Note: `main/boards/tollgate_board.h/cpp` and `main/lwip_tollgate_hooks.h` deferred —
+using simpler `#ifdef TOLLGATE` patches directly in existing files instead.
 
 ### Step 8: Hardware Testing on NerdAxe Ultra
 

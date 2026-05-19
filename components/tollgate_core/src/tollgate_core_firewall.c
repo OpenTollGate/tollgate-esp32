@@ -3,7 +3,9 @@
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_wifi_ap_get_sta_list.h"
+#ifdef CONFIG_LWIP_IPV4_NAPT
 #include "lwip/lwip_napt.h"
+#endif
 #include "lwip/etharp.h"
 #include "lwip/netif.h"
 #include "lwip/prot/ip4.h"
@@ -61,7 +63,9 @@ esp_err_t tollgate_core_fw_init(esp_ip4_addr_t ap_ip)
     s_ap_ip = ap_ip;
     memset(s_clients, 0, sizeof(s_clients));
     s_client_count = 0;
+#ifdef CONFIG_LWIP_IPV4_NAPT
     ip_napt_enable(s_ap_ip.addr, 1);
+#endif
     ESP_LOGI(TAG, "Firewall initialized with AP IP=" IPSTR " (NAT always on, per-client filter)", IP2STR(&s_ap_ip));
     return ESP_OK;
 }
