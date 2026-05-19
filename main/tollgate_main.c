@@ -260,7 +260,7 @@ static void start_services(void)
         display_set_state(DISPLAY_READY);
         char portal_url[128];
         snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
-        display_update(cfg->ap_ssid, 0, 0, portal_url);
+        display_update(cfg->ap_ssid, 0, 0, portal_url, cfg->mint_url, cfg->price_per_step, "connected");
     }
 }
 

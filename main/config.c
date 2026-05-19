@@ -475,3 +475,55 @@ void tollgate_config_derive_unique(tollgate_config_t *cfg)
     ESP_LOGI(TAG, "Unique config derived from nsec: SSID='%s', AP_IP=%s",
              cfg->ap_ssid, cfg->ap_ip_str);
 }
+
+esp_err_t tollgate_config_add_wifi(const char *ssid, const char *password) {
+    if (!ssid || !password) return ESP_ERR_INVALID_ARG;
+    if (g_config.network_count >= TOLLGATE_MAX_WIFI_NETWORKS) return ESP_ERR_NO_MEM;
+
+    strncpy(g_config.networks[g_config.network_count].ssid, ssid,
+            sizeof(g_config.networks[g_config.network_count].ssid) - 1);
+    strncpy(g_config.networks[g_config.network_count].password, password,
+            sizeof(g_config.networks[g_config.network_count].password) - 1);
+    g_config.network_count++;
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "nsec", g_config.nsec);
+
+    cJSON *networks = cJSON_CreateArray();
+    for (int i = 0; i < g_config.network_count; i++) {
+        cJSON *net = cJSON_CreateObject();
+        cJSON_AddStringToObject(net, "ssid", g_config.networks[i].ssid);
+        cJSON_AddStringToObject(net, "password", g_config.networks[i].password);
+        cJSON_AddItemToArray(networks, net);
+    }
+    cJSON_AddItemToObject(root, "wifi_networks", networks);
+
+    if (g_config.ap_password[0])
+        cJSON_AddStringToObject(root, "ap_password", g_config.ap_password);
+    cJSON_AddStringToObject(root, "mint_url", g_config.mint_url);
+    cJSON_AddNumberToObject(root, "price_per_step", g_config.price_per_step);
+    cJSON_AddNumberToObject(root, "step_size_ms", g_config.step_size_ms);
+
+    if (g_config.metric[0])
+        cJSON_AddStringToObject(root, "metric", g_config.metric);
+    if (g_config.nostr_geohash[0])
+        cJSON_AddStringToObject(root, "nostr_geohash", g_config.nostr_geohash);
+
+    cJSON *relays = cJSON_CreateArray();
+    for (int i = 0; i < g_config.nostr_relay_count; i++) {
+        cJSON_AddItemToArray(relays, cJSON_CreateString(g_config.nostr_relays[i]));
+    }
+    cJSON_AddItemToObject(root, "nostr_relays", relays);
+
+    FILE *f = fopen("/spiffs/config.json", "w");
+    if (f) {
+        char *json = cJSON_PrintUnformatted(root);
+        fputs(json, f);
+        free(json);
+        fclose(f);
+    }
+    cJSON_Delete(root);
+
+    ESP_LOGI(TAG, "WiFi network added: %s (total: %d)", ssid, g_config.network_count);
+    return ESP_OK;
+}
