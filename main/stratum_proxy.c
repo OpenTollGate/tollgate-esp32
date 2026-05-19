@@ -96,7 +96,7 @@ static void proxy_server_task(void *arg)
         if (client_fd < 0) continue;
 
         s_stats.active_miners++;
-        char task_name[16];
+        char task_name[20];
         snprintf(task_name, sizeof(task_name), "miner_%d", client_fd);
         xTaskCreate(proxy_client_handler, task_name, 4096, (void *)(intptr_t)client_fd, 3, NULL);
     }

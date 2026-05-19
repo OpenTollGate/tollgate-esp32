@@ -556,7 +556,7 @@ static void cvm_relay_task(void *arg)
             return;
         }
 
-        int64_t last_ping_time = (int64_t)esp_timer_get_time() / 1000000;
+        int64_t last_ping_time = (int64_t)(xTaskGetTickCount() * portTICK_PERIOD_MS) / 1000;
         int consecutive_timeouts = 0;
 
         while (g_running) {
@@ -576,7 +576,7 @@ static void cvm_relay_task(void *arg)
                     char *text = parse_ws_text_frame(buf, rlen);
                     if (text) {
                         if (strlen(text) > 0) {
-                            process_relay_message(tls, relay_url, text);
+                            process_relay_message(relay_url, text);
                         }
                         free(text);
                     }
@@ -590,7 +590,7 @@ static void cvm_relay_task(void *arg)
                 }
             }
 
-            int64_t now = (int64_t)esp_timer_get_time() / 1000000;
+            int64_t now = (int64_t)(xTaskGetTickCount() * portTICK_PERIOD_MS) / 1000;
             if (now - last_ping_time >= CVM_WS_PING_INTERVAL_S) {
                 uint8_t ping[2] = {0x89, 0x00};
                 esp_tls_conn_write(tls, ping, 2);

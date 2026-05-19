@@ -4,6 +4,7 @@
 #include "mining_payment.h"
 #include "config.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "mbedtls/sha256.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
