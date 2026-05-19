@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     uint16_t     (*get_price_sats)(void);
     int32_t      (*get_step_ms)(void);
@@ -25,5 +29,9 @@ typedef struct {
     void         (*on_share_accepted)(double difficulty);
     double       (*get_hashrate)(void);
 } tollgate_platform_t;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
