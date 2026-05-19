@@ -12,47 +12,111 @@
 
 static const char *TAG = "nucula_wallet";
 
-static secp256k1_context *s_ctx = nullptr;
-static cashu::Wallet *s_wallet = nullptr;
+static const int MAX_WALLETS = 4;
 
-static std::vector<cashu::Proof> &mutable_proofs()
+static secp256k1_context *s_ctx = nullptr;
+static cashu::Wallet *s_wallets[MAX_WALLETS] = {};
+static int s_wallet_count = 0;
+static char s_wallet_urls[MAX_WALLETS][256] = {};
+
+static cashu::Wallet *find_wallet_for_token(const cashu::Token &tok)
 {
-    return const_cast<std::vector<cashu::Proof> &>(s_wallet->proofs());
+    for (int i = 0; i < s_wallet_count; i++) {
+        if (s_wallets[i] && !s_wallets[i]->mint_url().empty()) {
+            if (tok.mint.find(s_wallets[i]->mint_url()) != std::string::npos ||
+                s_wallets[i]->mint_url().find(tok.mint) != std::string::npos) {
+                return s_wallets[i];
+            }
+        }
+    }
+    if (s_wallet_count > 0 && s_wallets[0]) return s_wallets[0];
+    return nullptr;
+}
+
+static cashu::Wallet *find_wallet_for_send(int amount)
+{
+    for (int i = 0; i < s_wallet_count; i++) {
+        if (s_wallets[i] && s_wallets[i]->balance() >= amount) {
+            return s_wallets[i];
+        }
+    }
+    return s_wallet_count > 0 ? s_wallets[0] : nullptr;
+}
+
+static std::vector<cashu::Proof> &mutable_proofs(cashu::Wallet *w)
+{
+    return const_cast<std::vector<cashu::Proof> &>(w->proofs());
+}
+
+static esp_err_t init_wallet(int slot, const char *mint_url)
+{
+    if (slot >= MAX_WALLETS) return ESP_FAIL;
+
+    s_wallets[slot] = new cashu::Wallet(std::string(mint_url), s_ctx, slot);
+    if (!s_wallets[slot]) {
+        ESP_LOGE(TAG, "Failed to create wallet for slot %d", slot);
+        return ESP_FAIL;
+    }
+    strncpy(s_wallet_urls[slot], mint_url, sizeof(s_wallet_urls[slot]) - 1);
+
+    s_wallets[slot]->load_from_nvs();
+
+    if (!s_wallets[slot]->load_keysets()) {
+        ESP_LOGW(TAG, "Keyset load failed for slot %d (may be offline)", slot);
+    }
+
+    ESP_LOGI(TAG, "Wallet[%d] initialized: url=%s balance=%d proofs=%d keysets=%d",
+             slot, mint_url, s_wallets[slot]->balance(),
+             (int)s_wallets[slot]->proofs().size(),
+             (int)s_wallets[slot]->keysets().size());
+    return ESP_OK;
 }
 
 esp_err_t nucula_wallet_init(const char *mint_url)
 {
-    if (s_wallet) return ESP_OK;
+    if (s_wallet_count > 0) return ESP_OK;
 
-    s_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
     if (!s_ctx) {
-        ESP_LOGE(TAG, "Failed to create secp256k1 context");
-        return ESP_FAIL;
+        s_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+        if (!s_ctx) {
+            ESP_LOGE(TAG, "Failed to create secp256k1 context");
+            return ESP_FAIL;
+        }
     }
 
-    s_wallet = new cashu::Wallet(std::string(mint_url), s_ctx, 0);
-    if (!s_wallet) {
-        ESP_LOGE(TAG, "Failed to create wallet");
-        secp256k1_context_destroy(s_ctx);
-        s_ctx = nullptr;
-        return ESP_FAIL;
+    esp_err_t ret = init_wallet(0, mint_url);
+    if (ret == ESP_OK) s_wallet_count = 1;
+    return ret;
+}
+
+esp_err_t nucula_wallet_init_multi(const char mint_urls[][256], int count)
+{
+    if (s_wallet_count > 0) return ESP_OK;
+    if (count > MAX_WALLETS) count = MAX_WALLETS;
+
+    if (!s_ctx) {
+        s_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+        if (!s_ctx) {
+            ESP_LOGE(TAG, "Failed to create secp256k1 context");
+            return ESP_FAIL;
+        }
     }
 
-    s_wallet->load_from_nvs();
-
-    if (!s_wallet->load_keysets()) {
-        ESP_LOGW(TAG, "Keyset load failed (may be offline)");
+    int ok = 0;
+    for (int i = 0; i < count; i++) {
+        if (init_wallet(i, mint_urls[i]) == ESP_OK) {
+            ok++;
+        }
     }
 
-    ESP_LOGI(TAG, "Wallet initialized: balance=%d proofs=%d keysets=%d",
-             s_wallet->balance(), (int)s_wallet->proofs().size(),
-             (int)s_wallet->keysets().size());
-    return ESP_OK;
+    s_wallet_count = count;
+    ESP_LOGI(TAG, "Multi-wallet initialized: %d/%d wallets", ok, count);
+    return ok > 0 ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t nucula_wallet_receive(const char *token_str)
 {
-    if (!s_wallet || !token_str) return ESP_FAIL;
+    if (s_wallet_count == 0 || !token_str) return ESP_FAIL;
 
     cashu::Token tok;
     bool decoded = false;
@@ -66,38 +130,47 @@ esp_err_t nucula_wallet_receive(const char *token_str)
         return ESP_FAIL;
     }
 
+    cashu::Wallet *w = find_wallet_for_token(tok);
+    if (!w) {
+        ESP_LOGE(TAG, "No wallet found for mint: %s", tok.mint.c_str());
+        return ESP_FAIL;
+    }
+
     std::vector<cashu::Proof> proofs_out;
-    if (!s_wallet->receive(tok, proofs_out)) {
+    if (!w->receive(tok, proofs_out)) {
         ESP_LOGE(TAG, "Receive failed");
         return ESP_FAIL;
     }
 
     int total = 0;
     for (const auto &p : proofs_out) total += p.amount;
-    ESP_LOGI(TAG, "Received %d sat (%d proofs), new balance=%d",
-             total, (int)proofs_out.size(), s_wallet->balance());
+    ESP_LOGI(TAG, "Received %d sat (%d proofs) via wallet[%s], new balance=%d",
+             total, (int)proofs_out.size(), w->mint_url().c_str(), w->balance());
     return ESP_OK;
 }
 
 esp_err_t nucula_wallet_send(uint64_t amount_sat, char *token_out, size_t token_out_size)
 {
-    if (!s_wallet) return ESP_FAIL;
+    if (s_wallet_count == 0) return ESP_FAIL;
 
     int amount = (int)amount_sat;
+    cashu::Wallet *w = find_wallet_for_send(amount);
+    if (!w) return ESP_FAIL;
+
     std::vector<cashu::Proof> selected, remaining;
-    if (!s_wallet->select_proofs(amount, selected, remaining)) {
+    if (!w->select_proofs(amount, selected, remaining)) {
         ESP_LOGE(TAG, "Insufficient balance for %d sat", amount);
         return ESP_FAIL;
     }
 
     std::vector<cashu::Proof> new_proofs, change;
-    if (!s_wallet->swap(selected, (int)amount_sat, new_proofs, change)) {
+    if (!w->swap(selected, (int)amount_sat, new_proofs, change)) {
         ESP_LOGE(TAG, "Swap for send failed");
         return ESP_FAIL;
     }
 
     cashu::Token token;
-    token.mint = s_wallet->mint_url();
+    token.mint = w->mint_url();
     token.unit = "sat";
     for (auto &p : new_proofs) token.proofs.push_back(p);
 
@@ -114,39 +187,48 @@ esp_err_t nucula_wallet_send(uint64_t amount_sat, char *token_out, size_t token_
 
     memcpy(token_out, encoded.c_str(), encoded.size() + 1);
 
-    auto &proofs = mutable_proofs();
+    auto &proofs = mutable_proofs(w);
     proofs = remaining;
     for (auto &p : change) proofs.push_back(p);
-    s_wallet->save_proofs();
+    w->save_proofs();
 
-    ESP_LOGI(TAG, "Sent %llu sat, token=%zu bytes, remaining balance=%d",
-             (unsigned long long)amount_sat, encoded.size(), s_wallet->balance());
+    ESP_LOGI(TAG, "Sent %llu sat via wallet[%s], token=%zu bytes, remaining balance=%d",
+             (unsigned long long)amount_sat, w->mint_url().c_str(),
+             encoded.size(), w->balance());
     return ESP_OK;
 }
 
 uint64_t nucula_wallet_balance(void)
 {
-    if (!s_wallet) return 0;
-    return (uint64_t)s_wallet->balance();
+    uint64_t total = 0;
+    for (int i = 0; i < s_wallet_count; i++) {
+        if (s_wallets[i]) total += (uint64_t)s_wallets[i]->balance();
+    }
+    return total;
 }
 
 int nucula_wallet_proof_count(void)
 {
-    if (!s_wallet) return 0;
-    return (int)s_wallet->proofs().size();
+    int total = 0;
+    for (int i = 0; i < s_wallet_count; i++) {
+        if (s_wallets[i]) total += (int)s_wallets[i]->proofs().size();
+    }
+    return total;
 }
 
 char *nucula_wallet_proofs_json(void)
 {
-    if (!s_wallet) return nullptr;
-
-    const auto &proofs = s_wallet->proofs();
     cJSON *arr = cJSON_CreateArray();
-    for (const auto &p : proofs) {
-        cJSON *obj = cJSON_CreateObject();
-        cJSON_AddNumberToObject(obj, "amount", p.amount);
-        cJSON_AddStringToObject(obj, "id", p.id.c_str());
-        cJSON_AddItemToArray(arr, obj);
+    for (int i = 0; i < s_wallet_count; i++) {
+        if (!s_wallets[i]) continue;
+        const auto &proofs = s_wallets[i]->proofs();
+        for (const auto &p : proofs) {
+            cJSON *obj = cJSON_CreateObject();
+            cJSON_AddNumberToObject(obj, "amount", p.amount);
+            cJSON_AddStringToObject(obj, "id", p.id.c_str());
+            cJSON_AddStringToObject(obj, "mint", s_wallet_urls[i]);
+            cJSON_AddItemToArray(arr, obj);
+        }
     }
     char *json = cJSON_PrintUnformatted(arr);
     cJSON_Delete(arr);
@@ -155,55 +237,72 @@ char *nucula_wallet_proofs_json(void)
 
 esp_err_t nucula_wallet_swap_all(void)
 {
-    if (!s_wallet) return ESP_FAIL;
+    if (s_wallet_count == 0) return ESP_FAIL;
 
-    auto &proofs = mutable_proofs();
-    if (proofs.empty()) {
-        ESP_LOGW(TAG, "No proofs to swap");
-        return ESP_FAIL;
+    bool any_ok = false;
+    for (int i = 0; i < s_wallet_count; i++) {
+        if (!s_wallets[i]) continue;
+
+        auto &proofs = mutable_proofs(s_wallets[i]);
+        if (proofs.empty()) continue;
+
+        int old_balance = s_wallets[i]->balance();
+
+        std::vector<cashu::Proof> inputs = proofs;
+        std::vector<cashu::Proof> new_proofs, change;
+        if (!s_wallets[i]->swap(inputs, -1, new_proofs, change)) {
+            ESP_LOGE(TAG, "Swap failed for wallet[%d]", i);
+            continue;
+        }
+
+        proofs.clear();
+        for (auto &p : new_proofs) proofs.push_back(p);
+        for (auto &p : change) proofs.push_back(p);
+        s_wallets[i]->save_proofs();
+
+        ESP_LOGI(TAG, "Swap wallet[%d]: %d -> %d sat (%d proofs)",
+                 i, old_balance, s_wallets[i]->balance(), (int)proofs.size());
+        any_ok = true;
     }
 
-    int old_balance = s_wallet->balance();
-
-    std::vector<cashu::Proof> inputs = proofs;
-    std::vector<cashu::Proof> new_proofs, change;
-    if (!s_wallet->swap(inputs, -1, new_proofs, change)) {
-        ESP_LOGE(TAG, "Swap failed");
-        return ESP_FAIL;
-    }
-
-    proofs.clear();
-    for (auto &p : new_proofs) proofs.push_back(p);
-    for (auto &p : change) proofs.push_back(p);
-    s_wallet->save_proofs();
-
-    ESP_LOGI(TAG, "Swap complete: %d -> %d sat (%d proofs)",
-             old_balance, s_wallet->balance(), (int)proofs.size());
-    return ESP_OK;
+    return any_ok ? ESP_OK : ESP_FAIL;
 }
 
 void nucula_wallet_print_status(void)
 {
-    if (!s_wallet) {
-        ESP_LOGI(TAG, "Wallet not initialized");
+    if (s_wallet_count == 0) {
+        ESP_LOGI(TAG, "No wallets initialized");
         return;
     }
-    ESP_LOGI(TAG, "Wallet: balance=%d proofs=%d keysets=%d",
-             s_wallet->balance(), (int)s_wallet->proofs().size(),
-             (int)s_wallet->keysets().size());
-    const auto &proofs = s_wallet->proofs();
-    for (size_t i = 0; i < proofs.size(); i++) {
-        ESP_LOGI(TAG, "  [%d] amount=%d id=%s", (int)i,
-                 proofs[i].amount, proofs[i].id.c_str());
+    for (int i = 0; i < s_wallet_count; i++) {
+        if (!s_wallets[i]) continue;
+        ESP_LOGI(TAG, "Wallet[%d] %s: balance=%d proofs=%d keysets=%d",
+                 i, s_wallet_urls[i],
+                 s_wallets[i]->balance(), (int)s_wallets[i]->proofs().size(),
+                 (int)s_wallets[i]->keysets().size());
+        const auto &proofs = s_wallets[i]->proofs();
+        for (size_t j = 0; j < proofs.size() && j < 10; j++) {
+            ESP_LOGI(TAG, "  [%d][%d] amount=%d id=%s", (int)i, (int)j,
+                     proofs[j].amount, proofs[j].id.c_str());
+        }
     }
 }
 
 esp_err_t nucula_wallet_melt(const char *bolt11_invoice, uint64_t max_fee_sats)
 {
-    if (!s_wallet || !bolt11_invoice) return ESP_FAIL;
+    if (s_wallet_count == 0 || !bolt11_invoice) return ESP_FAIL;
+
+    cashu::Wallet *w = nullptr;
+    for (int i = 0; i < s_wallet_count; i++) {
+        if (s_wallets[i] && s_wallets[i]->balance() > 0) {
+            w = s_wallets[i];
+            break;
+        }
+    }
+    if (!w) return ESP_FAIL;
 
     cashu::MeltQuote quote;
-    if (!s_wallet->request_melt_quote(std::string(bolt11_invoice), quote)) {
+    if (!w->request_melt_quote(std::string(bolt11_invoice), quote)) {
         ESP_LOGE(TAG, "Melt quote request failed");
         return ESP_FAIL;
     }
@@ -216,19 +315,20 @@ esp_err_t nucula_wallet_melt(const char *bolt11_invoice, uint64_t max_fee_sats)
         return ESP_FAIL;
     }
 
-    int balance_before = s_wallet->balance();
+    int balance_before = w->balance();
     if (balance_before < quote.amount) {
         ESP_LOGE(TAG, "Insufficient balance: %d < %d", balance_before, quote.amount);
         return ESP_FAIL;
     }
 
     int change_amount = 0;
-    if (!s_wallet->melt_tokens(quote, change_amount)) {
+    if (!w->melt_tokens(quote, change_amount)) {
         ESP_LOGE(TAG, "Melt tokens failed");
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Melted: %d sats paid, %d change, balance=%d->%d",
-             quote.amount, change_amount, balance_before, s_wallet->balance());
+    ESP_LOGI(TAG, "Melted via wallet[%s]: %d sats paid, %d change, balance=%d->%d",
+             w->mint_url().c_str(), quote.amount, change_amount,
+             balance_before, w->balance());
     return ESP_OK;
 }

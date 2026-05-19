@@ -2,6 +2,7 @@
 #include "firewall.h"
 #include "session.h"
 #include "config.h"
+#include "mint_health.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "cJSON.h"
@@ -42,9 +43,14 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 ".btn:disabled{background:#333;color:#666;cursor:not-allowed}"
 ".mints{background:#252525;border-radius:12px;padding:12px;margin-top:16px;text-align:left}"
 ".mints-title{color:#888;font-size:12px;margin-bottom:8px}"
-".mint-url{font-family:monospace;font-size:11px;color:#f7931a;word-break:break-all;"
-"background:#1a1a1a;padding:8px;border-radius:6px;cursor:pointer}"
-".mint-url:active{opacity:0.7}"
+".mint-item{display:flex;align-items:center;padding:6px 8px;margin-bottom:4px;"
+"background:#1a1a1a;border-radius:6px;cursor:pointer}"
+".mint-item:active{opacity:0.7}"
+".mint-dot{width:8px;height:8px;border-radius:50%;margin-right:8px;flex-shrink:0}"
+".mint-dot.green{background:#4caf50}"
+".mint-dot.grey{background:#666}"
+".mint-url{font-family:monospace;font-size:11px;color:#f7931a;word-break:break-all}"
+".mint-url.dim{color:#666}"
 ".mint-hint{color:#666;font-size:10px;margin-top:4px}"
 "#status{margin-top:16px;padding:12px;border-radius:8px;display:none;font-size:14px}"
 "#status.success{display:block;background:#1a472a;color:#4caf50}"
@@ -63,20 +69,21 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 "<button class='btn' id='payBtn' onclick='payToken()'>Pay & Connect</button>"
 "<div class='mints'>"
 "<div class='mints-title'>SUPPORTED MINTS</div>"
-"<div class='mint-url' id='mintUrl' onclick='copyMint()'>__MINT_URL__</div>"
-"<div class='mint-hint'>Tap to copy &bull; Mint tokens at this URL before paying</div>"
+"<div id='mintList'>__MINT_LIST__</div>"
+"<div class='mint-hint'>Tap to copy &bull; Green = reachable</div>"
 "</div>"
 "<div id='status'></div>"
 "</div>"
 "<script>"
-"const mintUrlEl=document.getElementById('mintUrl');"
-"const mintUrl=mintUrlEl.textContent;"
+"const mintListEl=document.getElementById('mintList');"
 "const statusEl=document.getElementById('status');"
 "const payBtn=document.getElementById('payBtn');"
 "const tokenInput=document.getElementById('tokenInput');"
-"function copyMint(){"
-"if(navigator.clipboard){navigator.clipboard.writeText(mintUrl);"
-"mintUrlEl.textContent='Copied!';setTimeout(()=>{mintUrlEl.textContent=mintUrl;},1000);}"
+"function copyMint(url){"
+"if(navigator.clipboard){navigator.clipboard.writeText(url);"
+"const el=event.currentTarget;const u=el.querySelector('.mint-url');"
+"const orig=u.textContent;u.textContent='Copied!';"
+"setTimeout(()=>{u.textContent=orig;},1000);}"
 "}"
 "function showStatus(msg,type){statusEl.textContent=msg;statusEl.className=type;}"
 "function payToken(){"
@@ -93,6 +100,20 @@ static const char PORTAL_HTML_TEMPLATE[] = \
 "else if(d.kind===21023){showStatus('Error: '+(d.content||'Unknown error'),'error');payBtn.disabled=false;}"
 "}).catch(e=>{showStatus(e.message||'Connection error','error');payBtn.disabled=false;});"
 "}"
+"function refreshMints(){"
+"fetch('http://__AP_IP__:2121/mints').then(r=>r.json()).then(data=>{"
+"let html='';"
+"for(const m of data){"
+"const cls=m.reachable?'green':'grey';"
+"const urlCls=m.reachable?'mint-url':'mint-url dim';"
+"html+='<div class=\"mint-item\" onclick=\"copyMint(\\''+m.url+'\\')\">';"
+"html+='<span class=\"mint-dot '+cls+'\"></span>';"
+"html+='<span class=\"'+urlCls+'\">'+m.url+'</span></div>';"
+"}"
+"if(html)mintListEl.innerHTML=html;"
+"}).catch(()=>{});"
+"}"
+"setInterval(refreshMints,30000);"
 "</script>"
 "</body></html>";
 
@@ -122,10 +143,35 @@ static esp_err_t portal_handler(httpd_req_t *req)
     const char *tpl = PORTAL_HTML_TEMPLATE;
     size_t tpl_len = strlen(tpl);
 
+    char mint_list_html[4096];
+    size_t mint_list_cap = sizeof(mint_list_html);
+    size_t mint_list_len = 0;
+    mint_list_html[0] = '\0';
+    int mint_count = 0;
+    const mint_status_t *mints = mint_health_get_all(&mint_count);
+    for (int i = 0; i < mint_count; i++) {
+        const char *cls = mints[i].reachable ? "green" : "grey";
+        const char *url_cls = mints[i].reachable ? "mint-url" : "mint-url dim";
+        int written = snprintf(mint_list_html + mint_list_len, mint_list_cap - mint_list_len,
+                 "<div class='mint-item' onclick='copyMint(\"%s\")'>"
+                 "<span class='mint-dot %s'></span>"
+                 "<span class='%s'>%s</span></div>",
+                 mints[i].url, cls, url_cls, mints[i].url);
+        if (written > 0 && (size_t)written < mint_list_cap - mint_list_len) {
+            mint_list_len += (size_t)written;
+        }
+    }
+    if (mint_count == 0) {
+        const tollgate_config_t *cfg = tollgate_config_get();
+        snprintf(mint_list_html, sizeof(mint_list_html),
+                 "<div class='mint-item'><span class='mint-dot grey'></span>"
+                 "<span class='mint-url dim'>%s</span></div>", cfg->mint_url);
+    }
+
     struct { const char *key; const char *val; } subs[] = {
         { "__AP_IP__", s_ap_ip_str },
         { "__PRICE__", price_str },
-        { "__MINT_URL__", cfg->mint_url },
+        { "__MINT_LIST__", mint_list_html },
     };
     int nsubs = sizeof(subs) / sizeof(subs[0]);
 

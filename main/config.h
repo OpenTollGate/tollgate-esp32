@@ -9,7 +9,7 @@
 #include "lightning_payout.h"
 
 #define TOLLGATE_MAX_WIFI_NETWORKS 5
-#define TOLLGATE_MAX_MINT_URLS     3
+#define TOLLGATE_MAX_MINT_URLS     8
 #define TOLLGATE_MAX_AP_SSID_LEN   32
 #define TOLLGATE_MAX_AP_PASS_LEN   64
 #define TOLLGATE_MAX_RELAYS        4
@@ -41,6 +41,8 @@ typedef struct {
     char ap_ip_str[16];
 
     char mint_url[256];
+    char accepted_mints[TOLLGATE_MAX_MINT_URLS][256];
+    int accepted_mint_count;
     char lnurl_url[256];
     int price_per_step;
     int step_size_ms;
@@ -52,6 +54,8 @@ typedef struct {
     char nostr_relays[TOLLGATE_MAX_RELAYS][128];
     int nostr_relay_count;
     int nostr_publish_interval_s;
+    int nostr_sync_interval_s;
+    int nostr_fallback_sync_interval_s;
 
     bool identity_initialized;
 
@@ -65,10 +69,11 @@ typedef struct {
     bool cvm_enabled;
     char cvm_relays[256];
 
+    char wifi_auth_mode[16];
+    bool display_enabled;
+
     char nostr_seed_relays[TOLLGATE_MAX_SEED_RELAYS][128];
     int nostr_seed_relay_count;
-    int nostr_sync_interval_s;
-    int nostr_fallback_sync_interval_s;
 
     bool market_enabled;
     int market_scan_interval_s;

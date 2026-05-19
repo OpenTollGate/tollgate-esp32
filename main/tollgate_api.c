@@ -1,6 +1,7 @@
 #include "tollgate_api.h"
 #include "cashu.h"
 #include "config.h"
+#include "identity.h"
 #include "session.h"
 #include "firewall.h"
 #include "nucula_wallet.h"
@@ -16,8 +17,6 @@
 
 static const char *TAG = "tollgate_api";
 static httpd_handle_t s_api_server = NULL;
-
-static const char *TOLLGATE_PUBKEY = "0000000000000000000000000000000000000000000000000000000000000000";
 
 static esp_err_t get_client_ip(httpd_req_t *req, uint32_t *ip_out)
 {
@@ -35,7 +34,7 @@ static cJSON *create_notice(const char *level, const char *code, const char *con
 {
     cJSON *root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "kind", 21023);
-    cJSON_AddStringToObject(root, "pubkey", TOLLGATE_PUBKEY);
+    cJSON_AddStringToObject(root, "pubkey", identity_get()->npub_hex);
     cJSON *tags = cJSON_CreateArray();
     cJSON *level_tag = cJSON_CreateArray();
     cJSON_AddItemToArray(level_tag, cJSON_CreateString("level"));
@@ -54,7 +53,7 @@ static cJSON *create_session_event(uint32_t client_ip, uint64_t allotment_ms)
 {
     cJSON *root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "kind", 1022);
-    cJSON_AddStringToObject(root, "pubkey", TOLLGATE_PUBKEY);
+    cJSON_AddStringToObject(root, "pubkey", identity_get()->npub_hex);
 
     cJSON *tags = cJSON_CreateArray();
 
@@ -96,7 +95,7 @@ static esp_err_t api_get_discovery(httpd_req_t *req)
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "kind", 10021);
-    cJSON_AddStringToObject(root, "pubkey", TOLLGATE_PUBKEY);
+    cJSON_AddStringToObject(root, "pubkey", identity_get()->npub_hex);
 
     cJSON *tags = cJSON_CreateArray();
 
@@ -113,16 +112,36 @@ static esp_err_t api_get_discovery(httpd_req_t *req)
     cJSON_AddItemToArray(step_tag, cJSON_CreateString(step_str));
     cJSON_AddItemToArray(tags, step_tag);
 
-    cJSON *price_tag = cJSON_CreateArray();
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString("price_per_step"));
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString("cashu"));
     char price_str[32];
     snprintf(price_str, sizeof(price_str), "%d", cfg->price_per_step);
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString(price_str));
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString("sat"));
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString(cfg->mint_url));
-    cJSON_AddItemToArray(price_tag, cJSON_CreateString("1"));
-    cJSON_AddItemToArray(tags, price_tag);
+
+    int mint_count = 0;
+    const mint_status_t *mints = mint_health_get_all(&mint_count);
+    bool any_reachable = false;
+
+    for (int i = 0; i < mint_count; i++) {
+        if (!mints[i].reachable) continue;
+        any_reachable = true;
+        cJSON *price_tag = cJSON_CreateArray();
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("price_per_step"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("cashu"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(price_str));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("sat"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(mints[i].url));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("1"));
+        cJSON_AddItemToArray(tags, price_tag);
+    }
+
+    if (!any_reachable) {
+        cJSON *price_tag = cJSON_CreateArray();
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("price_per_step"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("cashu"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(price_str));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("sat"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(cfg->mint_url));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString("1"));
+        cJSON_AddItemToArray(tags, price_tag);
+    }
 
     cJSON *tips_tag = cJSON_CreateArray();
     cJSON_AddItemToArray(tips_tag, cJSON_CreateString("tips"));
@@ -466,8 +485,28 @@ static esp_err_t api_post_wallet_send(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t api_get_mints(httpd_req_t *req)
+{
+    int mint_count = 0;
+    const mint_status_t *mints = mint_health_get_all(&mint_count);
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < mint_count; i++) {
+        cJSON *obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(obj, "url", mints[i].url);
+        cJSON_AddBoolToObject(obj, "reachable", mints[i].reachable);
+        cJSON_AddItemToArray(arr, obj);
+    }
+    char *json = cJSON_PrintUnformatted(arr);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, strlen(json));
+    cJSON_free(json);
+    cJSON_Delete(arr);
+    return ESP_OK;
+}
+
 static const httpd_uri_t uri_discovery = { .uri = "/", .method = HTTP_GET, .handler = api_get_discovery };
 static const httpd_uri_t uri_payment = { .uri = "/", .method = HTTP_POST, .handler = api_post_payment };
+static const httpd_uri_t uri_mints = { .uri = "/mints", .method = HTTP_GET, .handler = api_get_mints };
 static const httpd_uri_t uri_usage = { .uri = "/usage", .method = HTTP_GET, .handler = api_get_usage };
 static const httpd_uri_t uri_whoami = { .uri = "/whoami", .method = HTTP_GET, .handler = api_get_whoami };
 static const httpd_uri_t uri_wallet = { .uri = "/wallet", .method = HTTP_GET, .handler = api_get_wallet };
@@ -520,17 +559,19 @@ esp_err_t tollgate_api_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 2121;
     config.ctrl_port = 32769;
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 12;
     config.stack_size = 16384;
 
     esp_err_t ret = httpd_start(&s_api_server, &config);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start API server: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to start API server: %s (heap: %lu)", esp_err_to_name(ret), (unsigned long)esp_get_free_heap_size());
+        s_api_server = NULL;
         return ret;
     }
 
     httpd_register_uri_handler(s_api_server, &uri_discovery);
     httpd_register_uri_handler(s_api_server, &uri_payment);
+    httpd_register_uri_handler(s_api_server, &uri_mints);
     httpd_register_uri_handler(s_api_server, &uri_usage);
     httpd_register_uri_handler(s_api_server, &uri_whoami);
     httpd_register_uri_handler(s_api_server, &uri_wallet);

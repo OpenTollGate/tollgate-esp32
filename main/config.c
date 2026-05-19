@@ -16,7 +16,7 @@ esp_err_t tollgate_config_init(void)
 {
     memset(&g_config, 0, sizeof(g_config));
     g_config.max_retry = 5;
-    g_config.ap_channel = 6;
+    g_config.ap_channel = 1;
     g_config.ap_max_conn = 4;
     g_config.price_per_step = 21;
     g_config.step_size_ms = 60000;
@@ -24,6 +24,8 @@ esp_err_t tollgate_config_init(void)
     strncpy(g_config.metric, "milliseconds", sizeof(g_config.metric) - 1);
     g_config.persist_threshold_sats = 1;
     g_config.nostr_publish_interval_s = 21600;
+    g_config.nostr_sync_interval_s = 1800;
+    g_config.nostr_fallback_sync_interval_s = 21600;
     g_config.client_enabled = false;
     g_config.client_steps_to_buy = 1;
     g_config.client_renewal_threshold_pct = 20;
@@ -35,8 +37,8 @@ esp_err_t tollgate_config_init(void)
     g_config.payout.mint_count = 0;
     g_config.cvm_enabled = true;
     strncpy(g_config.cvm_relays, "wss://relay.primal.net", sizeof(g_config.cvm_relays) - 1);
-    g_config.nostr_sync_interval_s = 1800;
-    g_config.nostr_fallback_sync_interval_s = 21600;
+    strncpy(g_config.wifi_auth_mode, "WPA2", sizeof(g_config.wifi_auth_mode) - 1);
+    g_config.display_enabled = true;
 
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
@@ -56,17 +58,18 @@ esp_err_t tollgate_config_init(void)
         const char *default_json = "{"
             "\"nsec\":\"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\","
             "\"wifi_networks\":["
-              "{\"ssid\":\"EnterSSID-2.4GHz\",\"password\":\"c03rad0r123!\"},"
-              "{\"ssid\":\"c03rad0r\",\"password\":\"c03rad0r123\"},"
-              "{\"ssid\":\"TK-GAESTE\",\"password\":\"\"}"
+              "{\"ssid\":\"c03rad0r\",\"password\":\"c03rad0r123\"}"
             "],"
             "\"ap_password\":\"\","
             "\"mint_url\":\"https://testnut.cashu.space\","
+            "\"accepted_mints\":[\"https://testnut.cashu.space\"],"
             "\"price_per_step\":21,"
             "\"step_size_ms\":60000,"
             "\"nostr_geohash\":\"u281w0dfz\","
             "\"nostr_relays\":[\"wss://relay.damus.io\",\"wss://nos.lol\"],"
             "\"nostr_publish_interval_s\":21600,"
+            "\"nostr_sync_interval_s\":1800,"
+            "\"nostr_fallback_sync_interval_s\":21600,"
             "\"client_enabled\":false,"
             "\"client_steps_to_buy\":1,"
             "\"client_renewal_threshold_pct\":20,"
@@ -129,11 +132,35 @@ esp_err_t tollgate_config_init(void)
         }
     }
 
+    if (g_config.network_count == 0) {
+        cJSON *ssid = cJSON_GetObjectItem(root, "wifi_ssid");
+        cJSON *pass = cJSON_GetObjectItem(root, "wifi_password");
+        if (ssid && cJSON_IsString(ssid) && pass && cJSON_IsString(pass)) {
+            strncpy(g_config.networks[0].ssid, ssid->valuestring, sizeof(g_config.networks[0].ssid) - 1);
+            strncpy(g_config.networks[0].password, pass->valuestring, sizeof(g_config.networks[0].password) - 1);
+            g_config.network_count = 1;
+        }
+    }
+
     cJSON *ap_pass = cJSON_GetObjectItem(root, "ap_password");
     if (ap_pass) strncpy(g_config.ap_password, ap_pass->valuestring, sizeof(g_config.ap_password) - 1);
 
     cJSON *mint = cJSON_GetObjectItem(root, "mint_url");
     if (mint) strncpy(g_config.mint_url, mint->valuestring, sizeof(g_config.mint_url) - 1);
+
+    cJSON *acc_mints = cJSON_GetObjectItem(root, "accepted_mints");
+    if (acc_mints && cJSON_IsArray(acc_mints)) {
+        int mcount = cJSON_GetArraySize(acc_mints);
+        if (mcount > TOLLGATE_MAX_MINT_URLS) mcount = TOLLGATE_MAX_MINT_URLS;
+        for (int i = 0; i < mcount; i++) {
+            cJSON *m = cJSON_GetArrayItem(acc_mints, i);
+            if (m && cJSON_IsString(m)) {
+                strncpy(g_config.accepted_mints[i], m->valuestring,
+                        sizeof(g_config.accepted_mints[i]) - 1);
+                g_config.accepted_mint_count++;
+            }
+        }
+    }
 
     cJSON *lnurl = cJSON_GetObjectItem(root, "lnurl_url");
     if (lnurl) strncpy(g_config.lnurl_url, lnurl->valuestring, sizeof(g_config.lnurl_url) - 1);
@@ -174,6 +201,26 @@ esp_err_t tollgate_config_init(void)
 
     cJSON *pub_interval = cJSON_GetObjectItem(root, "nostr_publish_interval_s");
     if (pub_interval) g_config.nostr_publish_interval_s = pub_interval->valueint;
+
+    cJSON *sync_interval = cJSON_GetObjectItem(root, "nostr_sync_interval_s");
+    if (sync_interval) g_config.nostr_sync_interval_s = sync_interval->valueint;
+
+    cJSON *fallback_interval = cJSON_GetObjectItem(root, "nostr_fallback_sync_interval_s");
+    if (fallback_interval) g_config.nostr_fallback_sync_interval_s = fallback_interval->valueint;
+
+    cJSON *seed_relays = cJSON_GetObjectItem(root, "nostr_seed_relays");
+    if (seed_relays && cJSON_IsArray(seed_relays)) {
+        int srcount = cJSON_GetArraySize(seed_relays);
+        if (srcount > TOLLGATE_MAX_SEED_RELAYS) srcount = TOLLGATE_MAX_SEED_RELAYS;
+        for (int i = 0; i < srcount; i++) {
+            cJSON *r = cJSON_GetArrayItem(seed_relays, i);
+            if (r && cJSON_IsString(r)) {
+                strncpy(g_config.nostr_seed_relays[i], r->valuestring,
+                        sizeof(g_config.nostr_seed_relays[i]) - 1);
+                g_config.nostr_seed_relay_count++;
+            }
+        }
+    }
 
     cJSON *client_enabled = cJSON_GetObjectItem(root, "client_enabled");
     if (client_enabled && cJSON_IsBool(client_enabled)) g_config.client_enabled = cJSON_IsTrue(client_enabled);
@@ -251,6 +298,14 @@ esp_err_t tollgate_config_init(void)
         }
     }
 
+    cJSON *auth_mode = cJSON_GetObjectItem(root, "wifi_auth_mode");
+    if (auth_mode && cJSON_IsString(auth_mode)) {
+        strncpy(g_config.wifi_auth_mode, auth_mode->valuestring, sizeof(g_config.wifi_auth_mode) - 1);
+    }
+
+    cJSON *disp_en = cJSON_GetObjectItem(root, "display_enabled");
+    if (disp_en && cJSON_IsBool(disp_en)) g_config.display_enabled = cJSON_IsTrue(disp_en);
+
     if (g_config.payout.mint_count == 0 && g_config.mint_url[0] != '\0') {
         strncpy(g_config.payout.mints[0].url, g_config.mint_url,
                 sizeof(g_config.payout.mints[0].url) - 1);
@@ -259,33 +314,19 @@ esp_err_t tollgate_config_init(void)
         g_config.payout.mint_count = 1;
     }
 
-    cJSON *seed_relays = cJSON_GetObjectItem(root, "nostr_seed_relays");
-    if (seed_relays && cJSON_IsArray(seed_relays)) {
-        int srcount = cJSON_GetArraySize(seed_relays);
-        if (srcount > TOLLGATE_MAX_SEED_RELAYS) srcount = TOLLGATE_MAX_SEED_RELAYS;
-        for (int i = 0; i < srcount; i++) {
-            cJSON *r = cJSON_GetArrayItem(seed_relays, i);
-            if (r && cJSON_IsString(r)) {
-                strncpy(g_config.nostr_seed_relays[i], r->valuestring,
-                        sizeof(g_config.nostr_seed_relays[i]) - 1);
-                g_config.nostr_seed_relay_count++;
-            }
-        }
-    }
-
-    cJSON *sync_interval = cJSON_GetObjectItem(root, "nostr_sync_interval_s");
-    if (sync_interval) g_config.nostr_sync_interval_s = sync_interval->valueint;
-
-    cJSON *fallback_interval = cJSON_GetObjectItem(root, "nostr_fallback_sync_interval_s");
-    if (fallback_interval) g_config.nostr_fallback_sync_interval_s = fallback_interval->valueint;
-
-    cJSON_Delete(root);
-
     if (g_config.payout.recipient_count == 0) {
         strncpy(g_config.payout.recipients[0].lightning_address, "TollGate@coinos.io",
                 sizeof(g_config.payout.recipients[0].lightning_address) - 1);
         g_config.payout.recipients[0].factor = 1.0;
         g_config.payout.recipient_count = 1;
+    }
+
+    cJSON_Delete(root);
+
+    if (g_config.accepted_mint_count == 0 && g_config.mint_url[0] != '\0') {
+        strncpy(g_config.accepted_mints[0], g_config.mint_url,
+                sizeof(g_config.accepted_mints[0]) - 1);
+        g_config.accepted_mint_count = 1;
     }
 
     if (g_config.nostr_relay_count == 0) {
@@ -306,9 +347,9 @@ esp_err_t tollgate_config_init(void)
         g_config.nostr_seed_relay_count = 4;
     }
 
-    ESP_LOGI(TAG, "Config loaded: nsec=%s...%s, %d WiFi networks, price=%d sats/%dms",
+    ESP_LOGI(TAG, "Config loaded: nsec=%s...%s, %d WiFi networks, %d accepted mints, price=%d sats/%dms",
              g_config.nsec, g_config.nsec + 60, g_config.network_count,
-             g_config.price_per_step, g_config.step_size_ms);
+             g_config.accepted_mint_count, g_config.price_per_step, g_config.step_size_ms);
     return ESP_OK;
 }
 
@@ -325,14 +366,18 @@ esp_err_t tollgate_config_get_wifi(wifi_config_t *wifi_config)
     strncpy((char *)wifi_config->sta.ssid, g_config.networks[idx].ssid, sizeof(wifi_config->sta.ssid) - 1);
     strncpy((char *)wifi_config->sta.password, g_config.networks[idx].password, sizeof(wifi_config->sta.password) - 1);
     wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    wifi_config->sta.pmf_cfg.capable = true;
-    wifi_config->sta.pmf_cfg.required = false;
-    wifi_config->sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    if (strstr(g_config.wifi_auth_mode, "WPA3")) {
+        wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA3_PSK;
+    } else if (strstr(g_config.wifi_auth_mode, "WPA2")) {
+        wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    }
+    ESP_LOGI(TAG, "STA auth threshold: %s -> %d", g_config.wifi_auth_mode, wifi_config->sta.threshold.authmode);
     return ESP_OK;
 }
 
 esp_err_t tollgate_config_get_next_wifi(wifi_config_t *wifi_config)
 {
+    if (g_config.network_count == 0) return ESP_ERR_NOT_FOUND;
     g_config.current_network = (g_config.current_network + 1) % g_config.network_count;
     return tollgate_config_get_wifi(wifi_config);
 }

@@ -5,6 +5,7 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
 #include "lwip/netif.h"
@@ -22,6 +23,7 @@
 #include "wifistr.h"
 #include "tollgate_client.h"
 #include "lightning_payout.h"
+#include "mint_health.h"
 #include "cvm_server.h"
 #include "display.h"
 #include "local_relay.h"
@@ -119,6 +121,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 
 static void services_start_task(void *pvParameters)
 {
+    vTaskDelay(pdMS_TO_TICKS(3000));
     start_services();
     vTaskDelete(NULL);
 }
@@ -187,7 +190,15 @@ static void start_services(void)
     session_manager_init();
 
     const tollgate_config_t *cfg = tollgate_config_get();
-    nucula_wallet_init(cfg->mint_url);
+
+    mint_health_init(cfg->accepted_mints, cfg->accepted_mint_count);
+    mint_health_start();
+
+    if (cfg->accepted_mint_count > 1) {
+        nucula_wallet_init_multi(cfg->accepted_mints, cfg->accepted_mint_count);
+    } else {
+        nucula_wallet_init(cfg->mint_url);
+    }
     lightning_payout_init(&cfg->payout);
 
     dns_server_start(ap_ip_info.ip, upstream_dns);
@@ -216,10 +227,12 @@ static void start_services(void)
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services started ===");
 
-    display_set_state(DISPLAY_READY);
-    char portal_url[128];
-    snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
-    display_update(cfg->ap_ssid, 0, 0, portal_url);
+    if (tollgate_config_get()->display_enabled) {
+        display_set_state(DISPLAY_READY);
+        char portal_url[128];
+        snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
+        display_update(cfg->ap_ssid, 0, 0, portal_url);
+    }
 }
 
 static void stop_services(void)
@@ -306,8 +319,10 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "=== TollGate ESP32 Starting ===");
 
-    display_init();
-    display_set_state(DISPLAY_BOOT);
+    if (tollgate_config_get()->display_enabled) {
+        display_init();
+        display_set_state(DISPLAY_BOOT);
+    }
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
