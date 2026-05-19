@@ -151,3 +151,33 @@ Tests use fixed sleeps after flash. No polling for HTTP server readiness.
 
 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6
 (Socket fix -> Owner fix -> Connection close -> Portal config API -> NAPT fix -> Boot probe -> Validate)
+
+## Blockers
+
+### Board A needs physical power cycle (ACTIVE)
+
+After ~20 erase/flash cycles during debugging, Board A's WiFi AP stopped
+routing TCP traffic. ICMP (ping) works but all TCP ports return RST
+(connection refused). Serial shows HTTP servers starting successfully
+but connections from the host are rejected.
+
+**Symptoms**:
+- `ping 10.192.45.1` works
+- `curl http://10.192.45.1:2121/` → "Connection refused"
+- `nmap -p 80,2121` → both "closed"
+- Serial: "Captive portal started on port 80", "API started on port 2121"
+- Even the original (unmodified) firmware exhibits this issue
+- Board produces serial output (not fully crashed) but TCP is broken
+
+**Fix**: Physical power cycle (unplug USB, wait 10s, reconnect).
+RTS/DTR reset via esptool is NOT sufficient.
+
+### LWIP socket exhaustion still needs validation
+
+`CONFIG_LWIP_MAX_SOCKETS=16` and `max_open_sockets=2` have been set in the
+code but not yet validated on a working board. The theory is correct
+(14 sockets needed, 10 available) but the actual fix hasn't been verified.
+
+### All code changes are committed (c89ab31)
+
+Steps 0-4 are implemented in the codebase. Steps 5-6 require a working board.
