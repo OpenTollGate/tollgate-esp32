@@ -321,26 +321,6 @@ esp_err_t tollgate_config_init(void)
         g_config.payout.mint_count = 1;
     }
 
-    cJSON *seed_relays = cJSON_GetObjectItem(root, "nostr_seed_relays");
-    if (seed_relays && cJSON_IsArray(seed_relays)) {
-        int srcount = cJSON_GetArraySize(seed_relays);
-        if (srcount > TOLLGATE_MAX_SEED_RELAYS) srcount = TOLLGATE_MAX_SEED_RELAYS;
-        for (int i = 0; i < srcount; i++) {
-            cJSON *r = cJSON_GetArrayItem(seed_relays, i);
-            if (r && cJSON_IsString(r)) {
-                strncpy(g_config.nostr_seed_relays[i], r->valuestring,
-                        sizeof(g_config.nostr_seed_relays[i]) - 1);
-                g_config.nostr_seed_relay_count++;
-            }
-        }
-    }
-
-    cJSON *sync_interval = cJSON_GetObjectItem(root, "nostr_sync_interval_s");
-    if (sync_interval) g_config.nostr_sync_interval_s = sync_interval->valueint;
-
-    cJSON *fallback_interval = cJSON_GetObjectItem(root, "nostr_fallback_sync_interval_s");
-    if (fallback_interval) g_config.nostr_fallback_sync_interval_s = fallback_interval->valueint;
-
     cJSON *mining = cJSON_GetObjectItem(root, "mining");
     if (mining && cJSON_IsObject(mining)) {
         cJSON *m_en = cJSON_GetObjectItem(mining, "enabled");

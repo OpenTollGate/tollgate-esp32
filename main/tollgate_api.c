@@ -678,7 +678,6 @@ static esp_err_t api_get_mining_stats(httpd_req_t *req)
     httpd_resp_send(req, json, strlen(json));
     cJSON_free(json);
     cJSON_Delete(root);
->>>>>>> feature/mining-payment
     return ESP_OK;
 }
 
