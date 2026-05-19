@@ -26,6 +26,7 @@
 #include "display.h"
 
 #define MAX_STA_RETRY 5
+#define MAX_TOTAL_RETRIES 10
 static const char *TAG = "tollgate_main";
 
 static EventGroupHandle_t s_wifi_event_group;
@@ -34,6 +35,7 @@ static const int WIFI_CONNECTED_BIT = BIT0;
 static esp_netif_t *s_sta_netif = NULL;
 static esp_netif_t *s_ap_netif = NULL;
 static int s_retry_count = 0;
+static int s_total_retries = 0;
 static bool s_services_running = false;
 static SemaphoreHandle_t s_services_mutex = NULL;
 static char s_ap_ip_str[16] = "10.0.0.1";
@@ -52,12 +54,23 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_retry_count++;
-        ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d", s_retry_count, MAX_STA_RETRY);
+        s_total_retries++;
+        ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d (total %d/%d)",
+                 s_retry_count, MAX_STA_RETRY, s_total_retries, MAX_TOTAL_RETRIES);
         tollgate_client_on_sta_disconnected();
         display_notify_wifi_disconnected();
         if (s_services_running) {
             stop_services();
             display_set_state(DISPLAY_ERROR);
+        }
+        if (s_total_retries >= MAX_TOTAL_RETRIES) {
+            ESP_LOGW(TAG, "All WiFi retries exhausted");
+            const tollgate_config_t *cfg = tollgate_config_get();
+            char portal_url[128];
+            snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
+            display_update(NULL, 0, 0, portal_url, NULL, 0, "WiFi failed");
+            display_set_state(DISPLAY_ERROR);
+            return;
         }
         display_update(NULL, 0, 0, NULL, NULL, 0, "WiFi retry...");
         if (s_retry_count < MAX_STA_RETRY) {
@@ -71,6 +84,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 ESP_LOGI(TAG, "Trying WiFi network %d: %s", idx, cfg->networks[idx].ssid);
                 s_retry_count = 0;
                 esp_wifi_connect();
+            } else {
+                ESP_LOGW(TAG, "No more WiFi networks to try");
+                const tollgate_config_t *cfg = tollgate_config_get();
+                char portal_url[128];
+                snprintf(portal_url, sizeof(portal_url), "http://%s/", cfg->ap_ip_str);
+                display_update(NULL, 0, 0, portal_url, NULL, 0, "WiFi failed");
+                display_set_state(DISPLAY_ERROR);
             }
         }
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
@@ -101,6 +121,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Got IP:" IPSTR ", GW:" IPSTR, IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.gw));
         s_retry_count = 0;
+        s_total_retries = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
         char ip_str[16];
