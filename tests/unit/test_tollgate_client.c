@@ -13,6 +13,7 @@ const tollgate_config_t *tollgate_config_get(void) {
 
 uint64_t nucula_wallet_balance(void) { return 100; }
 esp_err_t nucula_wallet_send(uint64_t a, char *b, size_t c) { (void)a; (void)b; (void)c; return ESP_OK; }
+const void *identity_get(void) { return NULL; }
 
 #include "freertos/FreeRTOS.h"
 

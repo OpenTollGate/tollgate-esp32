@@ -8,6 +8,7 @@
 #include "nucula_wallet.h"
 #include "cJSON.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_tls.h"
 #include "esp_crt_bundle.h"
 #include "esp_random.h"
@@ -576,7 +577,7 @@ static void cvm_relay_task(void *arg)
                     char *text = parse_ws_text_frame(buf, rlen);
                     if (text) {
                         if (strlen(text) > 0) {
-                            process_relay_message(tls, relay_url, text);
+                            process_relay_message(relay_url, text);
                         }
                         free(text);
                     }

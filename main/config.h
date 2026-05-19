@@ -69,6 +69,10 @@ typedef struct {
     int nostr_seed_relay_count;
     int nostr_sync_interval_s;
     int nostr_fallback_sync_interval_s;
+
+    bool market_enabled;
+    int market_scan_interval_s;
+    bool client_auto_switch;
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

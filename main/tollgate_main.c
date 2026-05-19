@@ -27,6 +27,8 @@
 #include "local_relay.h"
 #include "relay_selector.h"
 #include "sync_manager.h"
+#include "beacon_price.h"
+#include "market.h"
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -38,6 +40,8 @@ static esp_netif_t *s_sta_netif = NULL;
 static esp_netif_t *s_ap_netif = NULL;
 static int s_retry_count = 0;
 static bool s_services_running = false;
+static bool s_ap_services_running = false;
+static bool s_sta_connecting = false;
 static SemaphoreHandle_t s_services_mutex = NULL;
 static char s_ap_ip_str[16] = "10.0.0.1";
 
@@ -46,23 +50,42 @@ static sync_manager_t s_sync_manager;
 
 static void start_services(void);
 static void stop_services(void);
+static void start_ap_services(void);
+
+static void start_ap_services(void)
+{
+    if (s_ap_services_running) return;
+
+    tollgate_api_start();
+    beacon_price_start();
+    market_init();
+
+    s_ap_services_running = true;
+    ESP_LOGI(TAG, "=== AP-only services started (no STA) ===");
+}
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                 int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        wifi_config_t wifi_cfg;
-        if (tollgate_config_get_wifi(&wifi_cfg) == ESP_OK) {
-            esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
+        if (!s_sta_connecting) {
+            wifi_config_t wifi_cfg;
+            if (tollgate_config_get_wifi(&wifi_cfg) == ESP_OK) {
+                esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
+            }
+            s_sta_connecting = true;
+            esp_wifi_connect();
         }
-        esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t *disc = (wifi_event_sta_disconnected_t *)event_data;
         s_retry_count++;
-        ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d", s_retry_count, MAX_STA_RETRY);
+        s_sta_connecting = false;
+        ESP_LOGW(TAG, "WiFi disconnected, reason=%d, retry %d/%d", disc->reason, s_retry_count, MAX_STA_RETRY);
         tollgate_client_on_sta_disconnected();
         if (s_services_running) stop_services();
         if (s_retry_count < MAX_STA_RETRY) {
             vTaskDelay(pdMS_TO_TICKS(2000));
+            s_sta_connecting = true;
             esp_wifi_connect();
         } else {
             wifi_config_t wifi_cfg;
@@ -72,7 +95,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 int idx = cfg->current_network;
                 ESP_LOGI(TAG, "Trying WiFi network %d: %s", idx, cfg->networks[idx].ssid);
                 s_retry_count = 0;
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                s_sta_connecting = true;
                 esp_wifi_connect();
+            } else {
+                ESP_LOGI(TAG, "All WiFi networks exhausted, STA stopped (market scans active)");
             }
         }
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
@@ -85,6 +112,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Station disconnected: MAC=%02x:%02x:%02x:%02x:%02x:%02x",
                  event->mac[0], event->mac[1], event->mac[2],
                  event->mac[3], event->mac[4], event->mac[5]);
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
+        start_ap_services();
     }
 }
 
@@ -163,7 +192,11 @@ static void start_services(void)
 
     dns_server_start(ap_ip_info.ip, upstream_dns);
     captive_portal_start(cfg->ap_ip_str);
-    tollgate_api_start();
+    if (!s_ap_services_running) {
+        tollgate_api_start();
+        beacon_price_start();
+        market_init();
+    }
 
     relay_selector_init(&s_relay_selector);
     relay_selector_seed_from_config(&s_relay_selector);
@@ -198,7 +231,10 @@ static void stop_services(void)
     }
 
     captive_portal_stop();
-    tollgate_api_stop();
+    if (!s_ap_services_running) {
+        tollgate_api_stop();
+        beacon_price_stop();
+    }
     dns_server_stop();
     cvm_server_stop();
     sync_manager_stop(&s_sync_manager);
@@ -321,8 +357,7 @@ void app_main(void)
         ESP_LOGI(TAG, "STA configured for SSID: %s", tcfg2->networks[tcfg2->current_network].ssid);
     }
 
-    ESP_ERROR_CHECK(esp_wifi_set_country_code("DE", false));
-    ESP_LOGI(TAG, "WiFi country code set to DE (EU regulatory domain)");
+    ESP_ERROR_CHECK(esp_wifi_set_country_code("DE", true));
 
     ESP_ERROR_CHECK(esp_wifi_start());
 
@@ -341,5 +376,6 @@ void app_main(void)
         session_tick();
         tollgate_client_tick();
         lightning_payout_tick();
+        market_tick();
     }
 }

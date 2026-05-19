@@ -1,6 +1,7 @@
 #include "tollgate_client.h"
 #include "config.h"
 #include "nucula_wallet.h"
+#include "market.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
@@ -343,6 +344,19 @@ esp_err_t tollgate_client_on_sta_connected(const char *gw_ip_str)
     s_state = TG_CLIENT_PAID;
 
     ESP_LOGI(TAG, "upstream TollGate paid: %lldms allotment", (long long)allotment);
+
+    const market_t *mkt = market_get();
+    int cheapest = market_find_cheapest();
+    if (cheapest >= 0 && mkt->entries[cheapest].valid && mkt->entries[cheapest].ssid[0] != '\0') {
+        uint32_t upstream_step = s_discovery.step_size_ms > 0 ? s_discovery.step_size_ms : 1;
+        uint32_t upstream_eff = (uint32_t)s_discovery.price_per_step * 60000 / upstream_step;
+        uint32_t cheap_step = mkt->entries[cheapest].step_size > 0 ? mkt->entries[cheapest].step_size : 1;
+        uint32_t cheap_eff = (uint32_t)mkt->entries[cheapest].price_per_step * 60000 / cheap_step;
+        if (cheap_eff < upstream_eff) {
+            ESP_LOGW(TAG, "CHEAPER TOLLGATE AVAILABLE: %s at %lu sats/min vs upstream %lu sats/min",
+                     mkt->entries[cheapest].ssid, (unsigned long)cheap_eff, (unsigned long)upstream_eff);
+        }
+    }
     return ESP_OK;
 }
 

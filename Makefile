@@ -18,6 +18,16 @@ NPM ?= npm
 PYTHON ?= python3
 
 TOLLGATE_IP ?= 10.192.45.1
+TOLLGATE_B_IP ?= 10.185.47.1
+
+NSEC_A ?= 9af47906b45aca5e238390f3d03c8274e154198e81aa2095065627d1e61ca968
+NSEC_B ?= a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+MINT_URL ?= https://testnut.cashu.space
+BOARD_A_IP = 10.185.47.1
+BOARD_B_IP = 10.192.45.1
+SPIFFS_OFFSET = 0x410000
+SPIFFS_SIZE = 0xF0000
+SPIFFSGEN = $(IDF_PATH)/components/spiffs/spiffsgen.py
 
 BOARD ?= b
 
@@ -81,6 +91,7 @@ endef
 .PHONY: test-smoke test-api test-network test-portal test-payment
 .PHONY: test-reset-auth test-session-expiry test-dns-firewall test-cvm
 .PHONY: test-local-relay test-relay-nip11 test-cvm-roundtrip test-cross-board test-cvm-mcp
+.PHONY: test-market test-price-discovery
 .PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log bootstrap-config
 .PHONY: cvm-pubkey cvm-test-tool cvm-announce
@@ -310,6 +321,60 @@ test-cross-board:
 	$(call _require_board_lock)
 	@echo "=== Running cross-board payment test ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-cross-board.mjs
+
+test-market:
+	$(call _require_board_lock)
+	@echo "=== Running market endpoint test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-market.mjs
+
+test-price-discovery:
+	$(call _require_board_lock)
+	@echo "=== Running two-board price discovery test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) TOLLGATE_B_IP=$(TOLLGATE_B_IP) $(NODE) tests/integration/test-price-discovery.mjs
+
+# ──────────────────────────────────────────────
+# SPIFFS Config
+# ──────────────────────────────────────────────
+
+define write_board_config
+	$(call require_lock_$(1))
+	@echo "=== Writing SPIFFS config to Board $(1) ($(PORT_$(1))) ==="
+	@TMPDIR=$$(mktemp -d) && \
+	echo '{"nsec":"$(NSEC_$(1))","wifi_networks":[{"ssid":"$(WIFI_SSID)","password":"$(WIFI_PASSWORD)"}],"ap_password":"","mint_url":"$(MINT_URL)","price_per_step":21,"step_size_ms":60000,"client_enabled":false,"nostr_geohash":"u281w0dfz","nostr_relays":["wss://relay.damus.io","wss://nos.lol"],"nostr_publish_interval_s":21600}' > "$$TMPDIR/config.json" && \
+	echo "  Generating SPIFFS image..." && \
+	python3 $(SPIFFSGEN) --page-size 256 --obj-name-len 32 --use-magic --use-magic-len $(SPIFFS_SIZE) "$$TMPDIR" "$$TMPDIR/spiffs.bin" && \
+	echo "  Writing to flash..." && \
+	python3 -m esptool --port $(PORT_$(1)) --baud $(BAUD) write_flash $(SPIFFS_OFFSET) "$$TMPDIR/spiffs.bin" && \
+	rm -rf "$$TMPDIR" && \
+	echo "Config written."
+	@python3 -m esptool --port $(PORT_$(1)) run 2>/dev/null || true
+endef
+
+define write_board_config_ap_only
+	$(call require_lock_$(1))
+	@echo "=== Writing AP-only SPIFFS config to Board $(1) ($(PORT_$(1))) ==="
+	@TMPDIR=$$(mktemp -d) && \
+	echo '{"nsec":"$(NSEC_$(1))","wifi_networks":[],"ap_password":"","mint_url":"$(MINT_URL)","price_per_step":21,"step_size_ms":60000,"client_enabled":false,"nostr_geohash":"u281w0dfz","nostr_relays":["wss://relay.damus.io","wss://nos.lol"],"nostr_publish_interval_s":21600}' > "$$TMPDIR/config.json" && \
+	echo "  Generating SPIFFS image..." && \
+	python3 $(SPIFFSGEN) --page-size 256 --obj-name-len 32 --use-magic --use-magic-len $(SPIFFS_SIZE) "$$TMPDIR" "$$TMPDIR/spiffs.bin" && \
+	echo "  Writing to flash..." && \
+	python3 -m esptool --port $(PORT_$(1)) --baud $(BAUD) write_flash $(SPIFFS_OFFSET) "$$TMPDIR/spiffs.bin" && \
+	rm -rf "$$TMPDIR" && \
+	echo "AP-only config written."
+	@python3 -m esptool --port $(PORT_$(1)) run 2>/dev/null || true
+endef
+
+write-config-a:
+	$(call write_board_config,A)
+
+write-config-b:
+	$(call write_board_config,B)
+
+write-config-ap-only-a:
+	$(call write_board_config_ap_only,A)
+
+write-config-ap-only-b:
+	$(call write_board_config_ap_only,B)
 
 # ──────────────────────────────────────────────
 # Wallet

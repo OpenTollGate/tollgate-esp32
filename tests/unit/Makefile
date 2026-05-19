@@ -22,7 +22,7 @@ LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_display test_negentropy_adapter
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_display test_negentropy_adapter test_beacon_price test_market
 
 .PHONY: all test clean $(TESTS)
 
@@ -63,8 +63,8 @@ test_cashu: test_cashu.c $(REPO_ROOT)/main/cashu.c
 test_session: test_session.c $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c
 	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
 
-test_tollgate_client: test_tollgate_client.c
-	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+test_tollgate_client: test_tollgate_client.c $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c
+	$(CC) $(CFLAGS) -I $(REPO_ROOT)/main $< $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c -o $@ $(LDFLAGS)
 
 test_lnurl_pay: test_lnurl_pay.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
@@ -86,6 +86,12 @@ test_display: test_display.c
 
 test_negentropy_adapter: test_negentropy_adapter.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_beacon_price: test_beacon_price.c $(REPO_ROOT)/main/beacon_price.c
+	$(CC) $(CFLAGS) -I $(REPO_ROOT)/main $< $(REPO_ROOT)/main/beacon_price.c -o $@ $(LDFLAGS)
+
+test_market: test_market.c $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c
+	$(CC) $(CFLAGS) -I $(REPO_ROOT)/main $< $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c -o $@ $(LDFLAGS)
 
 clean:
 	rm -f $(TESTS) $(SECP256K1_OBJ)

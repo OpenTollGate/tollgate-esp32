@@ -21,6 +21,8 @@ idf_component_register(SRCS "tollgate_main.c"
                             "local_relay.c"
                             "relay_selector.c"
                             "sync_manager.c"
+                            "beacon_price.c"
+                            "market.c"
                     INCLUDE_DIRS "."
                     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_http_server
                              lwip json esp_http_client mbedtls esp-tls log spiffs

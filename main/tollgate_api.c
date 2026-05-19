@@ -4,7 +4,10 @@
 #include "session.h"
 #include "firewall.h"
 #include "nucula_wallet.h"
+#include "mint_health.h"
+#include "market.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "cJSON.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
@@ -471,6 +474,45 @@ static const httpd_uri_t uri_wallet = { .uri = "/wallet", .method = HTTP_GET, .h
 static const httpd_uri_t uri_wallet_swap = { .uri = "/wallet/swap", .method = HTTP_POST, .handler = api_post_wallet_swap };
 static const httpd_uri_t uri_wallet_send = { .uri = "/wallet/send", .method = HTTP_POST, .handler = api_post_wallet_send };
 
+static esp_err_t api_get_market(httpd_req_t *req)
+{
+    const market_t *mkt = market_get();
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "count", mkt->count);
+    cJSON_AddNumberToObject(root, "last_scan_s", (double)(mkt->last_scan_ms / 1000));
+
+    cJSON *entries = cJSON_CreateArray();
+    for (int i = 0; i < MARKET_MAX_ENTRIES; i++) {
+        if (!mkt->entries[i].valid) continue;
+        const market_entry_t *e = &mkt->entries[i];
+
+        cJSON *entry = cJSON_CreateObject();
+        char bssid_str[18];
+        snprintf(bssid_str, sizeof(bssid_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 e->bssid[0], e->bssid[1], e->bssid[2],
+                 e->bssid[3], e->bssid[4], e->bssid[5]);
+        cJSON_AddStringToObject(entry, "bssid", bssid_str);
+        cJSON_AddStringToObject(entry, "ssid", e->ssid[0] ? e->ssid : "unknown");
+        cJSON_AddNumberToObject(entry, "rssi", e->rssi);
+        cJSON_AddNumberToObject(entry, "price_per_step", e->price_per_step);
+        cJSON_AddNumberToObject(entry, "step_size", (double)e->step_size);
+        cJSON_AddStringToObject(entry, "metric", e->metric ? "bytes" : "milliseconds");
+        if (e->geohash[0]) cJSON_AddStringToObject(entry, "geohash", e->geohash);
+        cJSON_AddItemToArray(entries, entry);
+    }
+    cJSON_AddItemToObject(root, "entries", entries);
+
+    char *json = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, strlen(json));
+    cJSON_free(json);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static const httpd_uri_t uri_market = { .uri = "/market", .method = HTTP_GET, .handler = api_get_market };
+
 esp_err_t tollgate_api_start(void)
 {
     if (s_api_server) return ESP_OK;
@@ -494,6 +536,7 @@ esp_err_t tollgate_api_start(void)
     httpd_register_uri_handler(s_api_server, &uri_wallet);
     httpd_register_uri_handler(s_api_server, &uri_wallet_swap);
     httpd_register_uri_handler(s_api_server, &uri_wallet_send);
+    httpd_register_uri_handler(s_api_server, &uri_market);
 
     ESP_LOGI(TAG, "TollGate API started on port 2121");
     return ESP_OK;
