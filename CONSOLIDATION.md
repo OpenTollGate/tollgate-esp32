@@ -26,7 +26,7 @@ esp-miner (master)
 - [x] **1.3** Wire market config fields in config.c
 - [x] **1.4** Drop all 4 stashes (binaries only, content already in master)
 - [x] **1.5** Verify master builds: `idf.py build` — PASS
-- [x] **1.6** Verify unit tests pass: `make test-unit` — 16/16 PASS
+- [x] **1.6** Verify unit tests pass: `make test-unit` — 18/18 suites PASS
 - [x] **1.7** Commit + push
 
 ## Phase 2: Merge feature/display-fix (touch + WiFi setup UI)
@@ -36,7 +36,7 @@ esp-miner (master)
 - [x] **2.3** Resolve conflicts: took master for config/cvm/api/main, display-fix for display/axs15231b
 - [x] **2.4** Fix display_update() call signature (7 args), add tollgate_config_add_wifi()
 - [x] **2.5** Verify build: `idf.py build` — PASS
-- [x] **2.6** Verify unit tests: `make test-unit` — 16/16 PASS
+- [x] **2.6** Verify unit tests: `make test-unit` — 18/18 suites PASS
 - [x] **2.7** Commit + push
 
 ## Phase 3: Merge feature/miner-integration (full tollgate_core)
@@ -46,12 +46,16 @@ esp-miner (master)
 - [x] **3.3** Commit: "feat: upgrade tollgate_core to full version with mining + stratum"
 - [x] **3.4** Copy MINER_INTEGRATION_PLAN.md from feature branch
 - [x] **3.5** Verify build: `idf.py build` — PASS
-- [x] **3.6** Verify unit tests: `make test-unit` — 16/16 PASS
+- [x] **3.6** Verify unit tests: `make test-unit` — 18/18 suites PASS
 - [x] **3.7** Commit + push
 
 ## Phase 4: Restructure — Option B (main/ calls tollgate_core API)
 
 Move module logic from main/ into components/tollgate_core/, making main/ a thin shell.
+
+**Status: DEFERRED** — requires careful API design. Both main/ and tollgate_core currently have
+independent implementations of the same modules. The restructure would make main/ delegate to
+tollgate_core for all shared logic.
 
 - [ ] **4.1** Identify modules in main/ that have tollgate_core equivalents:
   - cashu.c/h → tollgate_core_cashu.c/h
@@ -72,6 +76,9 @@ Move module logic from main/ into components/tollgate_core/, making main/ a thin
 
 ## Phase 5: Wire up NerdQAxePlus via Component Manager
 
+**Status: DEFERRED** — depends on Phase 4. Currently uses a broken symlink
+(pointing to removed worktree).
+
 - [ ] **5.1** Create main/idf_component.yml in NerdQAxePlus:
   ```yaml
   dependencies:
@@ -85,18 +92,18 @@ Move module logic from main/ into components/tollgate_core/, making main/ a thin
 
 ## Phase 6: Delete Branches & Worktrees
 
-- [x] **6.1** Delete feature/tollgate-core-component branch (merged via Phase 1)
-- [x] **6.2** Delete backup/multi-mint-support-pre-rebase branch (fully in master)
-- [x] **6.3** Delete feature/display-fix branch (merged in Phase 2)
-- [x] **6.4** Delete feature/miner-integration branch (merged in Phase 3)
+- [x] **6.1** Delete feature/tollgate-core-component branch
+- [x] **6.2** Delete backup/multi-mint-support-pre-rebase branch
+- [x] **6.3** Delete feature/display-fix branch
+- [x] **6.4** Delete feature/miner-integration branch
 - [x] **6.5** Remove worktree: esp32-miner-integration/
 - [x] **6.6** Remove worktree: esp32-tollgate-arch/
 - [x] **6.7** Remove worktree: esp32-tollgate-display/
-- [x] **6.8** Clean up test binaries from git tracking: `git rm --cached`
+- [x] **6.8** Clean up test binaries from git tracking: `git rm --cached` (20 binaries)
 - [x] **6.9** Refresh backup bundles
 - [x] **6.10** Push to orangesync + origin
 
-## Phase 7: Update esp-miner (optional, after consolidation)
+## Phase 7: Update esp-miner (optional, after Phase 4)
 
 - [ ] **7.1** Switch esp-miner from flat-file modules to tollgate_core via Component Manager
 - [ ] **7.2** Create main/idf_component.yml with git dependency on esp32-tollgate
@@ -107,44 +114,68 @@ Move module logic from main/ into components/tollgate_core/, making main/ a thin
 
 ---
 
-## Current State Summary
+## Current State
 
 ### Repos
 
 | Repo | Path | Branch | HEAD | Status |
 |------|------|--------|------|--------|
-| esp32-tollgate | /home/c03rad0r/esp32-tollgate | master | 897a8d9 | Canonical source |
-| esp-miner-nerdqaxeplus | /home/c03rad0r/esp-miner-nerdqaxeplus | develop | 588c9f67 | Consumer |
-| esp-miner | /home/c03rad0r/esp-miner | master | a8dc494 | Consumer (Phase 1 done) |
+| esp32-tollgate | /home/c03rad0r/esp32-tollgate | master | 32e1bfd | **Consolidated** — build + tests pass |
+| esp-miner-nerdqaxeplus | /home/c03rad0r/esp-miner-nerdqaxeplus | develop | 588c9f67 | Consumer — broken symlink needs fix |
+| esp-miner | /home/c03rad0r/esp-miner | master | a8dc494 | Consumer — Phase 1 flat-file done |
 
-### Branches (esp32-tollgate)
+### esp32-tollgate: Clean
 
-| Branch | Worktree | Merged? | Unique Content | Action |
-|--------|----------|---------|----------------|--------|
-| master | esp32-tollgate | — | Current production code | Keep |
-| feature/display-fix | esp32-tollgate-display | NO | touch.c/h, keyboard.c/h, wifi_setup.c/h, 4 unit tests, E2E test, WiFi QR, error state | Merge (Phase 2) |
-| feature/miner-integration | esp32-miner-integration | PARTIAL | Full tollgate_core (mining+stratum+extern C+22 callbacks), docs | Merge (Phase 3) |
-| feature/tollgate-core-component | esp32-tollgate-arch | YES (be4788b) | None — superseded by miner-integration | Delete (Phase 6) |
-| backup/multi-mint-support-pre-rebase | (none) | YES | None | Delete (Phase 6) |
+- **1 branch** (master), **0 worktrees**, **0 stashes**
+- **Build**: `idf.py build` — PASS (2.9MB firmware)
+- **Unit tests**: `make test-unit` — 18/18 suites, 400+ assertions, all PASS
+- **Pushed to**: orangesync (git.orangesync.tech) + origin (relay.ngit.dev)
 
-### Stashes (esp32-tollgate)
+### Modules in main/ vs tollgate_core
 
-| Stash | Content | Action |
-|-------|---------|--------|
-| stash@{0} | Recompiled test binaries (no source changes) | Drop |
-| stash@{1} | AP-only services, market config wiring, sta_connecting guard | Apply (Phase 1) |
-| stash@{2} | Recompiled test binaries (no source changes) | Drop |
-| stash@{3} | Recompiled test binaries (no source changes) | Drop |
+| main/ module | tollgate_core equivalent | Duplicated? |
+|-------------|------------------------|-------------|
+| cashu.c/h | tollgate_core_cashu.c/h | Yes — both exist |
+| dns_server.c/h | tollgate_core_dns.c/h | Yes |
+| firewall.c/h | tollgate_core_firewall.c/h | Yes |
+| session.c/h | tollgate_core_session.c/h | Yes |
+| mining_payment.c/h | tollgate_core_mining.c/h | Yes |
+| stratum_proxy.c/h | tollgate_core_stratum_proxy.c/h | Yes |
+| config.c/h | — | No (unique to esp32-tollgate) |
+| identity.c/h | — | No |
+| display.c/h | — | No |
+| touch.c/h | — | No (new from display-fix) |
+| keyboard.c/h | — | No (new from display-fix) |
+| wifi_setup.c/h | — | No (new from display-fix) |
+| captive_portal.c/h | — | No |
+| tollgate_api.c/h | — | No |
+| tollgate_client.c/h | — | No |
+| cvm_server.c/h | — | No |
+| local_relay.c/h | — | No |
+| wifistr.c/h | — | No |
+| beacon_price.c/h | — | No |
+| market.c/h | — | No |
+| mint_health.c/h | — | No |
+| lightning_payout.c/h | — | No |
+| mcp_handler.c/h | — | No |
+| nostr_event.c/h | — | No |
+| geohash.c/h | — | No |
+| lnurl_pay.c/h | — | No |
+| nip04.c/h | — | No |
+| font.c/h | — | No |
+| negentropy_adapter.c | — | No |
+| stratum_client.c/h | — | No |
+| sw_miner.c/h | — | No |
+| asic_miner.c/h | — | No |
+| relay_selector.c/h | — | No |
+| sync_manager.c/h | — | No |
 
-### Tollgate Core Divergence
+### Known Issues
 
-| File | Master (old skeleton) | Miner-integration (full) |
-|------|----------------------|--------------------------|
-| tollgate_core.h | 34 lines, no extern C, no mining API | 48 lines, extern C, 5 mining functions |
-| tollgate_platform.h | 17 lines, 7 callbacks | 37 lines, extern C, 22 callbacks |
-| CMakeLists.txt | 9 source files (no mining/stratum) | 11 source files (mining+stratum) |
-| tollgate_core_firewall.c | unconditional NAPT | conditional CONFIG_LWIP_IPV4_NAPT |
-| tollgate_core_mining.c | MISSING | Present (168 lines) |
-| tollgate_core_mining.h | MISSING | Present (35 lines) |
-| tollgate_core_stratum_proxy.c | MISSING | Present (160 lines) |
-| tollgate_core_stratum_proxy.h | MISSING | Present (39 lines) |
+1. **NerdQAxePlus broken symlink** — `esp-miner-nerdqaxeplus/components/tollgate_core` points to
+   removed worktree `esp32-miner-integration`. Needs Phase 5 fix.
+2. **esp-miner flat-file duplication** — has its own copy of cashu/dns/firewall/session in main/,
+   independent from tollgate_core. Needs Phase 7 to consolidate.
+3. **tollgate_core not yet used by main/** — main/ still calls its own modules directly.
+   tollgate_core exists as a component but is only linked, not called (except by tollgate_platform.c).
+   Phase 4 would make main/ delegate to tollgate_core.
