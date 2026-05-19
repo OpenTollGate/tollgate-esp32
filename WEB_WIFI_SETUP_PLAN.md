@@ -74,8 +74,21 @@ WiFi setup.
   - Added `s_total_retries` counter (MAX_TOTAL_RETRIES=10)
   - Transitions to DISPLAY_ERROR after all retries exhausted
 - [x] WiFi QR code visible on BOOT and ERROR screens (hardware verified)
-- [ ] Test `/setup` page from phone browser
 - [x] Write integration test `tests/integration/wifi_setup.mjs`
+- [x] Pushed to `ngit.orangesync.tech` (commits `aa58b47`..`402f4f2`)
+
+### Phase 5: Playwright E2E for `/setup` page
+- [ ] Plan test scenarios for `/setup` page (requires unconfigured board)
+- [ ] Write `tests/e2e/wifi-setup.spec.mjs`
+  - Test: `/setup` returns HTML with scan button when `network_count == 0`
+  - Test: `/wifi/scan` returns JSON array of APs
+  - Test: `/wifi/connect` rejects invalid JSON
+  - Test: `/wifi/connect` rejects missing SSID
+  - Test: `/wifi/status` returns `{connected, ip, ssid}`
+  - Test: `/setup` redirects to `/` when WiFi already configured
+  - Test: full flow — scan → select AP → enter password → connect
+- [ ] Add `make test-wifi-setup` target to Makefile
+- [ ] Run E2E test against live board with erased SPIFFS
 
 ## Commits
 
@@ -84,3 +97,4 @@ WiFi setup.
 | `aa58b47` | feat: web-based WiFi setup via captive portal, portrait-only display |
 | `2e65cdf` | fix: transition display to ERROR after WiFi retries exhausted |
 | `cf4ac1b` | feat: add WiFi QR code to BOOT and ERROR screens |
+| `402f4f2` | docs: update web WiFi setup plan checklist with progress |
