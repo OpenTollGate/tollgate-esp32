@@ -55,38 +55,44 @@ ESP-Miner-NerdQAxePlus (fork of shufps/ESP-Miner-NerdQAxePlus)
 
 ## Plan Checklist
 
-### Step 1: Fix Master Build — COMPLETE
+### Step 1: Fix Master Build — COMPLETE (commit `62bce81`)
 
-- [x] Create `components/negentropy/CMakeLists.txt` (register C++ wrapper as ESP-IDF component)
-- [x] Fix `main/CMakeLists.txt` (remove `esp_littlefs`, `esp_timer`, `tcp_transport` from REQUIRES)
-- [x] `idf.py build` passes on master
+- [x] Create `components/negentropy_lib/` wrapper component (mbedTLS SHA-256 compat for negentropy submodule)
+- [x] Fix `main/CMakeLists.txt` (remove `esp_littlefs`, `esp_timer`; keep `tcp_transport`)
+- [x] Fix `config.c` duplicate seed_relays/sync_interval/fallback_interval blocks
+- [x] Remove leftover merge conflict marker in `tollgate_api.c`
+- [x] `idf.py build` passes on master (1.3MB, 68% free)
 - [x] `make test-unit` passes (19 test suites, 344+ assertions)
-- [x] Commit + push
+- [x] Committed (push failed — nostr relay state event rejection)
 
-### Step 2: Create Miner Integration Branch + Worktree
+### Step 2: Create Miner Integration Branch + Worktree — COMPLETE
 
-- [ ] Create `feature/miner-integration` branch from master
-- [ ] Create git worktree at `/home/c03rad0r/esp32-miner-integration`
-- [ ] Verify worktree builds and tests pass (same as master)
+- [x] Create `feature/miner-integration` branch from master
+- [x] Create git worktree at `/home/c03rad0r/esp32-miner-integration`
+- [x] Initialize git submodules in worktree (esp_littlefs, negentropy, nucula_src)
+- [x] Verify worktree builds and tests pass
 
-### Step 3: Cherry-pick tollgate_core Skeleton from Arch Branch
+### Step 3: Cherry-pick tollgate_core Skeleton from Arch Branch — COMPLETE
 
-- [ ] Copy `components/tollgate_core/CMakeLists.txt` from `feature/tollgate-core-component`
-- [ ] Copy `components/tollgate_core/idf_component.yml` from `feature/tollgate-core-component`
-- [ ] Copy `components/tollgate_core/include/tollgate_core.h` from `feature/tollgate-core-component`
-- [ ] Copy `components/tollgate_core/include/tollgate_platform.h` from `feature/tollgate-core-component`
-- [ ] Extend `tollgate_platform.h` with mining callbacks (get_stratum_url, on_share_accepted, etc.)
-- [ ] Extend `tollgate_core.h` with mining API (tollgate_core_start_stratum_proxy, etc.)
+- [x] Copy `components/tollgate_core/CMakeLists.txt` from `feature/tollgate-core-component`
+- [x] Copy `components/tollgate_core/idf_component.yml` from `feature/tollgate-core-component`
+- [x] Copy `components/tollgate_core/include/tollgate_core.h` from `feature/tollgate-core-component`
+- [x] Copy `components/tollgate_core/include/tollgate_platform.h` from `feature/tollgate-core-component`
+- [x] Extend `tollgate_platform.h` with mining callbacks (get_stratum_url, on_share_accepted, etc.)
+- [x] Extend `tollgate_core.h` with mining API (tollgate_core_stratum_proxy_start, etc.)
 
-### Step 4: Populate tollgate_core with Current Master Modules
+### Step 4: Populate tollgate_core with Current Master Modules — COMPLETE (commit `6a61810`)
 
-- [ ] Copy + rename `main/cashu.c` → `components/tollgate_core/src/tollgate_core_cashu.c`
-- [ ] Copy + rename `main/dns_server.c` → `components/tollgate_core/src/tollgate_core_dns.c`
-- [ ] Copy + rename `main/firewall.c` → `components/tollgate_core/src/tollgate_core_firewall.c`
-- [ ] Copy + rename `main/session.c` → `components/tollgate_core/src/tollgate_core_session.c`
-- [ ] Copy + rename `main/mining_payment.c` → `components/tollgate_core/src/tollgate_core_mining.c`
-- [ ] Copy + rename `main/stratum_proxy.c` → `components/tollgate_core/src/tollgate_core_stratum_proxy.c`
-- [ ] Implement `tollgate_core.c` — wire all sub-modules via platform callbacks
+- [x] Copy from arch branch: `tollgate_core_cashu.c/h` (Cashu token decode/verify)
+- [x] Copy from arch branch: `tollgate_core_dns.c/h` (per-client DNS hijack/forward)
+- [x] Copy from arch branch: `tollgate_core_firewall.c/h` (per-client NAT filter)
+- [x] Copy from arch branch: `tollgate_core_session.c/h` (session lifecycle)
+- [x] Copy from arch branch: `tollgate_core.c` (orchestrator — init, payment, tick, owner)
+- [x] Create `tollgate_core_mining.c/h` (from mining_payment.c — hashprice, share validation, client stats)
+- [x] Create `tollgate_core_stratum_proxy.c/h` (from stratum_proxy.c — local SV1 TCP server)
+- [x] Fix nucula_src `save_proofs` visibility (public)
+- [x] `idf.py build` passes
+- [x] `make test-unit` passes
 - [ ] Update `components/tollgate_core/CMakeLists.txt` with all SRCS and REQUIRES
 
 ### Step 5: Wire tollgate_core into Standalone Build
