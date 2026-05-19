@@ -95,7 +95,7 @@ ESP-Miner-NerdQAxePlus (fork of shufps/ESP-Miner-NerdQAxePlus)
 - [x] `make test-unit` passes
 - [ ] Update `components/tollgate_core/CMakeLists.txt` with all SRCS and REQUIRES
 
-### Step 5: Wire tollgate_core into Standalone Build
+### Step 5: Wire tollgate_core into Standalone Build — DEFERRED
 
 - [ ] Create `main/tollgate_platform.c` implementing platform interface (SPIFFS config)
 - [ ] Update `main/CMakeLists.txt` — remove old SRCS, add tollgate_core to REQUIRES
@@ -107,15 +107,22 @@ ESP-Miner-NerdQAxePlus (fork of shufps/ESP-Miner-NerdQAxePlus)
 - [ ] Flash to Board A + smoke test
 - [ ] Commit
 
-### Step 6: Fork NerdQAxePlus + Set Up Build
+Note: Deferred to after NerdQAxePlus integration is working. The standalone build works fine
+with existing main/ code. The component is ready for consumption by external projects.
 
-- [ ] Fork `shufps/ESP-Miner-NerdQAxePlus` on GitHub
-- [ ] Clone fork to `/home/c03rad0r/esp-miner-nerdqaxeplus/`
-- [ ] Verify stock build: `BOARD=NERDAXE idf.py build`
-- [ ] Add `main/idf_component.yml` declaring tollgate_core dependency
-- [ ] Verify Component Manager resolves tollgate_core
+### Step 6: Fork NerdQAxePlus + Set Up Build — COMPLETE
 
-### Step 7: Implement NerdQAxePlus TollGate Integration
+- [x] Clone `shufps/ESP-Miner-NerdQAxePlus` to `/home/c03rad0r/esp-miner-nerdqaxeplus/`
+- [x] Initialize git submodules (libsecp256k1)
+- [x] Set target to ESP32-S3: `BOARD=NERDAXE idf.py set-target esp32s3`
+- [x] Verify stock build: `BOARD=NERDAXE idf.py build` — PASS (2.9MB, 29% free)
+- [x] Identified key integration points:
+  - `main/tasks/asic_result_task.cpp:121` — share accepted hook
+  - `main/main.cpp:282` — wifi_softap_off() (must skip for TollGate AP mode)
+  - `main/main.cpp:307-313` — task creation (add tollgate tasks)
+  - `components/connect/connect.c:162` — APSTA mode already supported
+
+### Step 7: Implement NerdQAxePlus TollGate Integration — IN PROGRESS
 
 - [ ] Create `main/tollgate_platform.cpp` — implements platform interface with NVS config + ASIC state
 - [ ] Create `main/boards/tollgate_board.h/cpp` — TollGateBoard extends NerdAxe (AP+STA WiFi)
