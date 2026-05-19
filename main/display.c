@@ -184,12 +184,24 @@ static void render_boot_screen(void) {
     int screen_w = axs15231b_get_width();
     axs15231b_fill_screen(COLOR_BG);
 
+    char qr_text[320];
+    build_wifi_qr_string(qr_text, sizeof(qr_text));
+    render_qr_at(qr_text, 0, 10, screen_w, 220);
+
     const char *title = "TollGate";
     int title_w = strlen(title) * 8 * 2;
-    display_render_text((screen_w - title_w) / 2, 200, title, COLOR_CYAN, COLOR_BG, 2);
+    display_render_text((screen_w - title_w) / 2, 240, title, COLOR_CYAN, COLOR_BG, 2);
 
     int status_w = strlen(s_wifi_status) * 8;
-    display_render_text((screen_w - status_w) / 2, 228, s_wifi_status, COLOR_YELLOW, COLOR_BG, 1);
+    display_render_text((screen_w - status_w) / 2, 268, s_wifi_status, COLOR_YELLOW, COLOR_BG, 1);
+
+    snprintf(qr_text, sizeof(qr_text), "SSID: %s", s_ap_ssid);
+    int ssid_w = strlen(qr_text) * 8;
+    display_render_text((screen_w - ssid_w) / 2, 295, qr_text, COLOR_DIM, COLOR_BG, 1);
+
+    const char *hint = "Scan QR to connect";
+    int hint_w = strlen(hint) * 8;
+    display_render_text((screen_w - hint_w) / 2, 315, hint, COLOR_DIM, COLOR_BG, 1);
 
     axs15231b_flush();
 }
@@ -322,30 +334,43 @@ static void render_error_screen(void) {
     int screen_w = axs15231b_get_width();
     axs15231b_fill_screen(COLOR_BG);
 
-    axs15231b_fill_rect(0, 190, screen_w, 50, COLOR_RED);
+    char qr_text[320];
+    build_wifi_qr_string(qr_text, sizeof(qr_text));
+    render_qr_at(qr_text, 0, 5, screen_w, 150);
+
+    axs15231b_fill_rect(0, 160, screen_w, 36, COLOR_RED);
     const char *msg = "NO UPSTREAM";
     int msg_w = strlen(msg) * 8 * 2;
-    display_render_text((screen_w - msg_w) / 2, 202, msg, COLOR_WHITE, COLOR_RED, 2);
+    display_render_text((screen_w - msg_w) / 2, 170, msg, COLOR_WHITE, COLOR_RED, 2);
 
     char line[64];
     int lw;
+    int y = 210;
 
     const char *l1 = "Internet unavailable";
     lw = strlen(l1) * 8;
-    display_render_text((screen_w - lw) / 2, 270, l1, COLOR_WHITE, COLOR_BG, 1);
-
-    snprintf(line, sizeof(line), "SSID: %s", s_ap_ssid);
-    lw = strlen(line) * 8;
-    display_render_text((screen_w - lw) / 2, 300, line, COLOR_DIM, COLOR_BG, 1);
-
-    const tollgate_config_t *cfg = tollgate_config_get();
-    snprintf(line, sizeof(line), "Setup: http://%s/setup", cfg->ap_ip_str);
-    lw = strlen(line) * 8;
-    display_render_text((screen_w - lw) / 2, 330, line, COLOR_YELLOW, COLOR_BG, 1);
+    display_render_text((screen_w - lw) / 2, y, l1, COLOR_WHITE, COLOR_BG, 1);
+    y += 20;
 
     const char *l3 = "AP still active";
     lw = strlen(l3) * 8;
-    display_render_text((screen_w - lw) / 2, 360, l3, COLOR_GREEN, COLOR_BG, 1);
+    display_render_text((screen_w - lw) / 2, y, l3, COLOR_GREEN, COLOR_BG, 1);
+    y += 20;
+
+    snprintf(line, sizeof(line), "SSID: %s", s_ap_ssid);
+    lw = strlen(line) * 8;
+    display_render_text((screen_w - lw) / 2, y, line, COLOR_DIM, COLOR_BG, 1);
+    y += 20;
+
+    const tollgate_config_t *cfg = tollgate_config_get();
+    snprintf(line, sizeof(line), "http://%s/setup", cfg->ap_ip_str);
+    lw = strlen(line) * 8;
+    display_render_text((screen_w - lw) / 2, y, line, COLOR_YELLOW, COLOR_BG, 1);
+    y += 16;
+
+    const char *hint = "Scan QR to connect";
+    lw = strlen(hint) * 8;
+    display_render_text((screen_w - lw) / 2, y, hint, COLOR_DIM, COLOR_BG, 1);
 
     axs15231b_flush();
 }
