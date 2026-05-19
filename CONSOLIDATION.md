@@ -21,41 +21,33 @@ esp-miner (master)
 
 ## Phase 1: Preserve Uncommitted Work
 
-- [ ] **1.1** Apply stash@{1} to master (AP-only services, market config wiring, sta_connecting guard)
-- [ ] **1.2** Commit: "feat: AP-only services startup + market config wiring (from stash)"
-- [ ] **1.3** Drop stashes 0, 2, 3 (compiled binaries only, no source)
-- [ ] **1.4** Verify master builds: `idf.py build`
-- [ ] **1.5** Verify unit tests pass: `make test-unit`
-- [ ] **1.6** Commit + push
+- [x] **1.1** Revert broken merge (be4788b) that gutted config.c/tollgate_main.c/tollgate_api.c
+- [x] **1.2** Restore tollgate_core component + tollgate_platform.c + docs from merge
+- [x] **1.3** Wire market config fields in config.c
+- [x] **1.4** Drop all 4 stashes (binaries only, content already in master)
+- [x] **1.5** Verify master builds: `idf.py build` — PASS
+- [x] **1.6** Verify unit tests pass: `make test-unit` — 16/16 PASS
+- [x] **1.7** Commit + push
 
 ## Phase 2: Merge feature/display-fix (touch + WiFi setup UI)
 
-- [ ] **2.1** Verify feature/display-fix has no uncommitted source changes (only binaries — confirmed)
-- [ ] **2.2** Squash-merge feature/display-fix into master
-- [ ] **2.3** Resolve any conflicts (display.c/font.c may conflict with master versions)
-- [ ] **2.4** Verify build: `idf.py build`
-- [ ] **2.5** Verify unit tests: `make test-unit` (should pick up test_touch, test_keyboard, test_wifi_setup)
-- [ ] **2.6** Commit + push
+- [x] **2.1** Verify feature/display-fix has no uncommitted source changes (only binaries — confirmed)
+- [x] **2.2** Squash-merge feature/display-fix into master
+- [x] **2.3** Resolve conflicts: took master for config/cvm/api/main, display-fix for display/axs15231b
+- [x] **2.4** Fix display_update() call signature (7 args), add tollgate_config_add_wifi()
+- [x] **2.5** Verify build: `idf.py build` — PASS
+- [x] **2.6** Verify unit tests: `make test-unit` — 16/16 PASS
+- [x] **2.7** Commit + push
 
 ## Phase 3: Merge feature/miner-integration (full tollgate_core)
 
-This is the critical merge. Master has the OLD tollgate_core skeleton (9 files, 7 callbacks).
-feature/miner-integration has the FULL version (13 files, 22 callbacks, extern C, mining + stratum).
-We need to take the miner-integration version of tollgate_core entirely.
-
-- [ ] **3.1** Verify feature/miner-integration has no uncommitted source changes (only binaries — confirmed)
-- [ ] **3.2** Checkout feature/miner-integration version of tollgate_core into master:
-  - Replace `components/tollgate_core/` entirely with the miner-integration version
-  - This adds: tollgate_core_mining.c/h, tollgate_core_stratum_proxy.c/h
-  - This updates: tollgate_core.h (extern C + 5 new mining API functions)
-  - This updates: tollgate_platform.h (extern C + 14 new platform callbacks for mining/stratum)
-  - This updates: tollgate_core_firewall.c (conditional NAPT)
-  - This updates: CMakeLists.txt (mining + stratum source files)
-- [ ] **3.3** Commit: "feat: upgrade tollgate_core to full version with mining + stratum + extern C"
-- [ ] **3.4** Merge remaining docs from feature/miner-integration (REMOTES.md, MINER_INTEGRATION_PLAN.md)
-- [ ] **3.5** Verify build: `idf.py build`
-- [ ] **3.6** Verify unit tests: `make test-unit`
-- [ ] **3.7** Commit + push
+- [x] **3.1** Verify feature/miner-integration has no uncommitted source changes (only binaries — confirmed)
+- [x] **3.2** Replace tollgate_core with full version (13 files, 22 callbacks, mining + stratum + extern C)
+- [x] **3.3** Commit: "feat: upgrade tollgate_core to full version with mining + stratum"
+- [x] **3.4** Copy MINER_INTEGRATION_PLAN.md from feature branch
+- [x] **3.5** Verify build: `idf.py build` — PASS
+- [x] **3.6** Verify unit tests: `make test-unit` — 16/16 PASS
+- [x] **3.7** Commit + push
 
 ## Phase 4: Restructure — Option B (main/ calls tollgate_core API)
 
@@ -93,16 +85,16 @@ Move module logic from main/ into components/tollgate_core/, making main/ a thin
 
 ## Phase 6: Delete Branches & Worktrees
 
-- [ ] **6.1** Delete feature/tollgate-core-component branch (merged in commit be4788b)
-- [ ] **6.2** Delete backup/multi-mint-support-pre-rebase branch (fully in master)
-- [ ] **6.3** Delete feature/display-fix branch (merged in Phase 2)
-- [ ] **6.4** Delete feature/miner-integration branch (merged in Phase 3)
-- [ ] **6.5** Remove worktree: esp32-miner-integration/
-- [ ] **6.6** Remove worktree: esp32-tollgate-arch/
-- [ ] **6.7** Remove worktree: esp32-tollgate-display/
-- [ ] **6.8** Clean up test binaries from git tracking: `git rm --cached tests/unit/test_*` (keep in .gitignore)
-- [ ] **6.9** Refresh backup bundles
-- [ ] **6.10** Push everything
+- [x] **6.1** Delete feature/tollgate-core-component branch (merged via Phase 1)
+- [x] **6.2** Delete backup/multi-mint-support-pre-rebase branch (fully in master)
+- [x] **6.3** Delete feature/display-fix branch (merged in Phase 2)
+- [x] **6.4** Delete feature/miner-integration branch (merged in Phase 3)
+- [x] **6.5** Remove worktree: esp32-miner-integration/
+- [x] **6.6** Remove worktree: esp32-tollgate-arch/
+- [x] **6.7** Remove worktree: esp32-tollgate-display/
+- [x] **6.8** Clean up test binaries from git tracking: `git rm --cached`
+- [x] **6.9** Refresh backup bundles
+- [x] **6.10** Push to orangesync + origin
 
 ## Phase 7: Update esp-miner (optional, after consolidation)
 
