@@ -47,20 +47,20 @@ No direct esptool.py, curl, or nmcli against hardware without locks.
 
 ## Phase 0: Fix Stale Infrastructure
 
-- [ ] **0.1** Generate random nsec for Board C, store all 3 nsecs in esp32-tollgate/.env
-- [ ] **0.2** Derive Board C identity (SSID, IP, MACs) from nsec via HMAC-SHA512
-- [ ] **0.3** Update physical-router-test-automation/esp32/boards.env:
+- [x] **0.1** Generate random nsec for Board C, store all 3 nsecs in esp32-tollgate/.env
+- [x] **0.2** Derive Board C identity (SSID, IP, MACs) from nsec via HMAC-SHA512
+- [x] **0.3** Update physical-router-test-automation/esp32/boards.env:
   - FIRMWARE_DIR → /home/c03rad0r/esp32-tollgate
   - ARCH_FIRMWARE_DIR → /home/c03rad0r/esp32-tollgate
   - RELAY_FIRMWARE_DIR → /home/c03rad0r/esp32-tollgate
   - Add BOARD_C_SSID, BOARD_C_IP, BOARD_C_UUID
   - Update ARCH_IP/ARCH_SSID to Board C's derived values
-- [ ] **0.4** Update SPIFFS generation to read nsec from .env per board
-- [ ] **0.5** Fix NerdQAxePlus broken symlink → idf_component.yml with override_path
-- [ ] **0.6** Remove hardcoded include from NerdQAxePlus main/CMakeLists.txt
-- [ ] **0.7** Verify NerdQAxePlus builds: BOARD=NERDAXE TOLLGATE=1 idf.py build
-- [ ] **0.8** Verify esp32-tollgate builds: idf.py build
-- [ ] **0.9** Verify unit tests pass: make test-unit
+- [x] **0.4** Update SPIFFS generation to read nsec from .env per board
+- [x] **0.5** Fix NerdQAxePlus broken symlink → idf_component.yml with override_path
+- [x] **0.6** Remove hardcoded include from NerdQAxePlus main/CMakeLists.txt
+- [x] **0.7** Verify NerdQAxePlus builds: BOARD=NERDAXE TOLLGATE=1 idf.py build
+- [x] **0.8** Verify esp32-tollgate builds: idf.py build
+- [x] **0.9** Verify unit tests pass: make test-unit
 - [ ] **0.10** Commit + push
 
 ## Phase 1: Baseline Hardware Tests
