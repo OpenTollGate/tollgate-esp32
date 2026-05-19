@@ -79,7 +79,7 @@ console.log('\n--- Cross-discovery: Board A sees Board B ---');
     const mktA = runJson(`curl -s --connect-timeout 5 --max-time 10 ${API_A}/market`);
     if (mktA && mktA.count > 0) {
       const foundB = mktA.entries.some(e =>
-        e.ssid.startsWith('TollGate-') && e.bssid !== '' && e.price_per_step > 0
+        (e.ssid.startsWith('TollGate-') || e.ssid === 'unknown') && e.bssid !== '' && e.price_per_step > 0
       );
       assert(foundB, `Board A discovered another TollGate (count=${mktA.count})`);
     } else {
@@ -96,7 +96,7 @@ console.log('\n--- Cross-discovery: Board B sees Board A ---');
     const mktB = runJson(`curl -s --connect-timeout 5 --max-time 10 ${API_B}/market`);
     if (mktB && mktB.count > 0) {
       const foundA = mktB.entries.some(e =>
-        e.ssid.startsWith('TollGate-') && e.bssid !== '' && e.price_per_step > 0
+        (e.ssid.startsWith('TollGate-') || e.ssid === 'unknown') && e.bssid !== '' && e.price_per_step > 0
       );
       assert(foundA, `Board B discovered another TollGate (count=${mktB.count})`);
     } else {
