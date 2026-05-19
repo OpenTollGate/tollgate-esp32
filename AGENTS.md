@@ -91,13 +91,17 @@ nvs_flash_init()
   "price_per_step": 21,
   "step_size_ms": 60000,
   "nostr_geohash": "u281w0dfz",
-  "nostr_relays": ["wss://relay.damus.io", "wss://nos.lol"],
+  "nostr_relays": ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.anzenkodo.workers.dev", "wss://nostr.koning-degraaf.nl"],
   "nostr_publish_interval_s": 21600,
   "nostr_seed_relays": [
     "wss://relay.orangesync.tech",
     "wss://relay.damus.io",
     "wss://nos.lol",
-    "wss://relay.nostr.band"
+    "wss://relay.nostr.band",
+    "wss://relay.anzenkodo.workers.dev",
+    "wss://nostr.koning-degraaf.nl",
+    "wss://knostr.neutrine.com",
+    "wss://nostr.einundzwanzig.space"
   ],
   "nostr_sync_interval_s": 1800,
   "nostr_fallback_sync_interval_s": 21600,
@@ -214,8 +218,8 @@ make flash-b        # flash to Board B
 ## External Dependencies
 
 - **Test mint:** `testnut.cashu.space` — auto-pays lightning invoices
-- **Nostr relays:** `relay.damus.io`, `nos.lol` — for wifistr events
-- **Seed relays:** `relay.orangesync.tech` (NIP-77), `relay.damus.io`, `nos.lol`, `relay.nostr.band` — for relay selection and sync
+- **Nostr relays:** `relay.damus.io`, `nos.lol`, `relay.anzenkodo.workers.dev`, `nostr.koning-degraaf.nl` — for wifistr events
+- **Seed relays:** `relay.orangesync.tech` (NIP-77), `relay.damus.io`, `nos.lol`, `relay.nostr.band`, `relay.anzenkodo.workers.dev`, `nostr.koning-degraaf.nl`, `knostr.neutrine.com`, `nostr.einundzwanzig.space` — for relay selection and sync
 - **CVM relay:** `relay.primal.net` — for ContextVM kind 25910 events and CEP-6 announcements
 - **Local relay:** Port 4869, LittleFS 4MB partition at 0x500000, max 5000 events, 21-day TTL
 - **Nutshell CLI:** `cashu` command for token generation
