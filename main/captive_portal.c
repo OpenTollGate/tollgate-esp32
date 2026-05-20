@@ -17,6 +17,8 @@
 #include <stdio.h>
 
 static const char *TAG = "captive_portal";
+static bool s_start_called = false;
+static esp_err_t s_start_result = ESP_OK;
 static httpd_handle_t s_server = NULL;
 static char s_ap_ip_str[16] = "10.0.0.1";
 
@@ -707,16 +709,18 @@ static const httpd_uri_t uri_wifi_status = { .uri = "/wifi/status", .method = HT
 
 esp_err_t captive_portal_start(const char *ap_ip_str)
 {
+    s_start_called = true;
     if (s_server) return ESP_OK;
+    if (!ap_ip_str) return ESP_ERR_INVALID_ARG;
     strncpy(s_ap_ip_str, ap_ip_str, sizeof(s_ap_ip_str) - 1);
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = 20;
 
-    esp_err_t ret = httpd_start(&s_server, &config);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start HTTP server: %s", esp_err_to_name(ret));
-        return ret;
+    s_start_result = httpd_start(&s_server, &config);
+    if (s_start_result != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start HTTP server on port %d: %s", config.server_port, esp_err_to_name(s_start_result));
+        return s_start_result;
     }
 
     httpd_register_uri_handler(s_server, &uri_portal);
@@ -733,18 +737,22 @@ esp_err_t captive_portal_start(const char *ap_ip_str)
     httpd_register_uri_handler(s_server, &uri_connecttest);
     httpd_register_uri_handler(s_server, &uri_wpad);
     httpd_register_uri_handler(s_server, &uri_setup);
-    ret = httpd_register_uri_handler(s_server, &uri_wifi_scan);
-    ESP_LOGI(TAG, "Registered /wifi/scan: %s", esp_err_to_name(ret));
-    ret = httpd_register_uri_handler(s_server, &uri_wifi_connect);
-    ESP_LOGI(TAG, "Registered /wifi/connect: %s", esp_err_to_name(ret));
-    ret = httpd_register_uri_handler(s_server, &uri_wifi_status);
-    ESP_LOGI(TAG, "Registered /wifi/status: %s", esp_err_to_name(ret));
+    esp_err_t reg_ret;
+    reg_ret = httpd_register_uri_handler(s_server, &uri_wifi_scan);
+    ESP_LOGI(TAG, "Registered /wifi/scan: %s", esp_err_to_name(reg_ret));
+    reg_ret = httpd_register_uri_handler(s_server, &uri_wifi_connect);
+    ESP_LOGI(TAG, "Registered /wifi/connect: %s", esp_err_to_name(reg_ret));
+    reg_ret = httpd_register_uri_handler(s_server, &uri_wifi_status);
+    ESP_LOGI(TAG, "Registered /wifi/status: %s", esp_err_to_name(reg_ret));
 
     httpd_register_err_handler(s_server, HTTPD_404_NOT_FOUND, catchall_err_handler);
 
     ESP_LOGI(TAG, "Captive portal started on port 80");
-    return ESP_OK;
+    return s_start_result;
 }
+
+bool captive_portal_was_start_called(void) { return s_start_called; }
+esp_err_t captive_portal_get_start_result(void) { return s_start_result; }
 
 void captive_portal_stop(void)
 {

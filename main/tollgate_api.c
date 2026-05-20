@@ -3,6 +3,7 @@
 #include "config.h"
 #include "identity.h"
 #include "session.h"
+#include "captive_portal.h"
 #include "firewall.h"
 #include "nucula_wallet.h"
 #include "mint_health.h"
@@ -681,6 +682,32 @@ static esp_err_t api_get_mining_stats(httpd_req_t *req)
     return ESP_OK;
 }
 
+extern bool s_start_services_called;
+extern bool s_start_ap_services_called;
+extern bool s_sta_got_ip;
+extern bool s_ap_started;
+
+static esp_err_t api_get_debug(httpd_req_t *req)
+{
+    httpd_handle_t portal = captive_portal_get_server();
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "portal_running", portal != NULL);
+    cJSON_AddBoolToObject(root, "portal_start_called", captive_portal_was_start_called());
+    cJSON_AddNumberToObject(root, "portal_start_result", captive_portal_get_start_result());
+    cJSON_AddBoolToObject(root, "start_services_called", s_start_services_called);
+    cJSON_AddBoolToObject(root, "start_ap_services_called", s_start_ap_services_called);
+    cJSON_AddBoolToObject(root, "sta_got_ip", s_sta_got_ip);
+    cJSON_AddBoolToObject(root, "ap_started", s_ap_started);
+    cJSON_AddNumberToObject(root, "free_heap", (double)esp_get_free_heap_size());
+    cJSON_AddNumberToObject(root, "min_free_heap", (double)esp_get_minimum_free_heap_size());
+    char *json = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json);
+    cJSON_free(json);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
 static const httpd_uri_t uri_discovery = { .uri = "/", .method = HTTP_GET, .handler = api_get_discovery };
 static const httpd_uri_t uri_payment = { .uri = "/", .method = HTTP_POST, .handler = api_post_payment };
 static const httpd_uri_t uri_mints = { .uri = "/mints", .method = HTTP_GET, .handler = api_get_mints };
@@ -731,6 +758,7 @@ static esp_err_t api_get_market(httpd_req_t *req)
 }
 
 static const httpd_uri_t uri_market = { .uri = "/market", .method = HTTP_GET, .handler = api_get_market };
+static const httpd_uri_t uri_debug = { .uri = "/debug", .method = HTTP_GET, .handler = api_get_debug };
 
 esp_err_t tollgate_api_start(void)
 {
@@ -750,6 +778,7 @@ esp_err_t tollgate_api_start(void)
     }
 
     httpd_register_uri_handler(s_api_server, &uri_discovery);
+    httpd_register_uri_handler(s_api_server, &uri_debug);
     httpd_register_uri_handler(s_api_server, &uri_payment);
     httpd_register_uri_handler(s_api_server, &uri_mints);
     httpd_register_uri_handler(s_api_server, &uri_usage);

@@ -8,6 +8,7 @@
 #include "esp_system.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "lwip/netif.h"
 #include "lwip/dns.h"
 #include "esp_sntp.h"
@@ -55,14 +56,22 @@ static char s_ap_ip_str[16] = "10.0.0.1";
 static relay_selector_t s_relay_selector;
 static sync_manager_t s_sync_manager;
 
+volatile bool s_start_services_called = false;
+volatile bool s_start_ap_services_called = false;
+volatile bool s_sta_got_ip = false;
+volatile bool s_ap_started = false;
+
 static void start_services(void);
 static void stop_services(void);
 static void start_ap_services(void);
 
 static void start_ap_services(void)
 {
+    s_start_ap_services_called = true;
     if (s_ap_services_running) return;
 
+    const tollgate_config_t *cfg = tollgate_config_get();
+    captive_portal_start(cfg->ap_ip_str);
     tollgate_api_start();
     beacon_price_start();
     market_init();
@@ -120,16 +129,17 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                  event->mac[0], event->mac[1], event->mac[2],
                  event->mac[3], event->mac[4], event->mac[5]);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
+        s_ap_started = true;
         start_ap_services();
     }
 }
 
-static void services_start_task(void *pvParameters)
+static void services_start_timer_cb(void *arg)
 {
-    vTaskDelay(pdMS_TO_TICKS(3000));
     start_services();
-    vTaskDelete(NULL);
 }
+
+static esp_timer_handle_t s_services_timer;
 
 static void ip_event_handler(void *arg, esp_event_base_t event_base,
                               int32_t event_id, void *event_data)
@@ -138,7 +148,16 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Got IP:" IPSTR ", GW:" IPSTR, IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.gw));
         s_retry_count = 0;
+        s_sta_got_ip = true;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+        const esp_timer_create_args_t timer_cfg = {
+            .callback = services_start_timer_cb,
+            .name = "svc_start",
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&timer_cfg, &s_services_timer));
+        ESP_ERROR_CHECK(esp_timer_start_once(s_services_timer, 3000000));
+        ESP_LOGI(TAG, "services_start_timer scheduled (3s)");
 
         esp_sntp_stop();
         esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
@@ -150,20 +169,11 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         char gw_ip_str[16];
         snprintf(gw_ip_str, sizeof(gw_ip_str), IPSTR, IP2STR(&event->ip_info.gw));
         tollgate_client_on_sta_connected(gw_ip_str);
-
-        xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
         ESP_LOGW(TAG, "Lost IP address");
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         stop_services();
     }
-}
-
-static void wallet_init_task(void *pvParameters)
-{
-    const tollgate_config_t *cfg = tollgate_config_get();
-    nucula_wallet_init(cfg->mint_url);
-    vTaskDelete(NULL);
 }
 
 static void publish_wifistr_task(void *pvParameters)
@@ -177,11 +187,14 @@ static void publish_wifistr_task(void *pvParameters)
 
 static void start_services(void)
 {
+    ESP_LOGI(TAG, ">>> start_services() called");
     if (s_services_mutex) xSemaphoreTake(s_services_mutex, portMAX_DELAY);
     if (s_services_running) {
         if (s_services_mutex) xSemaphoreGive(s_services_mutex);
         return;
     }
+
+    s_start_services_called = true;
 
     esp_netif_get_ip_info(s_ap_netif, &(esp_netif_ip_info_t){0});
     esp_netif_ip_info_t ap_ip_info;
@@ -412,7 +425,12 @@ void app_main(void)
 
     if (tollgate_config_get_wifi(&(wifi_config_t){0}) != ESP_OK) {
         ESP_LOGI(TAG, "No STA network configured, starting services immediately");
-        xTaskCreate(services_start_task, "svc_start", 32768, NULL, 5, NULL);
+        const esp_timer_create_args_t timer_cfg = {
+            .callback = services_start_timer_cb,
+            .name = "svc_start_fallback",
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&timer_cfg, &s_services_timer));
+        ESP_ERROR_CHECK(esp_timer_start_once(s_services_timer, 3000000));
     }
 
     while (1) {
