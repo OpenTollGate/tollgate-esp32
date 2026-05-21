@@ -23,7 +23,7 @@ test.describe('Captive Portal - Phase 2', () => {
     const body = await resp.text();
     expect(body).not.toContain('Loading...');
     expect(body).not.toContain('Error loading mint URL');
-    expect(body).toMatch(/testnut\.cashu\.space/);
+    expect(body).toMatch(/testnut.*orangesync\.tech|testnut\.cashu\.space/);
   });
 
   test('portal embeds price without JavaScript fetch', async ({ request }) => {
