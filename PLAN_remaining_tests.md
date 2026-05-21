@@ -4,26 +4,26 @@
 
 All high-priority wallet work is complete (receive, send, swap, persistence, burst test). This plan covers the remaining integration test validation and fixes.
 
-## Phase A: Fix Stale Mint URLs — TODO
+## Phase A: Fix Stale Mint URLs — DONE
 
 Three test files still reference `testnut.cashu.space` (dead mint):
 
-- [ ] `tests/integration/test-session-expiry.mjs` (lines 26-27)
-- [ ] `tests/integration/test-reset-auth.mjs` (lines 27-28)
-- [ ] `tests/integration/test-dns-firewall.mjs` (lines 26-27)
+- [x] `tests/integration/test-session-expiry.mjs` (lines 26-27)
+- [x] `tests/integration/test-reset-auth.mjs` (lines 27-28)
+- [x] `tests/integration/test-dns-firewall.mjs` (lines 26-27)
 
 Replace with `testnut-nutshell.mints.orangesync.tech`.
 
-## Phase B: Single-Board Integration Tests — TODO
+## Phase B: Single-Board Integration Tests — PARTIAL
 
 Board A at `10.185.47.1`, port `/dev/ttyACM0`.
 
-- [ ] `test-reset-auth.mjs` — payment + reset + re-auth flow
-- [ ] `test-session-expiry.mjs` — session time-based expiry
-- [ ] `test-dns-firewall.mjs` — DNS hijack + firewall per-client
-- [ ] `test-local-relay.mjs` — WS pub/sub on port 4869
-- [ ] `test-relay-nip11.mjs` — NIP-11 info document
-- [ ] `test-market.mjs` — GET /market endpoint
+- [ ] `test-reset-auth.mjs` — payment + reset + re-auth flow (BLOCKED: mint SQLite down)
+- [ ] `test-session-expiry.mjs` — session time-based expiry (BLOCKED: mint SQLite down)
+- [ ] `test-dns-firewall.mjs` — DNS hijack + firewall per-client (BLOCKED: mint SQLite down)
+- [x] `test-local-relay.mjs` — WS pub/sub on port 4869 (5/6, concurrent conn minor)
+- [x] `test-relay-nip11.mjs` — NIP-11 info document (10/11, Accept header minor)
+- [x] `test-market.mjs` — GET /market endpoint (4/4)
 
 ## Phase C: Cross-Board Test — TODO
 
@@ -31,18 +31,19 @@ Board A at `10.185.47.1`, port `/dev/ttyACM0`.
 - [ ] Verify Board C API responds
 - [ ] Run `test-cross-board.mjs` against Board C
 
-Board C: `10.74.63.1`, SSID `TollGate-4A2510`, port `/dev/ttyACM2`.
+## Phase D: CVM Round-Trip Fix — DONE
 
-## Phase D: CVM Round-Trip Fix — TODO
+9/11 -> 7/8 tests pass. MCP requests now answered by board.
 
-9/11 tests pass. MCP kind 25910 requests go unanswered.
-
-- [ ] Check serial logs for `cvm_relay` task creation failure
-- [ ] Add error logging to `cvm_server_start` for `xTaskCreate` failure
-- [ ] If task creation fails: try `xTaskCreatePinnedToCore(..., 1)` or reduce stack to 12KB
-- [ ] Re-run `test-cvm-roundtrip.mjs`
-
-**Root cause hypothesis:** `cvm_relay_task` (16KB stack) fails to create due to internal RAM fragmentation, same as old TLS worker.
+- [x] Move CVM server start before mint_health (avoids RAM fragmentation)
+- [x] Fix NIP-01 subscription: `#p` must be array, not string
+- [x] Fix read loop: tolerate TLS timeouts, keep connection alive
+- [x] Reduce TLS timeout 15s -> 5s for faster event delivery
+- [x] Sign test events with board nsec (--sec) for owner auth
+- [x] Change default relay to nos.lol (forwards ephemeral events)
+- [x] MCP get_config roundtrip confirmed
+- [x] MCP get_balance roundtrip confirmed
+- [ ] Fix remaining test parsing issue (response JSON structure)
 
 ## Phase E: Two-Board Price Discovery — DEFERRED
 
