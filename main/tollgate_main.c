@@ -336,7 +336,7 @@ static void wifi_create_ap_netif(void)
 
      const tollgate_config_t *cfg = tollgate_config_get();
      esp_ip4_addr_t ap_ip = cfg->ap_ip;
-     esp_ip4_addr_t ap_gw = {0};
+     esp_ip4_addr_t ap_gw = ap_ip;
      esp_ip4_addr_t ap_mask;
     IP4_ADDR(&ap_mask, 255, 255, 255, 0);
 
