@@ -199,6 +199,7 @@ esp_err_t cashu_check_proof_states(const char *mint_url, const cashu_token_t *to
     if (!client) { free(post_body); free(resp_buf); return ESP_FAIL; }
 
     esp_http_client_set_header(client, "Content-Type", "application/json");
+
     esp_err_t err = esp_http_client_open(client, strlen(post_body));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "checkstate open failed: %s", esp_err_to_name(err));

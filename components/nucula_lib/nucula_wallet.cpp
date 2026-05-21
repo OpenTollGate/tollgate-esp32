@@ -4,8 +4,11 @@
 #include "crypto.h"
 #include "hex.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "secp256k1.h"
 #include "cJSON.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <cstring>
 #include <string>
 #include <vector>
@@ -18,6 +21,55 @@ static secp256k1_context *s_ctx = nullptr;
 static cashu::Wallet *s_wallets[MAX_WALLETS] = {};
 static int s_wallet_count = 0;
 static char s_wallet_urls[MAX_WALLETS][256] = {};
+static bool s_keysets_loaded[MAX_WALLETS] = {};
+static int s_keyset_attempts[MAX_WALLETS] = {};
+
+static const int KEYSET_BASE_DELAY_MS = 1000;
+static const int KEYSET_MAX_DELAY_MS = 30000;
+static const int KEYSET_JITTER_MS = 500;
+
+static bool ensure_keysets(int slot)
+{
+    if (slot < 0 || slot >= MAX_WALLETS || !s_wallets[slot])
+        return false;
+
+    if (s_keysets_loaded[slot])
+        return true;
+
+    if (!s_wallets[slot]->keysets().empty()) {
+        s_keysets_loaded[slot] = true;
+        return true;
+    }
+
+    int delay_ms = KEYSET_BASE_DELAY_MS << s_keyset_attempts[slot];
+    if (delay_ms > KEYSET_MAX_DELAY_MS)
+        delay_ms = KEYSET_MAX_DELAY_MS;
+    delay_ms += (int)(esp_random() % KEYSET_JITTER_MS);
+
+    ESP_LOGI(TAG, "Keyset load attempt %d for slot %d, waiting %d ms",
+             s_keyset_attempts[slot] + 1, slot, delay_ms);
+
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+
+    if (s_wallets[slot]->load_keysets()) {
+        int attempts = s_keyset_attempts[slot] + 1;
+        s_keysets_loaded[slot] = true;
+        s_keyset_attempts[slot] = 0;
+        ESP_LOGI(TAG, "Keyset load succeeded for slot %d after %d attempt(s)",
+                 slot, attempts);
+        return true;
+    }
+
+    s_keyset_attempts[slot]++;
+    return false;
+}
+
+static int wallet_slot(const cashu::Wallet *w)
+{
+    for (int i = 0; i < s_wallet_count; i++)
+        if (s_wallets[i] == w) return i;
+    return -1;
+}
 
 static cashu::Wallet *find_wallet_for_token(const cashu::Token &tok)
 {
@@ -61,14 +113,9 @@ static esp_err_t init_wallet(int slot, const char *mint_url)
 
     s_wallets[slot]->load_from_nvs();
 
-    if (!s_wallets[slot]->load_keysets()) {
-        ESP_LOGW(TAG, "Keyset load failed for slot %d (may be offline)", slot);
-    }
-
-    ESP_LOGI(TAG, "Wallet[%d] initialized: url=%s balance=%d proofs=%d keysets=%d",
+    ESP_LOGI(TAG, "Wallet[%d] initialized: url=%s balance=%d proofs=%d (keysets lazy)",
              slot, mint_url, s_wallets[slot]->balance(),
-             (int)s_wallets[slot]->proofs().size(),
-             (int)s_wallets[slot]->keysets().size());
+             (int)s_wallets[slot]->proofs().size());
     return ESP_OK;
 }
 
@@ -136,6 +183,13 @@ esp_err_t nucula_wallet_receive(const char *token_str)
         return ESP_FAIL;
     }
 
+    if (!ensure_keysets(wallet_slot(w))) {
+        ESP_LOGE(TAG, "Keysets not available for receive");
+        return ESP_FAIL;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
     std::vector<cashu::Proof> proofs_out;
     if (!w->receive(tok, proofs_out)) {
         ESP_LOGE(TAG, "Receive failed");
@@ -156,6 +210,11 @@ esp_err_t nucula_wallet_send(uint64_t amount_sat, char *token_out, size_t token_
     int amount = (int)amount_sat;
     cashu::Wallet *w = find_wallet_for_send(amount);
     if (!w) return ESP_FAIL;
+
+    if (!ensure_keysets(wallet_slot(w))) {
+        ESP_LOGE(TAG, "Keysets not available for send");
+        return ESP_FAIL;
+    }
 
     std::vector<cashu::Proof> selected, remaining;
     if (!w->select_proofs(amount, selected, remaining)) {
@@ -246,6 +305,11 @@ esp_err_t nucula_wallet_swap_all(void)
         auto &proofs = mutable_proofs(s_wallets[i]);
         if (proofs.empty()) continue;
 
+        if (!ensure_keysets(i)) {
+            ESP_LOGE(TAG, "Keysets not available for swap_all wallet[%d]", i);
+            continue;
+        }
+
         int old_balance = s_wallets[i]->balance();
 
         std::vector<cashu::Proof> inputs = proofs;
@@ -300,6 +364,11 @@ esp_err_t nucula_wallet_melt(const char *bolt11_invoice, uint64_t max_fee_sats)
         }
     }
     if (!w) return ESP_FAIL;
+
+    if (!ensure_keysets(wallet_slot(w))) {
+        ESP_LOGE(TAG, "Keysets not available for melt");
+        return ESP_FAIL;
+    }
 
     cashu::MeltQuote quote;
     if (!w->request_melt_quote(std::string(bolt11_invoice), quote)) {

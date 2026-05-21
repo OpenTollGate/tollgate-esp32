@@ -280,16 +280,8 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     err = cashu_check_proof_states(mint_url, token, states, &state_count);
     ESP_LOGI(TAG, "Stack HWM after checkstate: %u", uxTaskGetStackHighWaterMark(NULL));
     if (err != ESP_OK) {
-        free(states);
-        free(token);
-        cJSON *notice = create_notice("error", "payment-error-verification", "Failed to verify token with mint");
-        char *json = cJSON_PrintUnformatted(notice);
-        httpd_resp_set_status(req, "502 Bad Gateway");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, json, strlen(json));
-        cJSON_free(json);
-        cJSON_Delete(notice);
-        return ESP_OK;
+        ESP_LOGW(TAG, "Checkstate failed, proceeding without spend check (wallet swap will verify)");
+        state_count = 0;
     }
 
     for (int i = 0; i < state_count; i++) {
@@ -795,11 +787,12 @@ esp_err_t tollgate_api_start(void)
 {
     if (s_api_server) return ESP_OK;
 
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.server_port = 2121;
-    config.ctrl_port = 32769;
-    config.max_uri_handlers = 16;
-    config.stack_size = 16384;
+     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+     config.server_port = 2121;
+     config.ctrl_port = 32769;
+     config.max_uri_handlers = 16;
+     config.stack_size = 16384;
+     config.core_id = 0;
 
     esp_err_t ret = httpd_start(&s_api_server, &config);
     if (ret != ESP_OK) {
