@@ -87,7 +87,7 @@ nvs_flash_init()
   "nsec": "<64-char hex>",
   "wifi_networks": [{"ssid":"...", "password":"..."}],
   "ap_password": "",
-  "mint_url": "https://testnut.cashu.space",
+  "mint_url": "https://testnut-nutshell.mints.orangesync.tech",
   "price_per_step": 21,
   "step_size_ms": 60000,
   "nostr_geohash": "u281w0dfz",
@@ -199,7 +199,7 @@ make flash-b        # flash to Board B
 ### Integration Tests (`tests/integration/`)
 - Node.js scripts that run curl/ping/nmcli against a live ESP32 board
 - Require `TOLLGATE_IP` env var (default: auto-detect or error)
-- Token generation via nutshell CLI: `cashu -h https://testnut.cashu.space send --legacy 21`
+- Token generation via nutshell CLI: `cashu -h https://testnut-nutshell.mints.orangesync.tech send --legacy 21`
 
 ### E2E Tests (`tests/e2e/`)
 - Playwright browser tests
@@ -217,7 +217,7 @@ make flash-b        # flash to Board B
 
 ## External Dependencies
 
-- **Test mint:** `testnut.cashu.space` — auto-pays lightning invoices
+- **Test mint:** `testnut-nutshell.mints.orangesync.tech` — Nutshell/0.20.0, works with cashu CLI
 - **Nostr relays:** `relay.damus.io`, `nos.lol`, `relay.anzenkodo.workers.dev`, `nostr.koning-degraaf.nl` — for wifistr events
 - **Seed relays:** `relay.orangesync.tech` (NIP-77), `relay.damus.io`, `nos.lol`, `relay.nostr.band`, `relay.anzenkodo.workers.dev`, `nostr.koning-degraaf.nl`, `knostr.neutrine.com`, `nostr.einundzwanzig.space` — for relay selection and sync
 - **CVM relay:** `relay.primal.net` — for ContextVM kind 25910 events and CEP-6 announcements

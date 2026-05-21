@@ -7,7 +7,6 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdlib.h>
-#include <errno.h>
 
 static const char *TAG = "mint_health";
 
@@ -64,16 +63,13 @@ static bool probe_mint(const char *url)
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
-        ESP_LOGE(TAG, "probe: init failed for %s", probe_url);
         s_last_probe_err = -1;
         return false;
     }
 
     esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "probe: open failed for %s err=0x%x", probe_url, err);
-        int sc = esp_http_client_get_status_code(client);
-        ESP_LOGE(TAG, "probe: status=%d errno=%d(%s)", sc, errno, strerror(errno));
+        ESP_LOGD(TAG, "probe open failed: %s err=0x%x", probe_url, err);
         s_last_probe_err = err;
         esp_http_client_cleanup(client);
         return false;
@@ -81,7 +77,6 @@ static bool probe_mint(const char *url)
 
     int content_length = esp_http_client_fetch_headers(client);
     int status = esp_http_client_get_status_code(client);
-    ESP_LOGI(TAG, "probe: %s -> status=%d len=%d", probe_url, status, content_length);
     s_last_probe_err = 0;
 
     char *resp = NULL;

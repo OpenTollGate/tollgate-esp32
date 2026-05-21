@@ -6,9 +6,6 @@
 #include "captive_portal.h"
 #include "firewall.h"
 #include "lwip/dns.h"
-#include "lwip/netdb.h"
-#include "esp_http_client.h"
-#include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "nucula_wallet.h"
 #include "mint_health.h"
@@ -733,19 +730,6 @@ static esp_err_t api_get_debug(httpd_req_t *req)
     snprintf(sta_gw_str, sizeof(sta_gw_str), IPSTR, IP2STR(&s_sta_gw));
     cJSON_AddStringToObject(root, "sta_ip", sta_ip_str);
     cJSON_AddStringToObject(root, "sta_gw", sta_gw_str);
-
-    struct addrinfo hints = {0}, *res = NULL;
-    hints.ai_family = AF_INET;
-    int dns_rc = getaddrinfo("testnut-compat.mints.orangesync.tech", NULL, &hints, &res);
-    if (dns_rc == 0 && res) {
-        struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
-        char resolved[16];
-        snprintf(resolved, sizeof(resolved), IPSTR, IP2STR(&(esp_ip4_addr_t){.addr=addr->sin_addr.s_addr}));
-        cJSON_AddStringToObject(root, "dns_resolve", resolved);
-    } else {
-        cJSON_AddStringToObject(root, "dns_resolve", dns_rc == 0 ? "no-addr" : "FAIL");
-    }
-    if (res) freeaddrinfo(res);
 
     char *json = cJSON_PrintUnformatted(root);
     httpd_resp_set_type(req, "application/json");
