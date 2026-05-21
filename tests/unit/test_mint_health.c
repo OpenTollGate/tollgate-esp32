@@ -1,7 +1,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include "esp_err.h"
 #include "mint_health.h"
+
+esp_err_t nucula_wallet_receive(const char *token_str) { (void)token_str; return ESP_OK; }
+uint64_t nucula_wallet_balance(void) { return 0; }
+void tls_worker_set_queue(void *q) { (void)q; }
 
 static int test_count = 0;
 static int pass_count = 0;

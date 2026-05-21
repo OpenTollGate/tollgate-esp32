@@ -5,10 +5,16 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
+#include "nucula_wallet.h"
+#include "tollgate_api.h"
 #include <string.h>
 #include <stdlib.h>
 
 static const char *TAG = "mint_health";
+
+#define WALLET_QUEUE_LEN 8
+static QueueHandle_t s_wallet_queue = NULL;
 
 static int s_last_probe_err = 0;
 
@@ -163,16 +169,54 @@ static void run_initial_probes(void)
     fire_callbacks();
 }
 
+static void process_wallet_queue(void)
+{
+    char *token;
+    while (s_wallet_queue && xQueueReceive(s_wallet_queue, &token, 0) == pdTRUE) {
+        if (!token) continue;
+        ESP_LOGI(TAG, "Processing wallet receive (%zu bytes)", strlen(token));
+        esp_err_t err = nucula_wallet_receive(token);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "Wallet receive OK, balance=%llu",
+                     (unsigned long long)nucula_wallet_balance());
+        } else {
+            ESP_LOGW(TAG, "Wallet receive failed");
+        }
+        free(token);
+    }
+}
+
 static void health_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Health probe task started, waiting for DNS to stabilize...");
     vTaskDelay(pdMS_TO_TICKS(5000));
     run_initial_probes();
+    process_wallet_queue();
 
     while (s_running) {
-        vTaskDelay(pdMS_TO_TICKS(MINT_HEALTH_PROBE_INTERVAL_S * 1000));
+        TickType_t start = xTaskGetTickCount();
+        while (s_running) {
+            TickType_t elapsed = (xTaskGetTickCount() - start) * portTICK_PERIOD_MS;
+            if (elapsed >= MINT_HEALTH_PROBE_INTERVAL_S * 1000) break;
+
+            char *token = NULL;
+            if (s_wallet_queue && xQueueReceive(s_wallet_queue, &token, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                if (token) {
+                    ESP_LOGI(TAG, "Processing wallet receive (%zu bytes)", strlen(token));
+                    esp_err_t err = nucula_wallet_receive(token);
+                    if (err == ESP_OK) {
+                        ESP_LOGI(TAG, "Wallet receive OK, balance=%llu",
+                                 (unsigned long long)nucula_wallet_balance());
+                    } else {
+                        ESP_LOGW(TAG, "Wallet receive failed");
+                    }
+                    free(token);
+                }
+            }
+        }
         if (!s_running) break;
         run_probes();
+        process_wallet_queue();
     }
 
     s_task_handle = NULL;
@@ -183,6 +227,10 @@ void mint_health_start(void)
 {
     if (s_running) return;
     s_running = true;
+
+    s_wallet_queue = xQueueCreate(WALLET_QUEUE_LEN, sizeof(char *));
+    tls_worker_set_queue(s_wallet_queue);
+
     xTaskCreate(health_task, "mint_health", 16384, NULL, 3, &s_task_handle);
 }
 

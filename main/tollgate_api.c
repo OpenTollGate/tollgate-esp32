@@ -19,10 +19,36 @@
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include <string.h>
 
 static const char *TAG = "tollgate_api";
 static httpd_handle_t s_api_server = NULL;
+
+static QueueHandle_t s_wallet_queue = NULL;
+
+void tls_worker_set_queue(QueueHandle_t q)
+{
+    s_wallet_queue = q;
+}
+
+static void tls_worker_submit(const char *token)
+{
+    if (!s_wallet_queue) {
+        ESP_LOGW(TAG, "No wallet queue, receiving synchronously");
+        nucula_wallet_receive(token);
+        return;
+    }
+
+    char *copy = strdup(token);
+    if (!copy) return;
+
+    if (xQueueSend(s_wallet_queue, &copy, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Wallet queue full, receiving synchronously");
+        nucula_wallet_receive(copy);
+        free(copy);
+    }
+}
 
 static esp_err_t get_client_ip(httpd_req_t *req, uint32_t *ip_out)
 {
@@ -343,7 +369,7 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     cJSON_free(json);
     cJSON_Delete(session_event);
 
-    nucula_wallet_receive(body_copy);
+    tls_worker_submit(body_copy);
 
     free(states);
     free(token);
@@ -820,6 +846,7 @@ esp_err_t tollgate_api_start(void)
     }
 
     ESP_LOGI(TAG, "TollGate API started on port 2121");
+
     return ESP_OK;
 }
 

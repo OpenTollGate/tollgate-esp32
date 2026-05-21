@@ -188,7 +188,7 @@ esp_err_t nucula_wallet_receive(const char *token_str)
         return ESP_FAIL;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     std::vector<cashu::Proof> proofs_out;
     if (!w->receive(tok, proofs_out)) {
