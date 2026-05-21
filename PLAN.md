@@ -972,12 +972,12 @@ Wallet receive operations are submitted to a FreeRTOS queue processed by the **m
 - [x] Unit tests pass (16/16)
 - [x] Full payment round-trip confirmed (2 payments -> 41 sat)
 - [x] Smoke integration test (6/6)
-- [ ] Fix 4 failing API integration tests
-- [ ] Test spend from funded wallet
-- [ ] Flash Board C with wallet fix
+- [x] Fix 4 failing API integration tests -> now 19/19
+- [x] Test spend from funded wallet (wallet/send -> valid cashuA token)
+- [x] Flash Board C with wallet fix
 - [ ] Cross-board integration test
-- [ ] Playwright E2E captive portal test
-- [ ] CVM round-trip test
-- [ ] Reliability burst test (5-10 rapid payments)
-- [ ] Persistence survives reboot
-- [ ] Wallet swap endpoint test
+- [x] Playwright E2E captive portal test (14/14)
+- [ ] CVM round-trip test (9/11, MCP response not received - pre-existing)
+- [x] Reliability burst test (5 rapid payments -> 5/5 OK)
+- [x] Persistence survives reboot (20 sat / 2 proofs after reboot)
+- [x] Wallet swap endpoint test (5 proofs -> 3 proofs, balance preserved)
