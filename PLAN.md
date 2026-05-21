@@ -934,3 +934,50 @@ In `physical-router-test-automation/`:
 
 - Implement negentropy binary protocol (NIP-77 NEG_OPEN/NEG_MSG) for efficient set-reconciliation sync
 - NIP-11 returns JSON without Accept header (minor: should return HTML)
+
+## Phase 10: Wallet Receive via Health Task Queue — IN PROGRESS
+
+**Goal:** Reliable wallet receive on ESP32 by reusing the mint health task's TLS context. Eliminates internal RAM fragmentation that prevented standalone TLS worker creation.
+
+### Problem Solved
+
+The original approach (standalone `tls_worker` task) failed because:
+- ESP32-S3 internal RAM is ~25KB free at boot after httpd (16KB) + health (16KB) tasks
+- Largest contiguous block after those two tasks: ~10-14KB — insufficient for a 16KB TLS stack
+- PSRAM stack crashes on NVS writes: `esp_task_stack_is_sane_cache_disabled()` assertion in `spi_flash`
+
+### Solution
+
+Wallet receive operations are submitted to a FreeRTOS queue processed by the **mint health task** (already has 16KB stack + working TLS). Health task polls the queue every 1s between probe intervals.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `main/tollgate_api.c` | Removed `tls_worker_task`/`tls_worker_start`, added `tls_worker_set_queue()` + queue-based `tls_worker_submit()` |
+| `main/tollgate_api.h` | Replaced `tls_worker_start()` with `tls_worker_set_queue()` |
+| `main/mint_health.c` | Added wallet queue, `process_wallet_queue()`, integrated into `health_task()` main loop |
+| `main/tollgate_main.c` | Removed `tls_worker_start()` call |
+| `tests/unit/stubs/freertos/queue.h` | New: FreeRTOS queue stub for host tests |
+| `tests/unit/stubs/freertos/FreeRTOS.h` | Added `BaseType_t`, `UBaseType_t`, `TickType_t`, `pdFALSE` |
+| `tests/unit/stubs/tollgate_api.h` | New: `tls_worker_set_queue()` stub |
+| `tests/unit/test_mint_health.c` | Added stub implementations for `nucula_wallet_receive`, `nucula_wallet_balance`, `tls_worker_set_queue` |
+
+### Checklist
+
+- [x] Remove standalone TLS worker task
+- [x] Add wallet queue to mint_health task
+- [x] Health task polls queue every 1s
+- [x] Fallback to synchronous receive if queue unavailable
+- [x] Unit tests pass (16/16)
+- [x] Full payment round-trip confirmed (2 payments -> 41 sat)
+- [x] Smoke integration test (6/6)
+- [ ] Fix 4 failing API integration tests
+- [ ] Test spend from funded wallet
+- [ ] Flash Board C with wallet fix
+- [ ] Cross-board integration test
+- [ ] Playwright E2E captive portal test
+- [ ] CVM round-trip test
+- [ ] Reliability burst test (5-10 rapid payments)
+- [ ] Persistence survives reboot
+- [ ] Wallet swap endpoint test
