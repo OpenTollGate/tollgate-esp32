@@ -2,7 +2,7 @@ import { execSync } from 'child_process';
 import WebSocket from 'ws';
 
 const IP = process.env.TOLLGATE_IP || '10.192.45.1';
-const CVM_RELAY = process.env.CVM_RELAY || 'wss://relay.primal.net';
+const CVM_RELAY = process.env.CVM_RELAY || 'wss://nos.lol';
 const NSEC = process.env.CVM_NSEC || 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
 
 let passed = 0, failed = 0;
@@ -104,7 +104,7 @@ async function runTests() {
       params: { name: 'get_config', arguments: {} }
     });
 
-    const eventOut = nak(`event --kind 25910 --tag p=${npub} --content '${content.replace(/'/g, "'\\''")}' ${CVM_RELAY}`, 8000);
+    const eventOut = nak(`event --sec ${NSEC} --kind 25910 --tag p=${npub} --content '${content.replace(/'/g, "'\\''")}' ${CVM_RELAY}`, 8000);
     const published = eventOut.includes('Success') || eventOut.includes('"id"');
     assert(published, `Published kind 25910 get_config to ${CVM_RELAY}`);
 
@@ -149,7 +149,7 @@ async function runTests() {
       params: { name: 'get_balance', arguments: {} }
     });
 
-    const eventOut = nak(`event --kind 25910 --tag p=${npub} --content '${content.replace(/'/g, "'\\''")}' ${CVM_RELAY}`, 8000);
+    const eventOut = nak(`event --sec ${NSEC} --kind 25910 --tag p=${npub} --content '${content.replace(/'/g, "'\\''")}' ${CVM_RELAY}`, 8000);
     const published = eventOut.includes('Success') || eventOut.includes('"id"');
     assert(published, `Published kind 25910 get_balance to ${CVM_RELAY}`);
 

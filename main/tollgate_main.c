@@ -237,6 +237,12 @@ static void start_services(void)
     session_manager_init();
 
     const tollgate_config_t *cfg = tollgate_config_get();
+
+    if (cfg->cvm_enabled) {
+        cvm_server_init();
+        cvm_server_start();
+    }
+
     mint_health_init(cfg->accepted_mints, cfg->accepted_mint_count);
     mint_health_start();
 
@@ -268,19 +274,13 @@ static void start_services(void)
 
     xTaskCreate(publish_wifistr_task, "wifistr_init", 16384, NULL, 3, NULL);
 
-    const tollgate_config_t *cfg2 = tollgate_config_get();
-    if (cfg2->cvm_enabled) {
-        cvm_server_init();
-        cvm_server_start();
-    }
-
-    if (cfg2->mining_enabled) {
+    if (cfg->mining_enabled) {
         ESP_LOGI(TAG, "Mining subsystem enabled, initializing...");
         mining_payment_init();
         stratum_client_init();
-        stratum_proxy_init(cfg2->mining_port);
+        stratum_proxy_init(cfg->mining_port);
 
-        if (cfg2->mining_payout_mode != MINING_PAYOUT_UPSTREAM) {
+        if (cfg->mining_payout_mode != MINING_PAYOUT_UPSTREAM) {
             stratum_client_start();
         }
 

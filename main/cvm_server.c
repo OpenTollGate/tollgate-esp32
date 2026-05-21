@@ -12,6 +12,7 @@
 #include "esp_tls.h"
 #include "esp_crt_bundle.h"
 #include "esp_random.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -150,7 +151,7 @@ static esp_err_t ws_connect(const char *relay_url, esp_tls_t **tls_out)
 
     esp_tls_cfg_t tls_cfg = {
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .timeout_ms = 15000,
+        .timeout_ms = 5000,
     };
     esp_tls_t *tls = esp_tls_init();
     if (!tls) return ESP_ERR_NO_MEM;
@@ -507,7 +508,9 @@ static esp_err_t subscribe_to_relay(esp_tls_t *tls, const char *npub)
     cJSON *kinds = cJSON_CreateArray();
     cJSON_AddItemToArray(kinds, cJSON_CreateNumber(25910));
     cJSON_AddItemToObject(filter, "kinds", kinds);
-    cJSON_AddStringToObject(filter, "#p", npub);
+    cJSON *p_tag = cJSON_CreateArray();
+    cJSON_AddItemToArray(p_tag, cJSON_CreateString(npub));
+    cJSON_AddItemToObject(filter, "#p", p_tag);
     cJSON_AddNumberToObject(filter, "limit", 100);
     cJSON_AddItemToArray(sub, filter);
 
@@ -556,33 +559,33 @@ static void cvm_relay_task(void *arg)
         }
 
         int64_t last_ping_time = (int64_t)(xTaskGetTickCount() * portTICK_PERIOD_MS) / 1000;
-        int consecutive_timeouts = 0;
         while (g_running) {
             int rlen = esp_tls_conn_read(tls, buf, CVM_WS_BUF_SIZE - 1);
-            if (rlen < 0) {
-                ESP_LOGW(TAG, "Read error on %s (rlen=%d)", relay_url, rlen);
+            if (rlen == 0) {
+                ESP_LOGW(TAG, "Connection closed by relay");
                 break;
             }
-            if (rlen == 0) {
-                break;
-            } else {
-                consecutive_timeouts = 0;
-                if ((buf[0] & 0x0F) == 0x01) {
-                    char *text = parse_ws_text_frame(buf, rlen);
-                    if (text) {
-                        if (strlen(text) > 0) {
-                            process_relay_message(relay_url, text);
-                        }
-                        free(text);
+            if (rlen < 0) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+                continue;
+            }
+
+            ESP_LOGI(TAG, "WS frame received: %d bytes, opcode=0x%02x", rlen, buf[0] & 0x0F);
+
+            if ((buf[0] & 0x0F) == 0x01) {
+                char *text = parse_ws_text_frame(buf, rlen);
+                if (text) {
+                    if (strlen(text) > 0) {
+                        process_relay_message(relay_url, text);
                     }
-                } else if ((buf[0] & 0x0F) == 0x09) {
-                    ESP_LOGD(TAG, "Relay ping received, sending pong");
-                    uint8_t pong[2] = {0x8A, 0x00};
-                    esp_tls_conn_write(tls, pong, 2);
-                } else if ((buf[0] & 0x0F) == 0x08) {
-                    ESP_LOGW(TAG, "Relay sent close frame");
-                    break;
+                    free(text);
                 }
+            } else if ((buf[0] & 0x0F) == 0x09) {
+                uint8_t pong[2] = {0x8A, 0x00};
+                esp_tls_conn_write(tls, pong, 2);
+            } else if ((buf[0] & 0x0F) == 0x08) {
+                ESP_LOGW(TAG, "Relay sent close frame");
+                break;
             }
 
             int64_t now = (int64_t)(xTaskGetTickCount() * portTICK_PERIOD_MS) / 1000;
@@ -590,7 +593,6 @@ static void cvm_relay_task(void *arg)
                 uint8_t ping[2] = {0x89, 0x00};
                 esp_tls_conn_write(tls, ping, 2);
                 last_ping_time = now;
-                ESP_LOGD(TAG, "Sent WS keepalive ping");
             }
         }
 
@@ -726,8 +728,20 @@ void cvm_server_start(void)
     const tollgate_config_t *cfg = tollgate_config_get();
     const char *relay = (cfg->cvm_relays[0]) ? cfg->cvm_relays : "wss://relay.primal.net";
 
+    ESP_LOGI(TAG, "Starting CVM relay task (free internal: %u, largest: %u)",
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+
     char *relay_copy = strdup(relay);
-    xTaskCreate(cvm_relay_task, "cvm_relay", 16384, relay_copy, 5, &g_task);
+    BaseType_t ret = xTaskCreatePinnedToCore(cvm_relay_task, "cvm_relay", 16384, relay_copy, 5, &g_task, 1);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create cvm_relay task (ret=%d, free internal: %u)",
+                 ret, heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+        g_running = false;
+        free(relay_copy);
+        return;
+    }
+    ESP_LOGI(TAG, "CVM relay task created on core %d", xPortGetCoreID());
 }
 
 void cvm_server_stop(void)

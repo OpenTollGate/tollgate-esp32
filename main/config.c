@@ -36,7 +36,7 @@ esp_err_t tollgate_config_init(void)
     g_config.payout.recipient_count = 0;
     g_config.payout.mint_count = 0;
     g_config.cvm_enabled = true;
-    strncpy(g_config.cvm_relays, "wss://relay.primal.net", sizeof(g_config.cvm_relays) - 1);
+    strncpy(g_config.cvm_relays, "wss://nos.lol", sizeof(g_config.cvm_relays) - 1);
     strncpy(g_config.wifi_auth_mode, "WPA2", sizeof(g_config.wifi_auth_mode) - 1);
     g_config.display_enabled = true;
     g_config.nostr_sync_interval_s = 1800;
