@@ -8,7 +8,6 @@
 #include "esp_system.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
-#include "esp_timer.h"
 #include "lwip/netif.h"
 #include "lwip/dns.h"
 #include "esp_sntp.h"
@@ -60,6 +59,8 @@ volatile bool s_start_services_called = false;
 volatile bool s_start_ap_services_called = false;
 volatile bool s_sta_got_ip = false;
 volatile bool s_ap_started = false;
+volatile esp_ip4_addr_t s_sta_ip = {0};
+volatile esp_ip4_addr_t s_sta_gw = {0};
 
 static void start_services(void);
 static void stop_services(void);
@@ -134,12 +135,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
-static void services_start_timer_cb(void *arg)
+static void services_start_task(void *pvParameters)
 {
     start_services();
+    vTaskDelete(NULL);
 }
-
-static esp_timer_handle_t s_services_timer;
 
 static void ip_event_handler(void *arg, esp_event_base_t event_base,
                               int32_t event_id, void *event_data)
@@ -149,15 +149,15 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Got IP:" IPSTR ", GW:" IPSTR, IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.gw));
         s_retry_count = 0;
         s_sta_got_ip = true;
+        s_sta_ip.addr = event->ip_info.ip.addr;
+        s_sta_gw.addr = event->ip_info.gw.addr;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
-        const esp_timer_create_args_t timer_cfg = {
-            .callback = services_start_timer_cb,
-            .name = "svc_start",
-        };
-        ESP_ERROR_CHECK(esp_timer_create(&timer_cfg, &s_services_timer));
-        ESP_ERROR_CHECK(esp_timer_start_once(s_services_timer, 3000000));
-        ESP_LOGI(TAG, "services_start_timer scheduled (3s)");
+        static TaskHandle_t s_svc_task = NULL;
+        if (s_svc_task == NULL) {
+            xTaskCreate(services_start_task, "svc_start", 16384, NULL, 5, &s_svc_task);
+            ESP_LOGI(TAG, "services_start_task spawned (3s delay)");
+        }
 
         esp_sntp_stop();
         esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
@@ -187,6 +187,7 @@ static void publish_wifistr_task(void *pvParameters)
 
 static void start_services(void)
 {
+    vTaskDelay(pdMS_TO_TICKS(3000));
     ESP_LOGI(TAG, ">>> start_services() called");
     if (s_services_mutex) xSemaphoreTake(s_services_mutex, portMAX_DELAY);
     if (s_services_running) {
@@ -203,6 +204,34 @@ static void start_services(void)
     esp_ip4_addr_t upstream_dns;
     const ip_addr_t *dns_addr = dns_getserver(0);
     upstream_dns.addr = dns_addr->addr;
+
+    if (upstream_dns.addr == ap_ip_info.ip.addr) {
+        ESP_LOGW(TAG, "DNS[0] is our own AP IP — trying DNS[1] and STA gateway");
+        const ip_addr_t *dns1 = dns_getserver(1);
+        if (dns1->addr != 0 && dns1->addr != ap_ip_info.ip.addr) {
+            upstream_dns.addr = dns1->addr;
+            dns_setserver(0, dns1);
+            ESP_LOGI(TAG, "Fixed DNS[0] to " IPSTR " from DNS[1]", IP2STR(&upstream_dns));
+        } else {
+            esp_netif_dns_info_t sta_dns;
+            if (esp_netif_get_dns_info(s_sta_netif, ESP_NETIF_DNS_MAIN, &sta_dns) == ESP_OK
+                && sta_dns.ip.u_addr.ip4.addr != 0
+                && sta_dns.ip.u_addr.ip4.addr != ap_ip_info.ip.addr) {
+                upstream_dns.addr = sta_dns.ip.u_addr.ip4.addr;
+                ip_addr_t lwip_dns = {0};
+                lwip_dns.addr = sta_dns.ip.u_addr.ip4.addr;
+                dns_setserver(0, &lwip_dns);
+                ESP_LOGI(TAG, "Fixed DNS[0] to " IPSTR " from STA netif", IP2STR(&upstream_dns));
+            } else {
+                ESP_LOGE(TAG, "No valid upstream DNS found! Mint verification will fail.");
+            }
+        }
+    }
+
+    ESP_LOGI(TAG, "DNS config: [0]=" IPSTR " [1]=" IPSTR " [2]=" IPSTR,
+             IP2STR(&(esp_ip4_addr_t){.addr=dns_getserver(0)->addr}),
+             IP2STR(&(esp_ip4_addr_t){.addr=dns_getserver(1)->addr}),
+             IP2STR(&(esp_ip4_addr_t){.addr=dns_getserver(2)->addr}));
 
     firewall_init(ap_ip_info.ip);
     session_manager_init();
@@ -305,10 +334,10 @@ static void wifi_create_ap_netif(void)
 {
     s_ap_netif = esp_netif_create_default_wifi_ap();
 
-    const tollgate_config_t *cfg = tollgate_config_get();
-    esp_ip4_addr_t ap_ip = cfg->ap_ip;
-    esp_ip4_addr_t ap_gw = cfg->ap_ip;
-    esp_ip4_addr_t ap_mask;
+     const tollgate_config_t *cfg = tollgate_config_get();
+     esp_ip4_addr_t ap_ip = cfg->ap_ip;
+     esp_ip4_addr_t ap_gw = {0};
+     esp_ip4_addr_t ap_mask;
     IP4_ADDR(&ap_mask, 255, 255, 255, 0);
 
     strncpy(s_ap_ip_str, cfg->ap_ip_str, sizeof(s_ap_ip_str) - 1);
@@ -425,12 +454,7 @@ void app_main(void)
 
     if (tollgate_config_get_wifi(&(wifi_config_t){0}) != ESP_OK) {
         ESP_LOGI(TAG, "No STA network configured, starting services immediately");
-        const esp_timer_create_args_t timer_cfg = {
-            .callback = services_start_timer_cb,
-            .name = "svc_start_fallback",
-        };
-        ESP_ERROR_CHECK(esp_timer_create(&timer_cfg, &s_services_timer));
-        ESP_ERROR_CHECK(esp_timer_start_once(s_services_timer, 3000000));
+        xTaskCreate(services_start_task, "svc_start_fb", 16384, NULL, 5, NULL);
     }
 
     while (1) {

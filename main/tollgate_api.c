@@ -5,6 +5,11 @@
 #include "session.h"
 #include "captive_portal.h"
 #include "firewall.h"
+#include "lwip/dns.h"
+#include "lwip/netdb.h"
+#include "esp_http_client.h"
+#include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "nucula_wallet.h"
 #include "mint_health.h"
 #include "market.h"
@@ -510,6 +515,12 @@ static esp_err_t api_get_mints(httpd_req_t *req)
         cJSON *obj = cJSON_CreateObject();
         cJSON_AddStringToObject(obj, "url", mints[i].url);
         cJSON_AddBoolToObject(obj, "reachable", mints[i].reachable);
+        cJSON_AddNumberToObject(obj, "status", mints[i].last_http_status);
+        if (mints[i].last_err) {
+            char errbuf[16];
+            snprintf(errbuf, sizeof(errbuf), "0x%x", mints[i].last_err);
+            cJSON_AddStringToObject(obj, "last_err", errbuf);
+        }
         cJSON_AddItemToArray(arr, obj);
     }
     char *json = cJSON_PrintUnformatted(arr);
@@ -686,6 +697,8 @@ extern bool s_start_services_called;
 extern bool s_start_ap_services_called;
 extern bool s_sta_got_ip;
 extern bool s_ap_started;
+extern esp_ip4_addr_t s_sta_ip;
+extern esp_ip4_addr_t s_sta_gw;
 
 static esp_err_t api_get_debug(httpd_req_t *req)
 {
@@ -700,6 +713,40 @@ static esp_err_t api_get_debug(httpd_req_t *req)
     cJSON_AddBoolToObject(root, "ap_started", s_ap_started);
     cJSON_AddNumberToObject(root, "free_heap", (double)esp_get_free_heap_size());
     cJSON_AddNumberToObject(root, "min_free_heap", (double)esp_get_minimum_free_heap_size());
+    cJSON_AddNumberToObject(root, "free_internal", (double)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    cJSON_AddNumberToObject(root, "largest_internal", (double)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    cJSON_AddNumberToObject(root, "free_spiram", (double)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+    char dns0[16], dns1[16], dns2[16];
+    const ip_addr_t *d0 = dns_getserver(0);
+    const ip_addr_t *d1 = dns_getserver(1);
+    const ip_addr_t *d2 = dns_getserver(2);
+    snprintf(dns0, sizeof(dns0), IPSTR, IP2STR(&(esp_ip4_addr_t){.addr=d0->addr}));
+    snprintf(dns1, sizeof(dns1), IPSTR, IP2STR(&(esp_ip4_addr_t){.addr=d1->addr}));
+    snprintf(dns2, sizeof(dns2), IPSTR, IP2STR(&(esp_ip4_addr_t){.addr=d2->addr}));
+    cJSON_AddStringToObject(root, "dns0", dns0);
+    cJSON_AddStringToObject(root, "dns1", dns1);
+    cJSON_AddStringToObject(root, "dns2", dns2);
+
+    char sta_ip_str[16], sta_gw_str[16];
+    snprintf(sta_ip_str, sizeof(sta_ip_str), IPSTR, IP2STR(&s_sta_ip));
+    snprintf(sta_gw_str, sizeof(sta_gw_str), IPSTR, IP2STR(&s_sta_gw));
+    cJSON_AddStringToObject(root, "sta_ip", sta_ip_str);
+    cJSON_AddStringToObject(root, "sta_gw", sta_gw_str);
+
+    struct addrinfo hints = {0}, *res = NULL;
+    hints.ai_family = AF_INET;
+    int dns_rc = getaddrinfo("testnut-compat.mints.orangesync.tech", NULL, &hints, &res);
+    if (dns_rc == 0 && res) {
+        struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
+        char resolved[16];
+        snprintf(resolved, sizeof(resolved), IPSTR, IP2STR(&(esp_ip4_addr_t){.addr=addr->sin_addr.s_addr}));
+        cJSON_AddStringToObject(root, "dns_resolve", resolved);
+    } else {
+        cJSON_AddStringToObject(root, "dns_resolve", dns_rc == 0 ? "no-addr" : "FAIL");
+    }
+    if (res) freeaddrinfo(res);
+
     char *json = cJSON_PrintUnformatted(root);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, json);

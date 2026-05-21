@@ -7,8 +7,11 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 
 static const char *TAG = "mint_health";
+
+static int s_last_probe_err = 0;
 
 static mint_status_t s_mints[MINT_HEALTH_MAX];
 static int s_mint_count = 0;
@@ -60,16 +63,26 @@ static bool probe_mint(const char *url)
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) return false;
+    if (!client) {
+        ESP_LOGE(TAG, "probe: init failed for %s", probe_url);
+        s_last_probe_err = -1;
+        return false;
+    }
 
     esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "probe: open failed for %s err=0x%x", probe_url, err);
+        int sc = esp_http_client_get_status_code(client);
+        ESP_LOGE(TAG, "probe: status=%d errno=%d(%s)", sc, errno, strerror(errno));
+        s_last_probe_err = err;
         esp_http_client_cleanup(client);
         return false;
     }
 
     int content_length = esp_http_client_fetch_headers(client);
     int status = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "probe: %s -> status=%d len=%d", probe_url, status, content_length);
+    s_last_probe_err = 0;
 
     char *resp = NULL;
     if (content_length > 0 && content_length < 8192) {
@@ -100,6 +113,7 @@ static void run_probes(void)
         bool ok = probe_mint(s_mints[i].url);
         s_mints[i].last_probe_ms = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
         s_mints[i].last_http_status = ok ? 200 : 0;
+        s_mints[i].last_err = ok ? 0 : s_last_probe_err;
 
         if (ok) {
             s_mints[i].consecutive_successes++;
@@ -111,7 +125,7 @@ static void run_probes(void)
             }
         } else {
             if (s_mints[i].reachable) {
-                ESP_LOGW(TAG, "Mint UNREACHABLE: %s", s_mints[i].url);
+                ESP_LOGW(TAG, "Mint UNREACHABLE: %s err=0x%x", s_mints[i].url, s_last_probe_err);
             }
             s_mints[i].reachable = false;
             s_mints[i].consecutive_successes = 0;
@@ -137,6 +151,7 @@ static void run_initial_probes(void)
         bool ok = probe_mint(s_mints[i].url);
         s_mints[i].last_probe_ms = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
         s_mints[i].last_http_status = ok ? 200 : 0;
+        s_mints[i].last_err = ok ? 0 : s_last_probe_err;
 
         if (ok) {
             s_mints[i].consecutive_successes = MINT_HEALTH_RECOVERY_THRESHOLD;

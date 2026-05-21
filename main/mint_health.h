@@ -16,6 +16,7 @@ typedef struct {
     uint8_t consecutive_successes;
     int64_t last_probe_ms;
     int last_http_status;
+    int last_err;
 } mint_status_t;
 
 typedef void (*mint_health_changed_cb)(void);
