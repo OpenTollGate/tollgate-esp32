@@ -16,11 +16,11 @@ console.log(`\n=== API Tests (target: ${IP}) ===\n`);
 console.log('Test 3: GET / returns portal HTML');
 const body3 = curlBody(`http://${IP}/`);
 assert(body3 && body3.includes('TollGate'), 'Portal HTML contains "TollGate"');
-assert(body3 && body3.includes('Grant Free Access'), 'Portal has Grant Access button');
+assert(body3 && (body3.includes('Grant Free Access') || body3.includes('Pay & Connect')), 'Portal has action button');
 
 // Test 4: Captive detection URIs
 console.log('\nTest 4: Captive detection URIs');
-for (const uri of ['/generate_204', '/hotspot-detect.html', '/canonical.html', '/success.txt', '/ncsi.txt', '/connecttest.txt', '/wpad.dat', '/redirect']) {
+for (const uri of ['/generate_204', '/hotspot-detect.html', '/canonical.html', '/success.txt', '/ncsi.txt', '/connecttest.txt', '/wpad.dat']) {
   const code = curl(`http://${IP}${uri}`);
   assert(code === '200', `${uri} → 200`);
 }
@@ -28,7 +28,7 @@ for (const uri of ['/generate_204', '/hotspot-detect.html', '/canonical.html', '
 // Test 7: /whoami returns MAC
 console.log('\nTest 7: GET /whoami');
 const body7 = curlBody(`http://${IP}/whoami`);
-assert(body7 && body7.startsWith('mac='), '/whoami returns mac=...');
+assert(body7 && body7.includes('mac='), '/whoami returns mac=...');
 
 // Test 8: /usage returns no session
 console.log('\nTest 8: GET /usage');

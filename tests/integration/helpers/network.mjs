@@ -57,7 +57,7 @@ export function dnsResolvesToSelf(domain) {
   const ip = getPortalIP();
   try {
     const result = execSync(
-      `dig +short +timeout=5 ${domain} @{ip} 2>&1`,
+      `dig +short +timeout=5 ${domain} @${ip} 2>&1`,
       { encoding: 'utf8', timeout: 10000 }
     ).trim();
     return result === ip;
