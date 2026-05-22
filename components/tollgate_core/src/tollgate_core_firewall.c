@@ -9,12 +9,16 @@
 #include "lwip/etharp.h"
 #include "lwip/netif.h"
 #include "lwip/prot/ip4.h"
+#include "lwip/prot/tcp.h"
+#include "lwip/prot/ip.h"
 #include <string.h>
 
 #define MAX_CLIENTS 10
 
 static const char *TAG = "tg_core_fw";
 static esp_ip4_addr_t s_ap_ip;
+static uint16_t s_mining_port = 3333;
+static bool s_sandbox_mint_access = false;
 
 typedef struct {
     uint32_t ip;
@@ -70,6 +74,46 @@ esp_err_t tollgate_core_fw_init(esp_ip4_addr_t ap_ip)
     return ESP_OK;
 }
 
+void tollgate_core_fw_set_sandbox_ports(uint16_t mining_port)
+{
+    s_mining_port = mining_port;
+}
+
+void tollgate_core_fw_set_sandbox_mint_access(bool enabled)
+{
+    s_sandbox_mint_access = enabled;
+}
+
+static bool is_sandbox_allowed(struct pbuf *p)
+{
+    if (p->len < IP_HLEN) return false;
+    struct ip_hdr *iphdr = (struct ip_hdr *)p->payload;
+    uint32_t dest_ip_h = lwip_ntohl(iphdr->dest.addr);
+    uint32_t ap_ip_h = lwip_ntohl(s_ap_ip.addr);
+
+    if (dest_ip_h == ap_ip_h) {
+        if (iphdr->_proto == IP_PROTO_TCP) {
+            uint16_t dst_port = 0;
+            if (p->len >= IP_HLEN + TCP_HLEN) {
+                struct tcp_hdr *tcphdr = (struct tcp_hdr *)((uint8_t *)p->payload + IP_HLEN);
+                dst_port = lwip_ntohs(tcphdr->dest);
+            }
+            if (dst_port == 80 || dst_port == 2121 || dst_port == s_mining_port) {
+                return true;
+            }
+        }
+        if (iphdr->_proto == IP_PROTO_UDP) {
+            return true;
+        }
+    }
+
+    if (s_sandbox_mint_access && iphdr->_proto == IP_PROTO_TCP) {
+        return true;
+    }
+
+    return false;
+}
+
 int tollgate_core_ip4_canforward_filter(struct pbuf *p, u32_t dest_addr_hostorder)
 {
     (void)dest_addr_hostorder;
@@ -81,6 +125,9 @@ int tollgate_core_ip4_canforward_filter(struct pbuf *p, u32_t dest_addr_hostorde
         return 1;
     }
     if (tollgate_core_fw_is_allowed(iphdr->src.addr)) {
+        return 1;
+    }
+    if (is_sandbox_allowed(p)) {
         return 1;
     }
     return 0;
