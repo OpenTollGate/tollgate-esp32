@@ -5,8 +5,32 @@
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include <stdbool.h>
+#include <stdint.h>
 
-#include "lightning_payout.h"
+#define PAYOUT_MAX_RECIPIENTS     4
+#define PAYOUT_MAX_MINTS          3
+#define PAYOUT_MAX_ADDR_LEN       128
+
+typedef struct {
+    char lightning_address[PAYOUT_MAX_ADDR_LEN];
+    double factor;
+} payout_recipient_t;
+
+typedef struct {
+    char url[256];
+    uint64_t min_balance;
+    uint64_t min_payout_amount;
+} payout_mint_config_t;
+
+typedef struct {
+    bool enabled;
+    payout_mint_config_t mints[PAYOUT_MAX_MINTS];
+    int mint_count;
+    payout_recipient_t recipients[PAYOUT_MAX_RECIPIENTS];
+    int recipient_count;
+    uint64_t fee_tolerance_pct;
+    int check_interval_s;
+} payout_config_t;
 
 #define TOLLGATE_MAX_WIFI_NETWORKS 5
 #define TOLLGATE_MAX_MINT_URLS     8

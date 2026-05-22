@@ -13,6 +13,7 @@
 #include "mining_payment.h"
 #include "stratum_proxy.h"
 #include "stratum_client.h"
+#include "tls_worker.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "cJSON.h"
@@ -24,31 +25,6 @@
 
 static const char *TAG = "tollgate_api";
 static httpd_handle_t s_api_server = NULL;
-
-static QueueHandle_t s_wallet_queue = NULL;
-
-void tls_worker_set_queue(QueueHandle_t q)
-{
-    s_wallet_queue = q;
-}
-
-static void tls_worker_submit(const char *token)
-{
-    if (!s_wallet_queue) {
-        ESP_LOGW(TAG, "No wallet queue, receiving synchronously");
-        nucula_wallet_receive(token);
-        return;
-    }
-
-    char *copy = strdup(token);
-    if (!copy) return;
-
-    if (xQueueSend(s_wallet_queue, &copy, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        ESP_LOGW(TAG, "Wallet queue full, receiving synchronously");
-        nucula_wallet_receive(copy);
-        free(copy);
-    }
-}
 
 static esp_err_t get_client_ip(httpd_req_t *req, uint32_t *ip_out)
 {

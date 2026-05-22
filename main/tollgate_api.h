@@ -6,6 +6,5 @@
 
 esp_err_t tollgate_api_start(void);
 void tollgate_api_stop(void);
-void tls_worker_set_queue(QueueHandle_t q);
 
 #endif
