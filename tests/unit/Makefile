@@ -22,7 +22,7 @@ LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_display test_negentropy_adapter test_beacon_price test_market test_mint_health test_mining_payment test_stratum_proxy test_session_payment_method test_tollgate_client_mining test_firewall_sandbox
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_beacon_price test_market test_mint_health test_mining_payment test_stratum_proxy test_session_payment_method test_tollgate_client_mining test_firewall_sandbox test_relay_selector test_relay_validator
 
 .PHONY: all test clean $(TESTS)
 
@@ -104,6 +104,12 @@ test_tollgate_client_mining: test_tollgate_client_mining.c
 
 test_firewall_sandbox: test_firewall_sandbox.c $(REPO_ROOT)/main/firewall.c
 	$(CC) $(CFLAGS) -include stubs/dns_server.h $< $(REPO_ROOT)/main/firewall.c -o $@ $(LDFLAGS)
+
+test_relay_selector: test_relay_selector.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_relay_validator: test_relay_validator.c $(REPO_ROOT)/main/nostr_event.c $(REPO_ROOT)/main/identity.c $(REPO_ROOT)/components/wisp_relay/relay_validator.c $(SECP256K1_OBJ)
+	$(CC) $(CFLAGS) -I $(SECP256K1_PRIV_INC) -I $(REPO_ROOT)/main -I $(REPO_ROOT)/components/wisp_relay $< $(REPO_ROOT)/main/nostr_event.c $(REPO_ROOT)/main/identity.c $(REPO_ROOT)/components/wisp_relay/relay_validator.c $(SECP256K1_OBJ) -o $@ $(LDFLAGS)
 
 clean:
 	rm -f $(TESTS) $(SECP256K1_OBJ)
