@@ -9,6 +9,12 @@
 #define TG_SESSION_MAX_CLIENTS     10
 #define TG_SESSION_MAX_MAC_LEN     18
 
+typedef enum {
+    TG_PAYMENT_CASHU,
+    TG_PAYMENT_MINING,
+    TG_PAYMENT_BYTES
+} tg_payment_method_t;
+
 typedef struct {
     uint32_t client_ip;
     char mac[TG_SESSION_MAX_MAC_LEN];
@@ -16,6 +22,7 @@ typedef struct {
     int64_t start_time_ms;
     uint64_t allotment_bytes;
     uint64_t bytes_consumed;
+    tg_payment_method_t payment_method;
     bool active;
 } tg_session_t;
 

@@ -41,6 +41,8 @@ void tollgate_core_on_share_accepted(uint32_t client_ip, double difficulty);
 double tollgate_core_calc_hashprice(double hashrate_ghs);
 char *tollgate_core_get_mining_status_json(void);
 
+const tollgate_platform_t *tollgate_core_get_platform(void);
+
 #ifdef __cplusplus
 }
 #endif

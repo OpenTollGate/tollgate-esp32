@@ -234,3 +234,8 @@ bool tollgate_core_is_owner_connected(void)
 {
     return s_owner_connected;
 }
+
+const tollgate_platform_t *tollgate_core_get_platform(void)
+{
+    return s_platform;
+}

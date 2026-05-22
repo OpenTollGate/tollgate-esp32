@@ -19,7 +19,6 @@ void firewall_revoke_all(void);
 bool firewall_is_client_allowed(uint32_t client_ip);
 bool firewall_is_mac_allowed(const char *mac);
 int firewall_client_count(void);
-
 esp_err_t firewall_get_mac_for_ip(uint32_t client_ip, char *mac_out, size_t mac_out_size);
 
 int tollgate_ip4_canforward_filter(struct pbuf *p, uint32_t dest_addr_hostorder);

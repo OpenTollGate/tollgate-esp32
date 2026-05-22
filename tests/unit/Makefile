@@ -4,6 +4,8 @@ SECP256K1_INC := $(SECP256K1_SRC)/include
 SECP256K1_PRIV_INC := $(SECP256K1_SRC)/src
 SECP256K1_CFG := $(REPO_ROOT)/nucula_src/components/secp256k1
 CJSON_SRC := $(REPO_ROOT)/../esp/esp-idf/components/json/cJSON
+TG_CORE_SRC := $(REPO_ROOT)/components/tollgate_core/src
+TG_CORE_INC := $(REPO_ROOT)/components/tollgate_core/include
 
 CC := gcc
 CFLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-sign-compare \
@@ -16,7 +18,9 @@ CFLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-sign-com
           -I stubs \
           -I $(SECP256K1_INC) \
           -I $(SECP256K1_CFG) \
-          -I /usr/include/cjson
+          -I /usr/include/cjson \
+          -I $(TG_CORE_SRC) \
+          -I $(TG_CORE_INC)
 
 LDFLAGS := -lmbedcrypto -lcjson -lm
 
@@ -57,11 +61,13 @@ test_identity: test_identity.c $(REPO_ROOT)/main/identity.c $(SECP256K1_OBJ)
 test_nostr_event: test_nostr_event.c $(REPO_ROOT)/main/nostr_event.c $(REPO_ROOT)/main/identity.c $(SECP256K1_OBJ)
 	$(CC) $(CFLAGS) -I $(SECP256K1_PRIV_INC) $< $(REPO_ROOT)/main/nostr_event.c $(REPO_ROOT)/main/identity.c $(SECP256K1_OBJ) -o $@ $(LDFLAGS)
 
-test_cashu: test_cashu.c $(REPO_ROOT)/main/cashu.c
-	$(CC) $(CFLAGS) -include stubs/mint_health.h $< $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
+test_cashu: test_cashu.c $(REPO_ROOT)/main/cashu.c $(TG_CORE_SRC)/tollgate_core_cashu.c $(TG_CORE_SRC)/tollgate_core_session.c $(TG_CORE_SRC)/tollgate_core_firewall.c $(TG_CORE_SRC)/tollgate_core.c $(TG_CORE_SRC)/tollgate_core_mining.c $(TG_CORE_SRC)/tollgate_core_dns.c $(TG_CORE_SRC)/tollgate_core_stratum_proxy.c
+	$(CC) $(CFLAGS) -include stubs/mint_health.h -include stubs/esp_netif.h -include stubs/esp_log.h -include stubs/esp_http_client.h -include stubs/esp_crt_bundle.h $^ -o $@ $(LDFLAGS)
 
-test_session: test_session.c $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c
-	$(CC) $(CFLAGS) -include stubs/mint_health.h $< $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
+TG_CORE_OBJS_CFLAGS := -include stubs/mint_health.h -include stubs/esp_netif.h -include stubs/esp_log.h -include stubs/esp_http_client.h -include stubs/esp_crt_bundle.h -include stubs/esp_crt_bundle.h
+
+test_session: test_session.c $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c $(TG_CORE_SRC)/tollgate_core_cashu.c $(TG_CORE_SRC)/tollgate_core_session.c $(TG_CORE_SRC)/tollgate_core_firewall.c $(TG_CORE_SRC)/tollgate_core.c $(TG_CORE_SRC)/tollgate_core_mining.c $(TG_CORE_SRC)/tollgate_core_dns.c $(TG_CORE_SRC)/tollgate_core_stratum_proxy.c
+	$(CC) $(CFLAGS) $(TG_CORE_OBJS_CFLAGS) $^ -o $@ $(LDFLAGS)
 
 test_tollgate_client: test_tollgate_client.c $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c
 	$(CC) $(CFLAGS) -I $(REPO_ROOT)/main $< $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c -o $@ $(LDFLAGS)
@@ -90,20 +96,20 @@ test_beacon_price: test_beacon_price.c $(REPO_ROOT)/main/beacon_price.c
 test_market: test_market.c $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c
 	$(CC) $(CFLAGS) -I $(REPO_ROOT)/main $< $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c -o $@ $(LDFLAGS)
 
-test_mining_payment: test_mining_payment.c $(REPO_ROOT)/main/mining_payment.c
-	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/mining_payment.c -o $@ $(LDFLAGS)
+test_mining_payment: test_mining_payment.c $(REPO_ROOT)/main/mining_payment.c $(TG_CORE_SRC)/tollgate_core_mining.c $(TG_CORE_SRC)/tollgate_core.c $(TG_CORE_SRC)/tollgate_core_session.c $(TG_CORE_SRC)/tollgate_core_firewall.c $(TG_CORE_SRC)/tollgate_core_cashu.c $(TG_CORE_SRC)/tollgate_core_dns.c $(TG_CORE_SRC)/tollgate_core_stratum_proxy.c
+	$(CC) $(CFLAGS) $(TG_CORE_OBJS_CFLAGS) $^ -o $@ $(LDFLAGS)
 
-test_stratum_proxy: test_stratum_proxy.c $(REPO_ROOT)/main/stratum_proxy.c $(REPO_ROOT)/main/mining_payment.c
-	$(CC) $(CFLAGS) $< $(REPO_ROOT)/main/stratum_proxy.c $(REPO_ROOT)/main/mining_payment.c -o $@ $(LDFLAGS)
+test_stratum_proxy: test_stratum_proxy.c $(REPO_ROOT)/main/stratum_proxy.c $(REPO_ROOT)/main/mining_payment.c $(TG_CORE_SRC)/tollgate_core_mining.c $(TG_CORE_SRC)/tollgate_core.c $(TG_CORE_SRC)/tollgate_core_session.c $(TG_CORE_SRC)/tollgate_core_firewall.c $(TG_CORE_SRC)/tollgate_core_cashu.c $(TG_CORE_SRC)/tollgate_core_dns.c $(TG_CORE_SRC)/tollgate_core_stratum_proxy.c
+	$(CC) $(CFLAGS) $(TG_CORE_OBJS_CFLAGS) $^ -o $@ $(LDFLAGS)
 
-test_session_payment_method: test_session_payment_method.c $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c
-	$(CC) $(CFLAGS) -include stubs/mint_health.h $< $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c -o $@ $(LDFLAGS)
+test_session_payment_method: test_session_payment_method.c $(REPO_ROOT)/main/session.c $(REPO_ROOT)/main/cashu.c $(TG_CORE_SRC)/tollgate_core_cashu.c $(TG_CORE_SRC)/tollgate_core_session.c $(TG_CORE_SRC)/tollgate_core_firewall.c $(TG_CORE_SRC)/tollgate_core.c $(TG_CORE_SRC)/tollgate_core_mining.c $(TG_CORE_SRC)/tollgate_core_dns.c $(TG_CORE_SRC)/tollgate_core_stratum_proxy.c
+	$(CC) $(CFLAGS) $(TG_CORE_OBJS_CFLAGS) $^ -o $@ $(LDFLAGS)
 
 test_tollgate_client_mining: test_tollgate_client_mining.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
-test_firewall_sandbox: test_firewall_sandbox.c $(REPO_ROOT)/main/firewall.c
-	$(CC) $(CFLAGS) -include stubs/dns_server.h $< $(REPO_ROOT)/main/firewall.c -o $@ $(LDFLAGS)
+test_firewall_sandbox: test_firewall_sandbox.c $(REPO_ROOT)/main/firewall.c $(TG_CORE_SRC)/tollgate_core_firewall.c $(TG_CORE_SRC)/tollgate_core.c $(TG_CORE_SRC)/tollgate_core_session.c $(TG_CORE_SRC)/tollgate_core_cashu.c $(TG_CORE_SRC)/tollgate_core_mining.c $(TG_CORE_SRC)/tollgate_core_dns.c $(TG_CORE_SRC)/tollgate_core_stratum_proxy.c
+	$(CC) $(CFLAGS) -include stubs/dns_server.h $(TG_CORE_OBJS_CFLAGS) $^ -o $@ $(LDFLAGS)
 
 test_relay_selector: test_relay_selector.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)

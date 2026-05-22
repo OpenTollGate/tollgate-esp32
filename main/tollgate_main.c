@@ -12,6 +12,8 @@
 #include "lwip/dns.h"
 #include "esp_sntp.h"
 #include "dhcpserver/dhcpserver.h"
+#include "tollgate_core.h"
+#include "tollgate_esp_platform.h"
 #include "config.h"
 #include "identity.h"
 #include "dns_server.h"
@@ -233,6 +235,7 @@ static void start_services(void)
              IP2STR(&(esp_ip4_addr_t){.addr=dns_getserver(1)->addr}),
              IP2STR(&(esp_ip4_addr_t){.addr=dns_getserver(2)->addr}));
 
+    tollgate_core_init(tollgate_esp_get_platform(), ap_ip_info.ip);
     firewall_init(ap_ip_info.ip);
     session_manager_init();
 

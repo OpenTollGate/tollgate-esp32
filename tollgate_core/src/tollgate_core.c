@@ -345,6 +345,118 @@ int tollgate_core_session_add_bytes(uint32_t client_ip, uint64_t bytes)
     return 0;
 }
 
+void *tollgate_core_session_create(uint32_t client_ip, uint64_t allotment_ms)
+{
+    return tg_session_create(client_ip, allotment_ms);
+}
+
+void *tollgate_core_session_create_bytes(uint32_t client_ip, uint64_t allotment_bytes)
+{
+    return tg_session_create_bytes(client_ip, allotment_bytes);
+}
+
+void tollgate_core_session_revoke(void *session)
+{
+    tg_session_revoke((tg_session_t *)session);
+}
+
+bool tollgate_core_session_is_expired(const void *session)
+{
+    return tg_session_is_expired((const tg_session_t *)session);
+}
+
+void tollgate_core_firewall_grant(uint32_t client_ip)
+{
+    tg_firewall_grant(client_ip);
+}
+
+void tollgate_core_firewall_revoke(uint32_t client_ip)
+{
+    tg_firewall_revoke(client_ip);
+}
+
+int tollgate_core_firewall_get_mac_for_ip(uint32_t client_ip, char *mac_out, int mac_out_size)
+{
+    return tg_firewall_get_mac_for_ip(client_ip, mac_out, mac_out_size);
+}
+
+int tollgate_core_cashu_decode(const char *token_str, void *out)
+{
+    return tg_cashu_decode_token(token_str, (tg_cashu_token_t *)out);
+}
+
+int tollgate_core_cashu_check_states(const char *mint_url, const void *token,
+                                     void *states, int *state_count)
+{
+    return tg_cashu_check_proof_states(mint_url, (const tg_cashu_token_t *)token,
+                                       (tg_cashu_proof_state_t *)states, state_count);
+}
+
+uint64_t tollgate_core_cashu_allotment(uint64_t amount, uint64_t price, uint64_t step_size)
+{
+    return tg_cashu_calculate_allotment(amount, price, step_size);
+}
+
+bool tollgate_core_cashu_is_mint_accepted(const char *mint_url)
+{
+    if (!s_platform) return false;
+    const char *accepted = s_platform->get_mint_url ? s_platform->get_mint_url() : NULL;
+    if (!accepted) return false;
+    if (s_platform->get_accepted_mint_count && s_platform->get_accepted_mint) {
+        int count = s_platform->get_accepted_mint_count();
+        for (int i = 0; i < count; i++) {
+            if (tg_cashu_is_mint_accepted(mint_url, s_platform->get_accepted_mint(i)))
+                return true;
+        }
+        return false;
+    }
+    return tg_cashu_is_mint_accepted(mint_url, accepted);
+}
+
+const char *tollgate_core_cashu_token_mint(const void *token)
+{
+    const tg_cashu_token_t *t = (const tg_cashu_token_t *)token;
+    return t->mint_url;
+}
+
+uint64_t tollgate_core_cashu_token_amount(const void *token)
+{
+    const tg_cashu_token_t *t = (const tg_cashu_token_t *)token;
+    return t->total_amount;
+}
+
+void tollgate_core_mining_update_hashrate(uint32_t client_ip, bool accepted)
+{
+    tg_mining_update_hashrate(client_ip, accepted);
+}
+
+const void *tollgate_core_mining_get_client_stats(uint32_t client_ip)
+{
+    return tg_mining_get_client_stats(client_ip);
+}
+
+double tollgate_core_mining_get_hashprice(void)
+{
+    return tg_mining_get_current_hashprice();
+}
+
+uint64_t tollgate_core_mining_shares_to_allotment_ms(double hashrate, double hashprice,
+                                                     int price, int step_ms)
+{
+    return tg_mining_shares_to_allotment_ms(hashrate, hashprice, price, step_ms);
+}
+
+uint64_t tollgate_core_mining_shares_to_allotment_bytes(double hashrate, double hashprice,
+                                                        int price, int step_bytes)
+{
+    return tg_mining_shares_to_allotment_bytes(hashrate, hashprice, price, step_bytes);
+}
+
+void tollgate_core_mining_set_nbits(uint32_t nbits)
+{
+    tg_mining_set_current_nbits(nbits);
+}
+
 int tollgate_core_dns_start(uint32_t upstream_dns)
 {
     (void)upstream_dns;
