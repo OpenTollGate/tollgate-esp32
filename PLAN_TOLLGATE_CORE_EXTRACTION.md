@@ -191,46 +191,47 @@ main/                                   ← esp32-tollgate specific (shrinks)
 - [x] Archive stale branches to `/home/c03rad0r/mining-work-backup/` as git bundles
 - [x] Commit `PLAN_pytest_migration.md`
 - [x] Fix `nucula_src` submodule drift
-- [ ] Fix missing unit test build rules (`test_relay_selector.c`, `test_relay_validator.c`)
-- [ ] Remove broken test binaries from TESTS list (`test_display`, `test_negentropy_adapter`)
-- [ ] Run `make test-unit` — confirm green baseline
-- [ ] Create branch `feature/tollgate-core-v2` from master
+- [x] Fix missing unit test build rules (`test_relay_selector.c`, `test_relay_validator.c`)
+- [x] Remove broken test binaries from TESTS list (`test_display`, `test_negentropy_adapter`)
+- [x] Run `make test-unit` — confirm green baseline (22/22 pass)
+- [x] Create branch `feature/tollgate-core-v2` from master
 
 ### Phase 1: Create Skeleton
 
-- [ ] Create `tollgate_core/` directory with `CMakeLists.txt`, `include/`, `src/`
-- [ ] Define `tollgate_platform.h` interface (all callbacks)
-- [ ] Define `tollgate_core.h` public API
-- [ ] Create empty `tollgate_core.c` with `tollgate_core_init()`, `tollgate_core_tick()`
-- [ ] Create `components/tollgate_esp/` skeleton with empty `tollgate_esp_platform.c`
-- [ ] Wire into `main/CMakeLists.txt` as dependency
-- [ ] Verify: project builds, runs on hardware, no behavioral change
+- [x] Create `tollgate_core/` directory with `CMakeLists.txt`, `include/`, `src/`
+- [x] Define `tollgate_platform.h` interface (all callbacks)
+- [x] Define `tollgate_core.h` public API
+- [x] Create `tollgate_core.c` with `tollgate_core_init()`, `tollgate_core_tick()`
+- [x] Create `components/tollgate_esp/` with `tollgate_esp_platform.c`
+- [x] Wire into build system (CMakeLists.txt)
+- [x] Verify: standalone cmake build passes, ESP-IDF build passes
 
 ### Phase 2: Extract Layer 0 — Pure Logic
 
-- [ ] `tollgate_cashu.c` — token decode, allotment math, checkstate (via platform HTTP)
-- [ ] `tollgate_session.c` — lifecycle, expiry, extend, bytes/time support
-- [ ] `tollgate_mining.c` — hashprice, nbits→difficulty, shares-to-allotment, client stats
+- [x] `tollgate_cashu.c` — token decode, allotment math, checkstate (via platform HTTP)
+- [x] `tollgate_session.c` — lifecycle, expiry, extend, bytes/time support
+- [x] `tollgate_mining.c` — hashprice, nbits→difficulty, shares-to-allotment, client stats
 - [ ] Port unit tests to test `tollgate_core/` directly (no ESP-IDF stubs)
-- [ ] Verify: `make test-unit` passes with new tests
+- [x] Verify: `make test-unit` passes (22/22), standalone cmake build passes
 
-### Phase 3: Extract Layer 1 — Protocol Logic
+### Phase 3: Extract Layer 1 — Protocol Logic (STUBS — placeholder implementations)
 
-- [ ] `tollgate_dns.c` — DNS protocol parser, hijack, forward, per-client auth
-- [ ] `tollgate_firewall.c` — client allowlist, NAT filter, lwIP hook
-- [ ] `tollgate_stratum_client.c` — SV1 pool client (subscribe, authorize, submit)
-- [ ] `tollgate_stratum_proxy.c` — SV1 local proxy (TCP server, job broadcast)
-- [ ] `tollgate_beacon.c` — Vendor IE builder/parser
-- [ ] `tollgate_market.c` — price scanner, LRU entries, cheapest finder
-- [ ] Wire `tollgate_core.c` orchestrator to all subsystems
+- [x] `tollgate_firewall.c` — client allowlist, NAT filter, packet filter
+- [ ] `tollgate_dns.c` — DNS protocol parser, hijack, forward, per-client auth (stub returns -1)
+- [ ] `tollgate_stratum_client.c` — SV1 pool client (subscribe, authorize, submit) (stub returns -1)
+- [ ] `tollgate_stratum_proxy.c` — SV1 local proxy (TCP server, job broadcast) (stub returns -1)
+- [ ] `tollgate_beacon.c` — Vendor IE builder/parser (stub no-op)
+- [ ] `tollgate_market.c` — price scanner, LRU entries, cheapest finder (stub no-op)
+- [x] Wire `tollgate_core.c` orchestrator to all subsystems
 - [ ] Verify: Build on hardware, run all integration tests
 
 ### Phase 4: ESP-IDF Wrapper
 
-- [ ] `tollgate_esp_platform.c` — implement all `tollgate_platform_t` callbacks
-- [ ] `components/tollgate_esp/CMakeLists.txt` — REQUIRES tollgate_core + ESP-IDF
-- [ ] `components/tollgate_esp/idf_component.yml` — IDF Component Registry
-- [ ] Verify: Full build + flash + all tests pass on Board A
+- [x] `tollgate_esp_platform.c` — implement all `tollgate_platform_t` callbacks
+- [x] `components/tollgate_esp/CMakeLists.txt` — REQUIRES tollgate_core + ESP-IDF + nucula_lib
+- [x] `components/tollgate_esp/idf_component.yml` — IDF Component Registry
+- [x] Verify: Full ESP-IDF build passes (`idf.py build` succeeds)
+- [ ] Verify: Flash + all tests pass on Board A (deferred to Phase 5)
 
 ### Phase 5: Wire main/ to Use tollgate_core
 
