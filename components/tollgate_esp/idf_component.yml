@@ -1,0 +1,5 @@
+version: "1.0.0"
+description: TollGate ESP-IDF component — captive portal + Cashu payments + mining-for-bandwidth
+dependencies:
+  idf:
+    version: ">=5.4.0"
