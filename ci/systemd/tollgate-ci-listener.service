@@ -1,0 +1,18 @@
+[Unit]
+Description=ESP32-TollGate CI Nostr Listener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=c03rad0r
+WorkingDirectory=/home/c03rad0r/esp32-tollgate/ci/scripts
+ExecStart=/usr/bin/python3 /home/c03rad0r/esp32-tollgate/ci/scripts/ci_listener.py
+Restart=always
+RestartSec=10
+Environment=CI_RELAY_URL=wss://ngit.orangesync.tech
+Environment=CI_BRANCH=feature/tollgate-core-v2
+Environment=CI_REPO_ID=npub12m5exm2uk3xa674cc5r0hlyvccs5xxn7qv83ezuteefv5972nquq4j4szl/esp32-tollgate
+
+[Install]
+WantedBy=multi-user.target

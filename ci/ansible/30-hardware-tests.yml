@@ -1,0 +1,69 @@
+---
+# Run hardware integration tests on localhost
+# Usage: ansible-playbook 30-hardware-tests.yml [-e "board=a"] [-e "skip_flash=false"]
+
+- name: Hardware integration tests
+  hosts: localhost
+  connection: local
+  vars:
+    board: "a"
+    skip_flash: false
+    esp32_tollgate_dir: "/home/c03rad0r/esp32-tollgate"
+    sudo_pw: "c03rad0r123"
+    board_config:
+      a:
+        port: "/dev/ttyACM0"
+        ip: "10.185.47.1"
+        ssid: "TollGate-B96D80"
+      b:
+        port: "/dev/ttyACM1"
+        ip: "10.192.45.1"
+        ssid: "TollGate-C0E9CA"
+
+  tasks:
+    - name: Set board facts
+      set_fact:
+        board_port: "{{ board_config[board].port }}"
+        board_ip: "{{ board_config[board].ip }}"
+        board_ssid: "{{ board_config[board].ssid }}"
+
+    - name: Verify board connected
+      command: "esptool.py --port {{ board_port }} chip_id"
+      changed_when: false
+
+    - name: Flash firmware
+      when: not skip_flash | bool
+      command: "make flash-{{ board }}"
+      args:
+        chdir: "{{ esp32_tollgate_dir }}"
+
+    - name: Wait for board boot
+      pause:
+        seconds: 15
+
+    - name: Run smoke tests
+      command: "make test-smoke"
+      args:
+        chdir: "{{ esp32_tollgate_dir }}"
+      environment:
+        TOLLGATE_IP: "{{ board_ip }}"
+        BOARD: "{{ board }}"
+      register: smoke_result
+      ignore_errors: true
+
+    - name: Run integration tests
+      command: "make test-integration"
+      args:
+        chdir: "{{ esp32_tollgate_dir }}"
+      environment:
+        TOLLGATE_IP: "{{ board_ip }}"
+        TOLLGATE_SSID: "{{ board_ssid }}"
+      register: integration_result
+      ignore_errors: true
+
+    - name: Report results
+      debug:
+        msg: |
+          Board: {{ board }} ({{ board_ip }})
+          Smoke: {{ 'PASS' if smoke_result is success else 'FAIL' }}
+          Integration: {{ 'PASS' if integration_result is success else 'FAIL' }}
