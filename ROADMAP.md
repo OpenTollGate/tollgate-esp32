@@ -12,11 +12,13 @@
 | 6a-6d | Consolidate & clean up | Done | `9330b01` |
 | 6e-6f | Break circular deps | Done | `fb8558c` |
 | 7 | Eliminate shims | Done | `5140a30` |
-| 8 | Full Layer 1 extraction (beacon_price, market, etc.) | Deferred | — |
-| 9a | Copy component to NerdQAxePlus | Done | `0ff96287` |
-| 9b | NerdQAxePlus build with TOLLGATE=1 | Done | `0ff96287` |
+| 8a-8b | Extract beacon_price + market into component | Done | `0642900` |
+| 8c-8f | Extract captive_portal, stratum_client, mint_health, tollgate_client | Deferred | — |
+| 9a-9b | NerdQAxePlus build with TOLLGATE=1 | Done | `371ae9ee` |
 | 9c | BitAxe platform implementation | Future | — |
-| 10 | Publish to IDF Component Registry | Future | — |
+| 10a | Component metadata v1.1.0, README, CHANGELOG | Done | `a40cf60` |
+| 10b | CI pipeline (GitHub Actions) | Future | — |
+| 10c | Publish to IDF Component Registry | Future | — |
 
 ## Testing Protocol
 
