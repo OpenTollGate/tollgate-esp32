@@ -13,7 +13,7 @@
 | 6e-6f | Break circular deps | Done | `fb8558c` |
 | 7 | Eliminate shims | Done | `5140a30` |
 | 8a-8b | Extract beacon_price + market into component | Done | `0642900` |
-| 8c-8f | Extract captive_portal, stratum_client, mint_health, tollgate_client | Deferred | — |
+| 8c-8f | Extract captive_portal, stratum_client, mint_health, tollgate_client | Done | `be4d490` |
 | 9a-9b | NerdQAxePlus build with TOLLGATE=1 | Done | `371ae9ee` |
 | 9c | BitAxe platform implementation | Future | — |
 | 10a | Component metadata v1.1.0, README, CHANGELOG | Done | `a40cf60` |
