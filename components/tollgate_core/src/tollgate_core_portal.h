@@ -6,6 +6,10 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     const char *key;
     const char *val;
@@ -30,5 +34,9 @@ int tollgate_core_portal_format_usage(const tg_session_t *session,
                                        size_t buf_size);
 
 bool tollgate_core_portal_is_captive_uri(const char *uri);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
