@@ -4,6 +4,20 @@
 **Start commit:** `851801f` (Phase 5 complete, hardware-verified)
 **Goal:** Extract all portable TollGate business logic into `components/tollgate_core/` for reuse in NerdQAxePlus and other ESP32 firmware.
 
+## Status (updated 2026-05-23)
+
+| Phase | Description | Status | Commit |
+|-------|-------------|--------|--------|
+| 5 | Shim layer wiring | Done | `851801f` |
+| 6a-6d | Consolidate & clean up | Done | `9330b01` |
+| 6e-6f | Break circular deps | Done | `fb8558c` |
+| 7 | Eliminate shims | Done | `5140a30` |
+| 8 | Full Layer 1 extraction (beacon_price, market, etc.) | Deferred | — |
+| 9a | Copy component to NerdQAxePlus | Done | `0ff96287` |
+| 9b | NerdQAxePlus build with TOLLGATE=1 | Done | `0ff96287` |
+| 9c | BitAxe platform implementation | Future | — |
+| 10 | Publish to IDF Component Registry | Future | — |
+
 ## Testing Protocol
 
 After **every** step:
