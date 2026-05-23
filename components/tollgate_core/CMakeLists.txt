@@ -6,6 +6,8 @@ idf_component_register(
          "src/tollgate_core_session.c"
          "src/tollgate_core_mining.c"
          "src/tollgate_core_stratum_proxy.c"
+         "src/tollgate_core_beacon.c"
+         "src/tollgate_core_market.c"
     INCLUDE_DIRS "include" "src"
     REQUIRES lwip json esp_http_client mbedtls log esp_netif
     PRIV_REQUIRES esp_wifi)
