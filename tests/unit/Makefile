@@ -26,7 +26,7 @@ LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_beacon_price test_market test_mint_health test_mining_payment test_stratum_proxy test_session_payment_method test_tollgate_client_mining test_firewall_sandbox test_relay_selector test_relay_validator test_portal test_stratum_client test_mint_health_core test_client_core
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_beacon_price test_market test_mint_health test_mining_payment test_stratum_proxy test_session_payment_method test_tollgate_client_mining test_firewall_sandbox test_relay_selector test_relay_validator test_portal test_stratum_client test_mint_health_core test_client_core test_relay_types test_sub_manager test_deletion
 
 .PHONY: all test clean $(TESTS)
 
@@ -128,6 +128,15 @@ test_mint_health_core: test_mint_health_core.c $(TG_CORE_SRC)/tollgate_core_mint
 
 test_client_core: test_client_core.c $(TG_CORE_SRC)/tollgate_core_client.c
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+test_relay_types: test_relay_types.c $(REPO_ROOT)/components/wisp_relay/relay_types.c
+	$(CC) $(CFLAGS) -I $(REPO_ROOT)/components/wisp_relay $^ -o $@ $(LDFLAGS)
+
+test_sub_manager: test_sub_manager.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_deletion: test_deletion.c $(REPO_ROOT)/components/wisp_relay/relay_types.c
+	$(CC) $(CFLAGS) -I $(REPO_ROOT)/components/wisp_relay $^ -o $@ $(LDFLAGS)
 
 clean:
 	rm -f $(TESTS) $(SECP256K1_OBJ)
