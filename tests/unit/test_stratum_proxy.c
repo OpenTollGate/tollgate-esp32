@@ -1,6 +1,6 @@
 #include "test_framework.h"
 #include "../../main/stratum_proxy.h"
-#include "../../main/mining_payment.h"
+#include "tollgate_core_mining.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -8,7 +8,7 @@ int main(void)
 {
     printf("=== test_stratum_proxy ===\n");
 
-    mining_payment_init();
+    tollgate_core_mining_init();
 
     printf("\n--- stratum_proxy_set_job / get_current_job ---\n");
     {
@@ -42,7 +42,7 @@ int main(void)
 
     printf("\n--- stratum_proxy_get_stats ---\n");
     {
-        mining_set_current_nbits(0x170309E2);
+        tollgate_core_mining_set_current_nbits(0x170309E2);
         stratum_proxy_set_job(&(stratum_job_t){
             .job_id = 1,
             .nbits = 0x170309E2,

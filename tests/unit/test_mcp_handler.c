@@ -1,7 +1,8 @@
 #include "test_framework.h"
 #include "mcp_handler.h"
 #include "config.h"
-#include "session.h"
+#include "tollgate_core_session.h"
+#include "tollgate_core.h"
 #include "nucula_wallet.h"
 #include "cJSON.h"
 #include <string.h>
@@ -41,15 +42,15 @@ esp_err_t nucula_wallet_melt(const char *bolt11, uint64_t max_fee) {
     return g_wallet_melt_rc;
 }
 
-static session_t g_test_sessions[SESSION_MAX_CLIENTS];
+static tg_session_t g_test_sessions[TG_SESSION_MAX_CLIENTS];
 static int g_test_session_count = 0;
 
-session_t *cvm_get_sessions_array(void) {
+tg_session_t *tollgate_core_session_get_array(void) {
     return g_test_sessions;
 }
 
-int cvm_get_sessions_count(void) {
-    return SESSION_MAX_CLIENTS;
+int tollgate_core_session_get_array_size(void) {
+    return TG_SESSION_MAX_CLIENTS;
 }
 
 static void test_mcp_parse_tool(void)

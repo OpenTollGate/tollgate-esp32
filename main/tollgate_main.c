@@ -13,13 +13,13 @@
 #include "esp_sntp.h"
 #include "dhcpserver/dhcpserver.h"
 #include "tollgate_core.h"
+#include "tollgate_core_firewall.h"
+#include "tollgate_core_mining.h"
 #include "tollgate_esp_platform.h"
 #include "config.h"
 #include "identity.h"
 #include "dns_server.h"
 #include "captive_portal.h"
-#include "firewall.h"
-#include "session.h"
 #include "tollgate_api.h"
 #include "nucula_wallet.h"
 #include "wifistr.h"
@@ -37,7 +37,12 @@
 #include "stratum_proxy.h"
 #include "sw_miner.h"
 #include "asic_miner.h"
-#include "mining_payment.h"
+#include "lwip/prot/ip4.h"
+
+int tollgate_ip4_canforward_filter(struct pbuf *p, u32_t dest_addr_hostorder)
+{
+    return tollgate_core_ip4_canforward_filter(p, dest_addr_hostorder);
+}
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -236,8 +241,6 @@ static void start_services(void)
              IP2STR(&(esp_ip4_addr_t){.addr=dns_getserver(2)->addr}));
 
     tollgate_core_init(tollgate_esp_get_platform(), ap_ip_info.ip);
-    firewall_init(ap_ip_info.ip);
-    session_manager_init();
 
     const tollgate_config_t *cfg = tollgate_config_get();
 
@@ -256,8 +259,8 @@ static void start_services(void)
     }
 
     if (cfg->mining_enabled) {
-        firewall_set_mining_port(cfg->mining_port);
-        firewall_set_sandbox_mint_access(cfg->mining_sandbox_mint_access);
+        tollgate_core_fw_set_sandbox_ports(cfg->mining_port);
+        tollgate_core_fw_set_sandbox_mint_access(cfg->mining_sandbox_mint_access);
     }
     lightning_payout_init(&cfg->payout);
 
@@ -279,7 +282,6 @@ static void start_services(void)
 
     if (cfg->mining_enabled) {
         ESP_LOGI(TAG, "Mining subsystem enabled, initializing...");
-        mining_payment_init();
         stratum_client_init();
         stratum_proxy_init(cfg->mining_port);
 
@@ -327,7 +329,7 @@ static void stop_services(void)
     sync_manager_stop(&s_sync_manager);
     local_relay_stop();
     relay_selector_destroy(&s_relay_selector);
-    firewall_revoke_all();
+    tollgate_core_fw_revoke_all();
     s_services_running = false;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services stopped ===");
@@ -462,7 +464,7 @@ void app_main(void)
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
-        session_tick();
+        tollgate_core_tick();
         tollgate_client_tick();
         lightning_payout_tick();
         market_tick();

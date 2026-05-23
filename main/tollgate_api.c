@@ -1,16 +1,18 @@
 #include "tollgate_api.h"
-#include "cashu.h"
+#include "tollgate_core_cashu.h"
+#include "tollgate_core_session.h"
+#include "tollgate_core_firewall.h"
+#include "tollgate_core_mining.h"
+#include "tollgate_core.h"
 #include "config.h"
 #include "identity.h"
-#include "session.h"
 #include "captive_portal.h"
-#include "firewall.h"
 #include "lwip/dns.h"
 #include "esp_heap_caps.h"
 #include "nucula_wallet.h"
 #include "mint_health.h"
 #include "market.h"
-#include "mining_payment.h"
+
 #include "stratum_proxy.h"
 #include "stratum_client.h"
 #include "tls_worker.h"
@@ -226,7 +228,7 @@ static esp_err_t api_post_payment(httpd_req_t *req)
 
     ESP_LOGI(TAG, "Payment received: %d bytes", total);
 
-    cashu_token_t *token = malloc(sizeof(cashu_token_t));
+    tg_cashu_token_t *token = malloc(sizeof(tg_cashu_token_t));
     if (!token) {
         cJSON *notice = create_notice("error", "session-error", "Out of memory");
         char *json = cJSON_PrintUnformatted(notice);
@@ -237,7 +239,7 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         cJSON_Delete(notice);
         return ESP_OK;
     }
-    esp_err_t err = cashu_decode_token(body, token);
+    esp_err_t err = tollgate_core_cashu_decode_token(body, token);
     char *body_copy = strdup(body);
     free(body);
 
@@ -254,7 +256,17 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     }
 
     const char *mint_url = token->mint_url[0] ? token->mint_url : tollgate_config_get()->mint_url;
-    if (!cashu_is_mint_accepted(mint_url)) {
+    bool mint_accepted = false;
+    {
+        const tollgate_config_t *_cfg = tollgate_config_get();
+        for (int i = 0; i < _cfg->accepted_mint_count; i++) {
+            if (tollgate_core_cashu_is_mint_accepted(mint_url, _cfg->accepted_mints[i])) {
+                mint_accepted = true;
+                break;
+            }
+        }
+    }
+    if (!mint_accepted) {
         free(token);
         cJSON *notice = create_notice("error", "payment-error-mint-not-accepted", "Mint not accepted");
         char *json = cJSON_PrintUnformatted(notice);
@@ -266,7 +278,7 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         return ESP_OK;
     }
 
-    cashu_proof_state_t *states = malloc(CASHU_MAX_PROOFS * sizeof(cashu_proof_state_t));
+    tg_cashu_proof_state_t *states = malloc(TG_CASHU_MAX_PROOFS * sizeof(tg_cashu_proof_state_t));
     if (!states) {
         free(token);
         cJSON *notice = create_notice("error", "session-error", "Out of memory");
@@ -279,7 +291,7 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         return ESP_OK;
     }
     int state_count = 0;
-    err = cashu_check_proof_states(mint_url, token, states, &state_count);
+    err = tollgate_core_cashu_check_proof_states(mint_url, token, states, &state_count);
     ESP_LOGI(TAG, "Stack HWM after checkstate: %u", uxTaskGetStackHighWaterMark(NULL));
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Checkstate failed, proceeding without spend check (wallet swap will verify)");
@@ -304,8 +316,8 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     const tollgate_config_t *cfg = tollgate_config_get();
     bool is_bytes = (strcmp(cfg->metric, "bytes") == 0);
     uint64_t step_size = is_bytes ? (uint64_t)cfg->step_size_bytes : (uint64_t)cfg->step_size_ms;
-    uint64_t allotment = cashu_calculate_allotment(token->total_amount, cfg->price_per_step,
-                                                    cfg->metric, step_size);
+    uint64_t allotment = tollgate_core_cashu_calculate_allotment(token->total_amount, cfg->price_per_step,
+                                                    step_size);
     if (allotment == 0) {
         free(states);
         free(token);
@@ -319,11 +331,11 @@ static esp_err_t api_post_payment(httpd_req_t *req)
         return ESP_OK;
     }
 
-    session_t *session;
+    tg_session_t *session;
     if (is_bytes) {
-        session = session_create_bytes(client_ip, allotment);
+        session = tollgate_core_session_create_bytes(client_ip, allotment);
     } else {
-        session = session_create(client_ip, allotment);
+        session = tollgate_core_session_create(client_ip, allotment);
     }
     if (!session) {
         free(states);
@@ -357,7 +369,7 @@ static esp_err_t api_get_usage(httpd_req_t *req)
     uint32_t client_ip = 0;
     get_client_ip(req, &client_ip);
 
-    session_t *session = session_find_by_ip(client_ip);
+    tg_session_t *session = tollgate_core_session_find_by_ip(client_ip);
     if (!session || !session->active) {
         httpd_resp_set_type(req, "text/plain");
         httpd_resp_send(req, "-1/-1", 5);
@@ -390,7 +402,7 @@ static esp_err_t api_get_whoami(httpd_req_t *req)
     if (get_client_ip(req, &client_ip) == ESP_OK) {
         char mac[18] = {0};
         esp_ip4_addr_t ip = { .addr = client_ip };
-        if (firewall_get_mac_for_ip(client_ip, mac, sizeof(mac)) == ESP_OK) {
+        if (tollgate_core_fw_get_mac_for_ip(client_ip, mac, sizeof(mac)) == ESP_OK) {
             snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=%s", IP2STR(&ip), mac);
         } else {
             snprintf(resp, sizeof(resp), "ip=" IPSTR " mac=unknown", IP2STR(&ip));
@@ -546,7 +558,7 @@ static esp_err_t api_get_mining_job(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "version", job->version);
     cJSON_AddNumberToObject(root, "nbits", job->nbits);
     cJSON_AddNumberToObject(root, "ntime", job->ntime);
-    cJSON_AddNumberToObject(root, "hashprice", mining_get_current_hashprice());
+    cJSON_AddNumberToObject(root, "hashprice", tollgate_core_mining_get_current_hashprice());
 
     char *json = cJSON_PrintUnformatted(root);
     httpd_resp_set_type(req, "application/json");
@@ -620,21 +632,21 @@ static esp_err_t api_post_mining_share(httpd_req_t *req)
     esp_err_t share_err = stratum_client_submit_share(job_id, nonce, ntime, version);
     bool accepted = (share_err == ESP_OK);
 
-    mining_update_hashrate(client_ip, accepted);
-    mining_client_stats_t *stats = mining_get_or_create_client(client_ip);
+    tollgate_core_mining_update_hashrate(client_ip, accepted);
+    tollgate_mining_client_stats_t *stats = tollgate_core_mining_get_or_create_client(client_ip);
 
     if (accepted) {
         const tollgate_config_t *cfg = tollgate_config_get();
-        double hashprice = mining_get_current_hashprice();
-        uint64_t allotment_ms = mining_shares_to_allotment_ms(
+        double hashprice = tollgate_core_mining_get_current_hashprice();
+        uint64_t allotment_ms = tollgate_core_mining_shares_to_allotment_ms(
             stats->hashrate_ghs, hashprice, cfg->price_per_step, cfg->step_size_ms);
 
-        session_t *session = session_find_by_ip(client_ip);
-        if (!session || !session->active || session->payment_method != PAYMENT_METHOD_MINING) {
-            session = session_create(client_ip, allotment_ms);
-            if (session) session->payment_method = PAYMENT_METHOD_MINING;
+        tg_session_t *session = tollgate_core_session_find_by_ip(client_ip);
+        if (!session || !session->active || session->payment_method != TG_PAYMENT_MINING) {
+            session = tollgate_core_session_create(client_ip, allotment_ms);
+            if (session) session->payment_method = TG_PAYMENT_MINING;
         } else {
-            session_extend(session, allotment_ms);
+            tollgate_core_session_extend(session, allotment_ms);
         }
     }
 

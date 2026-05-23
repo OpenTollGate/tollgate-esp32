@@ -1,6 +1,6 @@
 #include "stratum_client.h"
 #include "stratum_proxy.h"
-#include "mining_payment.h"
+#include "tollgate_core_mining.h"
 #include "config.h"
 #include "esp_log.h"
 #include "esp_transport.h"
@@ -124,7 +124,7 @@ static void handle_mining_notify(cJSON *params)
     memset(job.target, 0xFF, 32);
     job.target_len = 32;
 
-    mining_set_current_nbits(job.nbits);
+    tollgate_core_mining_set_current_nbits(job.nbits);
     stratum_proxy_set_job(&job);
 
     ESP_LOGI(TAG, "New mining job: id=%lu, nbits=0x%08lx", (unsigned long)job.job_id, (unsigned long)job.nbits);
