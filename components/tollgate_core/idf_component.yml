@@ -1,11 +1,25 @@
-version: "1.1.0"
+version: "1.2.0"
 description: |
   TollGate core component for paid WiFi hotspots with Cashu e-cash payments.
   Provides session management, per-client DNS/firewall, Cashu token processing,
-  mining payment tracking, beacon price advertising, and market scanning.
+  mining payment tracking, beacon price advertising, market scanning,
+  portal template rendering, Stratum protocol parsing, mint health tracking,
+  and upstream TollGate client logic.
   Platform-agnostic via tollgate_platform_t callbacks for easy integration
   with any ESP32 firmware (TollGate, NerdQAxePlus, BitAxe, etc.).
 url: https://git.orangesync.tech/npub12m5exm2uk3xa674cc5r0hlyvccs5xxn7qv83ezuteefv5972nquq4j4szl/esp32-tollgate
+license: "MIT"
+targets:
+  - esp32s3
+tags:
+  - wifi
+  - hotspot
+  - cashu
+  - payment
+  - mining
+  - captive-portal
+  - stratum
+  - nostr
 dependencies:
   idf:
     version: ">=5.3.0"
