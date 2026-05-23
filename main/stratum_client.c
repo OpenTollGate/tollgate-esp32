@@ -1,6 +1,7 @@
 #include "stratum_client.h"
 #include "stratum_proxy.h"
 #include "tollgate_core_mining.h"
+#include "tollgate_core_stratum_client.h"
 #include "config.h"
 #include "esp_log.h"
 #include "esp_transport.h"
@@ -66,76 +67,53 @@ static esp_err_t stratum_connect(const char *host, uint16_t port)
 static void send_subscribe(void)
 {
     char subscribe[256];
-    snprintf(subscribe, sizeof(subscribe),
-             "{\"id\":%lu,\"method\":\"mining.subscribe\",\"params\":[\"TollGate/1.0\"]}\n",
-             (unsigned long)s_req_id++);
-    esp_transport_write(s_transport, subscribe, strlen(subscribe), 5000);
-    ESP_LOGI(TAG, "Sent mining.subscribe");
+    int len = tollgate_core_stratum_build_subscribe(subscribe, sizeof(subscribe), s_req_id++);
+    if (len > 0) {
+        esp_transport_write(s_transport, subscribe, len, 5000);
+        ESP_LOGI(TAG, "Sent mining.subscribe");
+    }
 }
 
 static void send_authorize(void)
 {
     const tollgate_config_t *cfg = tollgate_config_get();
     char authorize[512];
-    snprintf(authorize, sizeof(authorize),
-             "{\"id\":%lu,\"method\":\"mining.authorize\",\"params\":[\"%s\",\"%s\"]}\n",
-             (unsigned long)s_req_id++, cfg->stratum_user, cfg->stratum_pass);
-    esp_transport_write(s_transport, authorize, strlen(authorize), 5000);
-    ESP_LOGI(TAG, "Sent mining.authorize for user=%s", cfg->stratum_user);
-}
-
-static void hex_to_bytes(const char *hex, uint8_t *out, int len)
-{
-    for (int i = 0; i < len && hex[i * 2] && hex[i * 2 + 1]; i++) {
-        char byte[3] = {hex[i * 2], hex[i * 2 + 1], 0};
-        out[i] = (uint8_t)strtoul(byte, NULL, 16);
+    int len = tollgate_core_stratum_build_authorize(authorize, sizeof(authorize),
+                                                      s_req_id++, cfg->stratum_user, cfg->stratum_pass);
+    if (len > 0) {
+        esp_transport_write(s_transport, authorize, len, 5000);
+        ESP_LOGI(TAG, "Sent mining.authorize for user=%s", cfg->stratum_user);
     }
 }
 
 static void handle_mining_notify(cJSON *params)
 {
-    if (!params || !cJSON_IsArray(params) || cJSON_GetArraySize(params) < 6) return;
+    tollgate_stratum_job_t job = {0};
+    uint32_t nbits = 0;
+    if (!tollgate_core_stratum_parse_notify(params, &job, &nbits)) return;
 
-    cJSON *p_job_id = cJSON_GetArrayItem(params, 0);
-    cJSON *p_prevhash = cJSON_GetArrayItem(params, 1);
-    cJSON *p_version = cJSON_GetArrayItem(params, 5);
-    cJSON *p_nbits = cJSON_GetArrayItem(params, 6);
-    cJSON *p_ntime = cJSON_GetArrayItem(params, 7);
+    stratum_job_t proxy_job = {0};
+    proxy_job.job_id = job.job_id;
+    memcpy(proxy_job.prevhash, job.prevhash, 32);
+    proxy_job.version = job.version;
+    proxy_job.nbits = job.nbits;
+    proxy_job.ntime = job.ntime;
+    memcpy(proxy_job.target, job.target, 32);
+    proxy_job.target_len = job.target_len;
+    proxy_job.valid = job.valid;
 
-    if (!p_job_id || !p_prevhash || !p_nbits) return;
+    tollgate_core_mining_set_current_nbits(proxy_job.nbits);
+    stratum_proxy_set_job(&proxy_job);
 
-    stratum_job_t job = {0};
-    job.job_id = (uint32_t)atoi(p_job_id->valuestring);
-    job.valid = true;
-
-    hex_to_bytes(p_prevhash->valuestring, job.prevhash, 32);
-
-    if (p_version && cJSON_IsString(p_version)) {
-        job.version = (uint32_t)strtoul(p_version->valuestring, NULL, 16);
-    }
-    if (p_nbits && cJSON_IsString(p_nbits)) {
-        job.nbits = (uint32_t)strtoul(p_nbits->valuestring, NULL, 16);
-        s_state.nbits = job.nbits;
-    }
-    if (p_ntime && cJSON_IsString(p_ntime)) {
-        job.ntime = (uint32_t)strtoul(p_ntime->valuestring, NULL, 16);
-    }
-
-    memset(job.target, 0xFF, 32);
-    job.target_len = 32;
-
-    tollgate_core_mining_set_current_nbits(job.nbits);
-    stratum_proxy_set_job(&job);
-
+    if (nbits) s_state.nbits = nbits;
     ESP_LOGI(TAG, "New mining job: id=%lu, nbits=0x%08lx", (unsigned long)job.job_id, (unsigned long)job.nbits);
 }
 
 static void handle_mining_set_difficulty(cJSON *params)
 {
-    if (!params || !cJSON_IsArray(params) || cJSON_GetArraySize(params) < 1) return;
-    cJSON *diff = cJSON_GetArrayItem(params, 0);
-    if (diff && cJSON_IsNumber(diff)) {
-        s_state.difficulty = (uint64_t)diff->valuedouble;
+    uint64_t diff = 0;
+    if (tollgate_core_stratum_parse_difficulty(params, &diff)) {
+        s_state.difficulty = diff;
         ESP_LOGI(TAG, "Pool set difficulty: %llu", (unsigned long long)s_state.difficulty);
     }
 }
@@ -243,12 +221,11 @@ esp_err_t stratum_client_submit_share(uint32_t job_id, uint32_t nonce, uint32_t 
     const tollgate_config_t *cfg = tollgate_config_get();
 
     char submit[512];
-    snprintf(submit, sizeof(submit),
-             "{\"id\":%lu,\"method\":\"mining.submit\",\"params\":[\"%s\",\"%lu\",\"%08lx\",\"%08lx\",\"%08lx\"]}\n",
-             (unsigned long)s_req_id++, cfg->stratum_user,
-             (unsigned long)job_id, (unsigned long)ntime, (unsigned long)nonce, (unsigned long)version);
+    int len = tollgate_core_stratum_build_submit(submit, sizeof(submit), s_req_id++,
+                                                   cfg->stratum_user, job_id, ntime, nonce, version);
+    if (len <= 0) return ESP_FAIL;
 
-    int written = esp_transport_write(s_transport, submit, strlen(submit), 5000);
+    int written = esp_transport_write(s_transport, submit, len, 5000);
     if (written < 0) {
         ESP_LOGW(TAG, "Failed to submit share");
         s_state.shares_rejected++;

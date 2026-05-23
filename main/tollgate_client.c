@@ -88,123 +88,17 @@ static esp_err_t http_post_text(const char *url, const char *body, char *resp_bu
 
 static bool parse_discovery_response(const char *json_str, tollgate_discovery_t *out)
 {
-    cJSON *root = cJSON_Parse(json_str);
-    if (!root) return false;
-
-    cJSON *kind = cJSON_GetObjectItemCaseSensitive(root, "kind");
-    if (!kind || !cJSON_IsNumber(kind) || kind->valueint != 10021) {
-        cJSON_Delete(root);
-        return false;
-    }
-
-    memset(out, 0, sizeof(tollgate_discovery_t));
-    out->is_tollgate = true;
-
-    cJSON *tags = cJSON_GetObjectItemCaseSensitive(root, "tags");
-    if (!tags || !cJSON_IsArray(tags)) {
-        cJSON_Delete(root);
-        return true;
-    }
-
-    int tag_count = cJSON_GetArraySize(tags);
-    for (int i = 0; i < tag_count; i++) {
-        cJSON *tag = cJSON_GetArrayItem(tags, i);
-        if (!tag || !cJSON_IsArray(tag)) continue;
-
-        int tag_len = cJSON_GetArraySize(tag);
-        if (tag_len < 2) continue;
-
-        cJSON *tag_name = cJSON_GetArrayItem(tag, 0);
-        if (!tag_name || !cJSON_IsString(tag_name)) continue;
-
-        if (strcmp(tag_name->valuestring, "metric") == 0) {
-            cJSON *val = cJSON_GetArrayItem(tag, 1);
-            if (val && cJSON_IsString(val)) {
-                strncpy(out->metric, val->valuestring, sizeof(out->metric) - 1);
-            }
-        } else if (strcmp(tag_name->valuestring, "step_size") == 0) {
-            cJSON *val = cJSON_GetArrayItem(tag, 1);
-            if (val && cJSON_IsString(val)) {
-                out->step_size_ms = atoi(val->valuestring);
-            }
-        } else if (strcmp(tag_name->valuestring, "price_per_step") == 0 && tag_len >= 4) {
-            cJSON *payment_type = cJSON_GetArrayItem(tag, 2);
-
-            if (cJSON_IsString(payment_type) && strcmp(payment_type->valuestring, "mining") == 0 && tag_len >= 5) {
-                out->mining_available = true;
-                cJSON *port_val = cJSON_GetArrayItem(tag, 3);
-                if (port_val && cJSON_IsString(port_val)) {
-                    out->mining_port = (uint16_t)atoi(port_val->valuestring);
-                }
-            } else {
-                cJSON *amount = cJSON_GetArrayItem(tag, 2);
-                cJSON *mint = cJSON_GetArrayItem(tag, 4);
-
-                if (amount && cJSON_IsString(amount)) {
-                    out->price_per_step = atoi(amount->valuestring);
-                }
-                if (mint && cJSON_IsString(mint)) {
-                    strncpy(out->mint_url, mint->valuestring, sizeof(out->mint_url) - 1);
-                }
-            }
-        }
-    }
-
-    cJSON_Delete(root);
-    return true;
+    return tollgate_core_client_parse_discovery(json_str, out);
 }
 
 static bool parse_session_response(const char *json_str, int64_t *allotment_ms_out)
 {
-    cJSON *root = cJSON_Parse(json_str);
-    if (!root) return false;
-
-    cJSON *kind = cJSON_GetObjectItemCaseSensitive(root, "kind");
-    if (!kind || !cJSON_IsNumber(kind)) {
-        cJSON_Delete(root);
-        return false;
-    }
-
-    if (kind->valueint != 1022) {
-        cJSON_Delete(root);
-        return false;
-    }
-
-    cJSON *tags = cJSON_GetObjectItemCaseSensitive(root, "tags");
-    if (tags && cJSON_IsArray(tags)) {
-        int tag_count = cJSON_GetArraySize(tags);
-        for (int i = 0; i < tag_count; i++) {
-            cJSON *tag = cJSON_GetArrayItem(tags, i);
-            if (!tag || !cJSON_IsArray(tag)) continue;
-            cJSON *tag_name = cJSON_GetArrayItem(tag, 0);
-            if (tag_name && cJSON_IsString(tag_name) && strcmp(tag_name->valuestring, "allotment") == 0) {
-                cJSON *val = cJSON_GetArrayItem(tag, 1);
-                if (val && cJSON_IsString(val)) {
-                    *allotment_ms_out = atoll(val->valuestring);
-                }
-            }
-        }
-    }
-
-    cJSON_Delete(root);
-    return true;
+    return tollgate_core_client_parse_session(json_str, allotment_ms_out);
 }
 
 static bool parse_usage_response(const char *resp, int64_t *remaining_out, int64_t *total_out)
 {
-    char remaining_str[32] = {0};
-    char total_str[32] = {0};
-    const char *slash = strchr(resp, '/');
-    if (!slash) return false;
-
-    size_t rlen = slash - resp;
-    if (rlen >= sizeof(remaining_str)) return false;
-    memcpy(remaining_str, resp, rlen);
-    strncpy(total_str, slash + 1, sizeof(total_str) - 1);
-
-    *remaining_out = atoll(remaining_str);
-    *total_out = atoll(total_str);
-    return true;
+    return tollgate_core_client_parse_usage(resp, remaining_out, total_out);
 }
 
 esp_err_t tollgate_client_detect(const char *gw_ip, tollgate_discovery_t *discovery)
@@ -358,13 +252,11 @@ esp_err_t tollgate_client_on_sta_connected(const char *gw_ip_str)
     const market_t *mkt = market_get();
     int cheapest = market_find_cheapest();
     if (cheapest >= 0 && mkt->entries[cheapest].valid && mkt->entries[cheapest].ssid[0] != '\0') {
-        uint32_t upstream_step = s_discovery.step_size_ms > 0 ? s_discovery.step_size_ms : 1;
-        uint32_t upstream_eff = (uint32_t)s_discovery.price_per_step * 60000 / upstream_step;
-        uint32_t cheap_step = mkt->entries[cheapest].step_size > 0 ? mkt->entries[cheapest].step_size : 1;
-        uint32_t cheap_eff = (uint32_t)mkt->entries[cheapest].price_per_step * 60000 / cheap_step;
+        int upstream_eff = tollgate_core_client_calc_price_per_min(s_discovery.price_per_step, s_discovery.step_size_ms);
+        int cheap_eff = tollgate_core_client_calc_price_per_min(mkt->entries[cheapest].price_per_step, mkt->entries[cheapest].step_size);
         if (cheap_eff < upstream_eff) {
-            ESP_LOGW(TAG, "CHEAPER TOLLGATE AVAILABLE: %s at %lu sats/min vs upstream %lu sats/min",
-                     mkt->entries[cheapest].ssid, (unsigned long)cheap_eff, (unsigned long)upstream_eff);
+            ESP_LOGW(TAG, "CHEAPER TOLLGATE AVAILABLE: %s at %d sats/min vs upstream %d sats/min",
+                     mkt->entries[cheapest].ssid, cheap_eff, upstream_eff);
         }
     }
     return ESP_OK;
@@ -430,32 +322,29 @@ void tollgate_client_tick(void)
 
     const tollgate_config_t *cfg = tollgate_config_get();
     int threshold_pct = cfg->client_renewal_threshold_pct;
-    if (threshold_pct <= 0) threshold_pct = 20;
 
-    if (s_allotment_ms > 0 && s_remaining_ms >= 0) {
-        int remaining_pct = (int)((s_remaining_ms * 100) / s_allotment_ms);
-        if (remaining_pct <= threshold_pct) {
-            ESP_LOGI(TAG, "session nearing expiry (%lld/%lldms, %d%%), renewing",
-                     (long long)s_remaining_ms, (long long)s_allotment_ms, remaining_pct);
+    if (tollgate_core_client_should_renew(s_remaining_ms, s_allotment_ms, threshold_pct)) {
+        ESP_LOGI(TAG, "session nearing expiry (%lld/%lldms, %d%%), renewing",
+                 (long long)s_remaining_ms, (long long)s_allotment_ms,
+                 (int)((s_remaining_ms * 100) / s_allotment_ms));
 
-            s_state = TG_CLIENT_RENEWING;
-            int steps = cfg->client_steps_to_buy;
-            if (steps <= 0) steps = 1;
-            int amount_sats = steps * s_discovery.price_per_step;
+        s_state = TG_CLIENT_RENEWING;
+        int steps = cfg->client_steps_to_buy;
+        if (steps <= 0) steps = 1;
+        int amount_sats = steps * s_discovery.price_per_step;
 
-            int64_t allotment = 0;
-            err = tollgate_client_pay(s_gw_ip, amount_sats, &allotment);
-            if (err == ESP_OK) {
-                s_allotment_ms = allotment;
-                s_remaining_ms = allotment;
-                s_last_pay_time_ms = get_time_ms();
-                s_state = TG_CLIENT_PAID;
-                ESP_LOGI(TAG, "renewal succeeded: %lldms", (long long)allotment);
-            } else {
-                s_state = TG_CLIENT_ERROR;
-                s_last_pay_time_ms = get_time_ms();
-                ESP_LOGE(TAG, "renewal payment failed");
-            }
+        int64_t allotment = 0;
+        err = tollgate_client_pay(s_gw_ip, amount_sats, &allotment);
+        if (err == ESP_OK) {
+            s_allotment_ms = allotment;
+            s_remaining_ms = allotment;
+            s_last_pay_time_ms = get_time_ms();
+            s_state = TG_CLIENT_PAID;
+            ESP_LOGI(TAG, "renewal succeeded: %lldms", (long long)allotment);
+        } else {
+            s_state = TG_CLIENT_ERROR;
+            s_last_pay_time_ms = get_time_ms();
+            ESP_LOGE(TAG, "renewal payment failed");
         }
     }
 }

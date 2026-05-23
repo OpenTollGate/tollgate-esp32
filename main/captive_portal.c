@@ -2,6 +2,7 @@
 #include "tollgate_core.h"
 #include "tollgate_core_firewall.h"
 #include "tollgate_core_session.h"
+#include "tollgate_core_portal.h"
 #include "config.h"
 #include "stratum_proxy.h"
 #include "esp_log.h"
@@ -176,10 +177,12 @@ static esp_err_t portal_handler(httpd_req_t *req)
     char price_str[16];
     snprintf(price_str, sizeof(price_str), "%d", cfg->price_per_step);
 
-    const char *tpl = PORTAL_HTML_TEMPLATE;
-    size_t tpl_len = strlen(tpl);
+    char mining_port_buf[8] = "3333";
+    if (cfg->mining_enabled) {
+        snprintf(mining_port_buf, sizeof(mining_port_buf), "%d", cfg->mining_port);
+    }
 
-    struct { const char *key; const char *val; } subs[] = {
+    tollgate_portal_sub_t subs[] = {
         { "__AP_IP__", s_ap_ip_str },
         { "__PRICE__", price_str },
         { "__MINT_URL__", cfg->mint_url },
@@ -188,63 +191,19 @@ static esp_err_t portal_handler(httpd_req_t *req)
             "<button class='tab active' onclick=\"switchTab('cashu')\">Cashu</button>"
             "<button class='tab' onclick=\"switchTab('mining')\">Mine</button>"
             "</div>" : "" },
-        { "__MINING_PORT__", cfg->mining_enabled ?
-            (char[]){ [0 ... 7] = 0 } : "3333" },
+        { "__MINING_PORT__", mining_port_buf },
         { "__CASHU_ACTIVE__", "active" },
         { "__MINING_ACTIVE__", "" },
     };
-    char mining_port_buf[8] = "3333";
-    if (cfg->mining_enabled) {
-        snprintf(mining_port_buf, sizeof(mining_port_buf), "%d", cfg->mining_port);
-        subs[4].val = mining_port_buf;
-    }
     int nsubs = sizeof(subs) / sizeof(subs[0]);
 
-    size_t extra = 0;
-    for (int i = 0; i < nsubs; i++) {
-        const char *p = tpl;
-        size_t klen = strlen(subs[i].key);
-        while ((p = strstr(p, subs[i].key)) != NULL) {
-            extra += strlen(subs[i].val) - klen;
-            p += klen;
-        }
-    }
-
-    size_t out_size = tpl_len + extra + 1;
-    char *html = malloc(out_size);
+    char *html = tollgate_core_portal_render(PORTAL_HTML_TEMPLATE, subs, nsubs);
     if (!html) {
         httpd_resp_send_500(req);
         return ESP_OK;
     }
 
-    char *out = html;
-    const char *src = tpl;
-    while (*src) {
-        const char *earliest = NULL;
-        int ei = -1;
-        for (int i = 0; i < nsubs; i++) {
-            const char *found = strstr(src, subs[i].key);
-            if (found && (earliest == NULL || found < earliest)) {
-                earliest = found;
-                ei = i;
-            }
-        }
-        if (earliest) {
-            size_t vlen = strlen(subs[ei].val);
-            memcpy(out, src, earliest - src);
-            out += earliest - src;
-            memcpy(out, subs[ei].val, vlen);
-            out += vlen;
-            src = earliest + strlen(subs[ei].key);
-        } else {
-            strcpy(out, src);
-            out += strlen(src);
-            break;
-        }
-    }
-    *out = '\0';
-
-    httpd_resp_send(req, html, out - html);
+    httpd_resp_send(req, html, strlen(html));
     free(html);
     return ESP_OK;
 }
@@ -312,19 +271,10 @@ static esp_err_t usage_handler(httpd_req_t *req)
     }
 
     const tollgate_config_t *cfg = tollgate_config_get();
-    bool is_bytes = (strcmp(cfg->metric, "bytes") == 0);
+    int64_t now_ms = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
 
     char resp[64];
-    if (is_bytes) {
-        int64_t remaining = (int64_t)session->allotment_bytes - (int64_t)session->bytes_consumed;
-        if (remaining < 0) remaining = 0;
-        snprintf(resp, sizeof(resp), "%lld/%llu", (long long)remaining, (unsigned long long)session->allotment_bytes);
-    } else {
-        int64_t elapsed = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS - session->start_time_ms;
-        int64_t remaining = session->allotment_ms - elapsed;
-        if (remaining < 0) remaining = 0;
-        snprintf(resp, sizeof(resp), "%lld/%llu", (long long)remaining, (unsigned long long)session->allotment_ms);
-    }
+    tollgate_core_portal_format_usage(session, cfg->metric, now_ms, resp, sizeof(resp));
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, resp, strlen(resp));
     return ESP_OK;
@@ -342,7 +292,9 @@ static esp_err_t reset_auth_handler(httpd_req_t *req)
 
 static esp_err_t redirect_to_portal_handler(httpd_req_t *req)
 {
-    ESP_LOGI(TAG, "Captive detect: GET %s → 200 portal HTML", req->uri);
+    if (tollgate_core_portal_is_captive_uri(req->uri)) {
+        ESP_LOGI(TAG, "Captive detect: GET %s → 200 portal HTML", req->uri);
+    }
     return portal_handler(req);
 }
 
@@ -493,37 +445,7 @@ static const char SETUP_HTML_TEMPLATE[] = \
 "</body></html>";
 
 static char *template_replace(const char *tpl, const char *key, const char *val) {
-    const char *p;
-    size_t klen = strlen(key);
-    size_t vlen = strlen(val);
-    size_t tlen = strlen(tpl);
-    size_t extra = 0;
-    p = tpl;
-    while ((p = strstr(p, key)) != NULL) {
-        extra += vlen - klen;
-        p += klen;
-    }
-    size_t out_size = tlen + extra + 1;
-    char *out = malloc(out_size);
-    if (!out) return NULL;
-    char *dst = out;
-    p = tpl;
-    while (*p) {
-        const char *found = strstr(p, key);
-        if (found) {
-            memcpy(dst, p, found - p);
-            dst += found - p;
-            memcpy(dst, val, vlen);
-            dst += vlen;
-            p = found + klen;
-        } else {
-            strcpy(dst, p);
-            dst += strlen(p);
-            break;
-        }
-    }
-    *dst = '\0';
-    return out;
+    return tollgate_core_portal_template_replace(tpl, key, val);
 }
 
 static bool is_setup_available(void) {

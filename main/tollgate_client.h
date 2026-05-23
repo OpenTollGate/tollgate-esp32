@@ -1,35 +1,10 @@
 #ifndef TOLLGATE_CLIENT_H
 #define TOLLGATE_CLIENT_H
 
+#include "tollgate_core_client.h"
 #include "esp_err.h"
 #include <stdint.h>
 #include <stdbool.h>
-
-#define TG_CLIENT_MAX_GW_IP_LEN       16
-#define TG_CLIENT_MAX_MINT_URL        256
-#define TG_CLIENT_MAX_METRIC          32
-
-typedef enum {
-    TG_CLIENT_IDLE,
-    TG_CLIENT_DETECTING,
-    TG_CLIENT_NO_TOLLGATE,
-    TG_CLIENT_NEEDS_PAY,
-    TG_CLIENT_PAYING,
-    TG_CLIENT_PAID,
-    TG_CLIENT_RENEWING,
-    TG_CLIENT_MINING,
-    TG_CLIENT_ERROR
-} tollgate_client_state_t;
-
-typedef struct {
-    bool is_tollgate;
-    int price_per_step;
-    int step_size_ms;
-    char mint_url[TG_CLIENT_MAX_MINT_URL];
-    char metric[TG_CLIENT_MAX_METRIC];
-    bool mining_available;
-    uint16_t mining_port;
-} tollgate_discovery_t;
 
 esp_err_t tollgate_client_init(void);
 
