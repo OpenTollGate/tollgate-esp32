@@ -27,3 +27,4 @@ tests/unit/test_lnurl_pay
 tests/unit/test_lightning_payout
 tests/unit/test_nip04
 interop/routers.env
+components/tollgate_core/dist/
