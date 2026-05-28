@@ -45,7 +45,7 @@ esp_err_t tollgate_config_init(void)
     g_config.mining_payout_mode = MINING_PAYOUT_AUTO;
     g_config.stratum_port = 3333;
     g_config.mining_port = 3334;
-    g_config.mining_sandbox_mint_access = true;
+    g_config.mining_sandbox_mint_access = false;
     g_config.market_enabled = true;
     g_config.market_scan_interval_s = 30;
     g_config.client_auto_switch = false;

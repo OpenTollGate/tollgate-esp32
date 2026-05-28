@@ -18,7 +18,6 @@
 static const char *TAG = "tg_core_fw";
 static esp_ip4_addr_t s_ap_ip;
 static uint16_t s_mining_port = 3333;
-static bool s_sandbox_mint_access = false;
 
 typedef struct {
     uint32_t ip;
@@ -81,7 +80,7 @@ void tollgate_core_fw_set_sandbox_ports(uint16_t mining_port)
 
 void tollgate_core_fw_set_sandbox_mint_access(bool enabled)
 {
-    s_sandbox_mint_access = enabled;
+    (void)enabled;
 }
 
 static bool is_sandbox_allowed(struct pbuf *p)
@@ -98,17 +97,16 @@ static bool is_sandbox_allowed(struct pbuf *p)
                 struct tcp_hdr *tcphdr = (struct tcp_hdr *)((uint8_t *)p->payload + IP_HLEN);
                 dst_port = lwip_ntohs(tcphdr->dest);
             }
-            if (dst_port == 80 || dst_port == 2121 || dst_port == s_mining_port) {
+            if (dst_port == 80 || dst_port == 2121 || dst_port == 4869 || dst_port == s_mining_port) {
                 return true;
             }
         }
         if (iphdr->_proto == IP_PROTO_UDP) {
             return true;
         }
-    }
-
-    if (s_sandbox_mint_access && iphdr->_proto == IP_PROTO_TCP) {
-        return true;
+        if (iphdr->_proto == 1) {
+            return true;
+        }
     }
 
     return false;
