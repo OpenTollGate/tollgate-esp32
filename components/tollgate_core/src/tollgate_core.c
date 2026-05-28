@@ -3,6 +3,8 @@
 #include "tollgate_core_dns.h"
 #include "tollgate_core_firewall.h"
 #include "tollgate_core_session.h"
+#include "tollgate_core_mining.h"
+#include "tollgate_core_stratum_proxy.h"
 #include "esp_log.h"
 #include "cJSON.h"
 #include <string.h>
@@ -233,6 +235,89 @@ bool tollgate_core_is_owner(uint32_t client_ip)
 bool tollgate_core_is_owner_connected(void)
 {
     return s_owner_connected;
+}
+
+void tollgate_core_on_share_accepted(uint32_t client_ip, double difficulty)
+{
+    if (!s_platform) return;
+
+    tollgate_core_mining_update_hashrate(client_ip, true);
+
+    const tollgate_mining_client_stats_t *stats = tollgate_core_mining_get_client_stats(client_ip);
+    if (!stats) return;
+
+    double hashprice = tollgate_core_calc_hashprice(stats->hashrate_ghs);
+    if (hashprice <= 0.0) return;
+
+    const char *metric = s_platform->get_metric ? s_platform->get_metric() : "milliseconds";
+    int price = s_platform->get_price_sats ? (int)s_platform->get_price_sats() : 21;
+    uint64_t allotment = 0;
+
+    if (strcmp(metric, "bytes") == 0) {
+        int step_bytes = s_platform->get_step_bytes ? (int)s_platform->get_step_bytes() : 22020096;
+        allotment = tollgate_core_mining_shares_to_allotment_bytes(
+            stats->hashrate_ghs, hashprice, price, step_bytes);
+    } else {
+        int step_ms = s_platform->get_step_ms ? (int)s_platform->get_step_ms() : 60000;
+        allotment = tollgate_core_mining_shares_to_allotment_ms(
+            stats->hashrate_ghs, hashprice, price, step_ms);
+    }
+
+    if (allotment == 0) return;
+
+    tg_session_t *session = tollgate_core_session_find_by_ip(client_ip);
+    if (!session) {
+        if (strcmp(metric, "bytes") == 0) {
+            session = tollgate_core_session_create_bytes(client_ip, allotment);
+        } else {
+            session = tollgate_core_session_create(client_ip, allotment);
+        }
+        if (session) {
+            session->payment_method = TG_PAYMENT_MINING;
+        }
+    } else {
+        tollgate_core_session_extend(session, allotment);
+    }
+
+    if (s_platform->on_share_accepted) {
+        s_platform->on_share_accepted(difficulty);
+    }
+}
+
+double tollgate_core_calc_hashprice(double hashrate_ghs)
+{
+    if (!s_platform) return 0.0;
+
+    if (s_platform->get_hashprice_sats_per_ghs_day) {
+        uint64_t override = s_platform->get_hashprice_sats_per_ghs_day();
+        if (override > 0) {
+            return tollgate_core_mining_calc_hashprice_override(override);
+        }
+    }
+
+    return tollgate_core_mining_get_current_hashprice();
+}
+
+char *tollgate_core_get_mining_status_json(void)
+{
+    tollgate_stratum_proxy_stats_t proxy_stats = {0};
+    tollgate_core_stratum_proxy_get_stats(&proxy_stats);
+
+    cJSON *root = cJSON_CreateObject();
+
+    cJSON *proxy = cJSON_CreateObject();
+    cJSON_AddNumberToObject(proxy, "hashrate_ghs", proxy_stats.hashrate_ghs);
+    cJSON_AddNumberToObject(proxy, "total_shares", (double)proxy_stats.total_shares);
+    cJSON_AddNumberToObject(proxy, "total_accepted", (double)proxy_stats.total_accepted);
+    cJSON_AddNumberToObject(proxy, "total_rejected", (double)proxy_stats.total_rejected);
+    cJSON_AddNumberToObject(proxy, "active_miners", proxy_stats.active_miners);
+    cJSON_AddNumberToObject(proxy, "hashprice", proxy_stats.current_hashprice);
+    cJSON_AddNumberToObject(proxy, "nbits", (double)proxy_stats.nbits);
+    cJSON_AddItemToObject(root, "proxy", proxy);
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    return json;
 }
 
 const tollgate_platform_t *tollgate_core_get_platform(void)
