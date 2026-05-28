@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define MINING_SHARE_WINDOW_S 30
 #define MINING_BLOCK_SUBSIDY_SATS 312500000ULL
 #define MINING_BLOCKS_PER_DAY 144ULL
@@ -31,5 +35,9 @@ const tollgate_mining_client_stats_t *tollgate_core_mining_get_client_stats(uint
 double tollgate_core_mining_get_current_hashprice(void);
 void tollgate_core_mining_set_current_nbits(uint32_t nbits);
 void tollgate_core_mining_init(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

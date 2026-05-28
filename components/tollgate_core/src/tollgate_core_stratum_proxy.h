@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TOLLGATE_STRATUM_MAX_JOB_ID_LEN 32
 #define TOLLGATE_STRATUM_MAX_JOBS 4
 
@@ -35,5 +39,9 @@ void tollgate_core_stratum_proxy_set_job(const tollgate_stratum_job_t *job);
 const tollgate_stratum_job_t *tollgate_core_stratum_proxy_get_current_job(void);
 void tollgate_core_stratum_proxy_get_stats(tollgate_stratum_proxy_stats_t *stats);
 void tollgate_core_stratum_proxy_stop(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
