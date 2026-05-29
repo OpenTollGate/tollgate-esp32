@@ -18,6 +18,7 @@ typedef struct {
     uint8_t target[32];
     int target_len;
     bool valid;
+    bool clean;
 } stratum_job_t;
 
 typedef struct {

@@ -1,8 +1,8 @@
 # Execution Plan — TollGate + NerdQAxePlus Integration
 
 **Created:** 2026-05-28  
-**Updated:** 2026-05-28  
-**Status:** In Progress — Smoke testing phase
+**Updated:** 2026-05-29  
+**Status:** In Progress — Mining-for-Internet implementation (see PLAN_MINING_INTERNET.md)
 
 ---
 
@@ -138,3 +138,11 @@
 | Board doesn't create AP | Check serial monitor |
 | `BOARD=NERDAXE` build fails | Use `NERDQAXEPLUS` variant, works ASIC-less |
 | `compote` CLI syntax changed | Check `compote --help` before upload |
+
+---
+
+## Next Phase: Mining-for-Internet
+
+See **PLAN_MINING_INTERNET.md** for the full mining + ecash integration plan:
+- Phase 1: SV1 MVP (stratum proxy, hashpool translator, ecash poller)
+- Phase 2: SV2 direct connection (Noise NX, binary codec, direct to pool)

@@ -11,6 +11,7 @@ extern "C" {
 
 #define TOLLGATE_STRATUM_MAX_JOB_ID_LEN 32
 #define TOLLGATE_STRATUM_MAX_JOBS 4
+#define TOLLGATE_PROXY_MAX_MINERS 8
 
 typedef struct {
     uint32_t job_id;
@@ -22,6 +23,7 @@ typedef struct {
     uint8_t target[32];
     int target_len;
     bool valid;
+    bool clean;
 } tollgate_stratum_job_t;
 
 typedef struct {
@@ -34,10 +36,15 @@ typedef struct {
     int active_miners;
 } tollgate_stratum_proxy_stats_t;
 
+typedef void (*tollgate_share_cb)(uint32_t client_ip, uint32_t job_id,
+                                   uint32_t nonce, uint32_t ntime, uint32_t version);
+
 esp_err_t tollgate_core_stratum_proxy_init(uint16_t port);
 void tollgate_core_stratum_proxy_set_job(const tollgate_stratum_job_t *job);
+void tollgate_core_stratum_proxy_set_difficulty(double difficulty);
 const tollgate_stratum_job_t *tollgate_core_stratum_proxy_get_current_job(void);
 void tollgate_core_stratum_proxy_get_stats(tollgate_stratum_proxy_stats_t *stats);
+void tollgate_core_stratum_proxy_set_share_callback(tollgate_share_cb cb);
 void tollgate_core_stratum_proxy_stop(void);
 
 #ifdef __cplusplus
