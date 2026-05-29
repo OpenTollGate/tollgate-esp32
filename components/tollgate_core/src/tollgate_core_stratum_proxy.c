@@ -100,7 +100,7 @@ static void build_target_from_difficulty(double diff, uint8_t *target, int *targ
     double pdiff_max = 0x00000000FFFF0000ULL;
     if (diff >= pdiff_max) {
         memset(target, 0, 32);
-        target[31] = 0xFF;
+        target[7] = 0xFF;
         return;
     }
 
@@ -109,7 +109,7 @@ static void build_target_from_difficulty(double diff, uint8_t *target, int *targ
 
     memset(target, 0, 32);
     for (int i = 0; i < 8 && target_val > 0; i++) {
-        target[31 - i] = (uint8_t)(target_val & 0xFF);
+        target[7 - i] = (uint8_t)(target_val & 0xFF);
         target_val >>= 8;
     }
 }
@@ -117,11 +117,16 @@ static void build_target_from_difficulty(double diff, uint8_t *target, int *targ
 static bool check_pow(const uint8_t header[80], const uint8_t *target, int target_len)
 {
     uint8_t hash[32];
-    mbedtls_sha256(header, 80, hash, 0);
+    uint8_t tmp[32];
+    mbedtls_sha256(header, 80, tmp, 0);
+    mbedtls_sha256(tmp, 32, hash, 0);
+
+    uint8_t hash_be[32];
+    for (int i = 0; i < 32; i++) hash_be[i] = hash[31 - i];
 
     for (int i = 0; i < target_len && i < 32; i++) {
-        if (hash[i] < target[i]) return true;
-        if (hash[i] > target[i]) return false;
+        if (hash_be[i] < target[i]) return true;
+        if (hash_be[i] > target[i]) return false;
     }
     return true;
 }
