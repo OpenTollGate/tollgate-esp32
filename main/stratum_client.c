@@ -3,6 +3,7 @@
 #include "tollgate_core_mining.h"
 #include "tollgate_core_stratum_client.h"
 #include "config.h"
+#include "identity.h"
 #include "esp_log.h"
 #include "esp_transport.h"
 #include "esp_transport_tcp.h"
@@ -77,12 +78,22 @@ static void send_subscribe(void)
 static void send_authorize(void)
 {
     const tollgate_config_t *cfg = tollgate_config_get();
+    const tollgate_identity_t *id = identity_get();
+
+    char password[256];
+    if (id->initialized && id->locking_pubkey_hex[0] != '\0') {
+        snprintf(password, sizeof(password), "%s.%s", cfg->stratum_pass, id->locking_pubkey_hex);
+    } else {
+        strncpy(password, cfg->stratum_pass, sizeof(password) - 1);
+        password[sizeof(password) - 1] = '\0';
+    }
+
     char authorize[512];
     int len = tollgate_core_stratum_build_authorize(authorize, sizeof(authorize),
-                                                      s_req_id++, cfg->stratum_user, cfg->stratum_pass);
+                                                      s_req_id++, cfg->stratum_user, password);
     if (len > 0) {
         esp_transport_write(s_transport, authorize, len, 5000);
-        ESP_LOGI(TAG, "Sent mining.authorize for user=%s", cfg->stratum_user);
+        ESP_LOGI(TAG, "Sent mining.authorize for user=%s (with locking pubkey)", cfg->stratum_user);
     }
 }
 

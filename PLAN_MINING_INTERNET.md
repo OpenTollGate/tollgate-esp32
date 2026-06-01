@@ -75,95 +75,60 @@ BitAxe Miner          ESP32 TollGate (SV1 downstream, SV2 upstream)     Hashpool
 
 ## Phase 1: SV1 MVP (Mining-for-Internet via Translator)
 
-### 1A: Fix SV1 Stratum Proxy on TollGate
+### 1A: SV1 Stratum Proxy — COMPLETE
 
-**Goal:** Make the stratum proxy a proper SV1 server so miners can connect, subscribe, authorize, and submit shares.
+**Goal:** SV1 stratum server so miners can connect, subscribe, authorize, and submit shares with local PoW validation.
 
-**Status:** SV1 protocol code is COMPLETE (subscribe, authorize, submit, PoW validation all working). BLOCKED on raw BSD socket TCP `listen()` not accepting connections from AP clients.
+**Commit:** `3e32ebe` (self-test + diagnostics), `3d41ef1` (PoW fix), `9038874` (full rewrite)
 
-#### 1A-DIAG: TCP Listen Failure Diagnostic
+**Verified on hardware:** Laptop connects to ESP32 AP (`10.192.45.1:4033`), full stratum handshake succeeds (subscribe + authorize).
 
-**Problem:** Raw BSD socket `listen()` on any port (3333, 4033, 9999) rejects TCP SYNs from AP clients with RST. All `esp_http_server`-based servers (ports 80, 2121, 4869) work fine. httpd uses the exact same `socket()/bind()/listen()/select()/accept()` calls.
-
-**Hypotheses investigated and ruled out:**
-- ~~NAPT interception~~ — `ip_napt_recv()` is only called when `!inp->napt`; AP interface HAS NAPT, so local packets bypass
-- ~~Firewall hook~~ — `LWIP_HOOK_IP4_CANFORWARD` only fires in `ip4_forward()`, not for locally-destined packets
-- ~~FD_SET overflow~~ — LWIP `fd_set` uses `fd_bits[4]` with `LWIP_SOCKET_OFFSET=34`; fd=45 maps to `fd_bits[1]`, within bounds
-- ~~PCB exhaustion~~ — Only 4/16 listening PCBs used
-- ~~Port-specific~~ — Ports 3333, 4033, 9999 all fail
-
-**Diagnostic Plan (Option 1 — LWIP Debug Logging):**
-- [ ] Enable `CONFIG_LWIP_DEBUG=y` in sdkconfig
-- [ ] Enable `CONFIG_LWIP_TCP_DEBUG=y`
-- [ ] Enable `CONFIG_LWIP_IP_DEBUG=y`
-- [ ] Enable `CONFIG_LWIP_NAPT_DEBUG=y`
-- [ ] Enable `CONFIG_LWIP_SOCKETS_DEBUG=y`
-- [ ] Enable `CONFIG_LWIP_DEBUG_ESP_LOG=y` (route through ESP_LOG)
-- [ ] `idf.py fullclean && idf.py build`
-- [ ] Flash to fan-damaged NerdAxe (reliable flash target)
-- [ ] Monitor serial output: `idf.py -p /dev/ttyACM0 monitor`
-- [ ] From laptop connected to AP: `nc 10.192.45.1 4033`
-- [ ] Capture TCP debug output — look for:
-  - `tcp_input:` — SYN received, PCB lookup
-  - `RST` — who sends it and why
-  - `ip4_input:` — IP delivery path
-  - NAPT debug — any packet interception
-- [ ] Compare: `nc 10.192.45.1 80` (working httpd port) for baseline
-- [ ] Document findings and identify root cause
-
-**Fallback options if debug logging is inconclusive:**
-- [ ] Option 2: Rewrite using LWIP `netconn` API (`netconn_new_tcp/bind/listen/accept`)
-- [ ] Option 3: Use `esp_http_server` with WebSocket upgrade (requires client-side WS bridge)
-
-**Key LWIP internals reference:**
-- `FD_SETSIZE` = newlib 64 → LWIP redefines to `MEMP_NUM_NETCONN` = 30
-- `LWIP_SOCKET_OFFSET` = 64 - 30 = 34
-- Valid VFS socket fd range: [34, 64) from `esp_vfs_register_fd_range()`
-- `lwip/sockets.h` redefines `FD_SET`/`fd_set` to use offset-aware `fd_bits[]` array
-- Board reports `server_fd=45` → valid VFS fd, internal LWIP index 11
-
-#### 1A-SV1: SV1 Protocol (COMPLETE)
-
-**Files:**
-- `components/tollgate_core/src/tollgate_core_stratum_proxy.c` — Full SV1 server
-- `components/tollgate_core/src/tollgate_core_stratum_proxy.h` — Types and API
-- `tests/unit/test_stratum_pow.c` — 35 assertions with Bitcoin genesis block vector
-
-**Done:**
 - [x] 1A-1. SV1 message parser: `mining.subscribe`, `mining.authorize`, `mining.submit`, `mining.extranonce.subscribe`, `mining.suggest_difficulty`
 - [x] 1A-2. `mining.subscribe` response with subscription ID + extranonce
 - [x] 1A-3. `mining.authorize` response with success
 - [x] 1A-4. `mining.submit` parsing: job_id, ntime, nonce, version
 - [x] 1A-5. PoW validation: double-SHA256, byte reversal, target generation from difficulty
-  - 3 critical bugs found and fixed (commit `3d41ef1`): single→double SHA256, byte reversal, target byte order
 - [x] 1A-6. Share callback mechanism for upstream forwarding
 - [x] 1A-7. Job broadcast (`mining.notify`) and difficulty broadcast to authorized miners
 - [x] 1A-8. Per-client IP tracking via `tollgate_core_mining_update_hashrate()`
 - [x] 1A-9. Miner disconnect handling, mutex-protected miner array
 - [x] 1A-10. Unit tests: 35 assertions using Bitcoin genesis block as known vector
-- [ ] 1A-11. Integration test: BitAxe connects to TollGate stratum proxy (blocked on TCP fix)
+- [x] 1A-11. Loopback self-test at boot confirms TCP stack works
+- [x] 1A-12. End-to-end verified: AP client connects, subscribe + authorize both succeed
+- [x] 1A-13. TCP "listen failure" resolved — was not a bug; earlier failures were from older firmware
+- [ ] 1A-14. Integration test with real BitAxe/NerdQAxe miner
+- [ ] 1A-15. Make self-test conditional on config flag (currently runs every boot)
 
 ---
 
-### 1B: Upstream Connection + Locking Pubkey
+### 1B: Upstream Connection + Locking Pubkey — IN PROGRESS
 
-**Goal:** The TollGate's upstream stratum client sends its locking pubkey to the hashpool translator.
+**Goal:** Derive a deterministic Cashu locking keypair from the device nsec, and include the pubkey in upstream stratum authorize so the hashpool translator can attribute ehash minting to this specific TollGate.
+
+**Design:**
+```
+HMAC-SHA512(nsec_bytes, "tollgate-cashu-locking-key") -> 64 bytes
+  -> first 32 bytes = locking_privkey (secp256k1 scalar)
+  -> secp256k1 compressed pubkey (33 bytes) = locking_pubkey
+  -> hex string (66 chars) included in authorize password: "worker_name.locking_pubkey_hex"
+```
 
 **Files to modify:**
-- `main/stratum_client.c` — modify `send_authorize()` to include locking pubkey
-- `main/identity.c/h` — add Cashu locking keypair derivation from nsec
-- `main/config.c/h` — add `hashpool_mint_url` config field
-- `main/config_default_json` — add defaults
+- `main/identity.c/h` — add `identity_get_locking_pubkey()` / `identity_get_locking_privkey()`
+- `main/stratum_client.c` — modify `send_authorize()` to append pubkey
+- `main/tollgate_api.c` — add `GET /mining/pubkey` endpoint
 
 **Tasks:**
-- [ ] 1B-1. Derive locking keypair: `HMAC-SHA512(nsec_bytes, "tollgate-cashu-locking-key")` -> first 32 bytes as private key -> secp256k1 compressed pubkey (33 bytes)
-- [ ] 1B-2. Expose locking pubkey hex via platform API and HTTP endpoint (`GET /mining/pubkey`)
-- [ ] 1B-3. Modify `send_authorize()` to include pubkey: `worker_name.locking_pubkey_hex`
-- [ ] 1B-4. Add `hashpool_mint_url` to config.json (e.g. `http://mint.ehash.example.com:3338`)
-- [ ] 1B-5. Unit test: key derivation from known nsec -> expected pubkey
-- [ ] 1B-6. Integration test: connect to hashpool translator, verify pubkey forwarded
-
-**Effort:** 2-3 days
+- [ ] 1B-1. Implement `identity_derive_locking_key()` in `identity.c`:
+  - HMAC-SHA512(nsec_bytes, "tollgate-cashu-locking-key") using mbedtls
+  - First 32 bytes → secp256k1 scalar (verify < curve order)
+  - Compute compressed pubkey (33 bytes)
+  - Store in static, return on demand
+- [ ] 1B-2. Add `identity_get_locking_pubkey_hex()` — returns 66-char hex string
+- [ ] 1B-3. Add `GET /mining/pubkey` endpoint in `tollgate_api.c`
+- [ ] 1B-4. Modify `stratum_client send_authorize()` to include `.locking_pubkey_hex` in password
+- [ ] 1B-5. Unit test: known nsec → expected HMAC output → expected pubkey
+- [ ] 1B-6. Verify on hardware: check `/mining/pubkey` returns correct hex
 
 ---
 
@@ -438,7 +403,7 @@ Phase 2G (depends on all above)
 
 ## Open Items
 
-- [ ] **TCP listen failure**: Raw BSD socket `listen()` rejects SYNs from AP clients; all `esp_http_server` ports work. LWIP debug diagnostic in progress.
+- [x] ~~**TCP listen failure**: Raw BSD socket `listen()` rejects SYNs from AP clients~~ — RESOLVED, was not a bug
 - [ ] **CDK mint API**: Does it have a "list paid quotes by pubkey" endpoint? If not, need custom endpoint or alternative.
 - [ ] **Blinded minting on ESP32**: Does nucula wallet support generating blinding factors and unblinding signatures? Or do we need to add this?
 - [ ] **ehash token format**: Are ehash tokens standard Cashu v3 tokens (cashuA...) that `tollgate_core_cashu_decode_token()` can parse?
@@ -452,25 +417,25 @@ Phase 2G (depends on all above)
 
 ## Global Checklist
 
-### Phase 1A: SV1 Stratum Proxy
+### Phase 1A: SV1 Stratum Proxy — COMPLETE
 - [x] SV1 message parser (subscribe, authorize, submit)
 - [x] PoW validation (double-SHA256, target generation)
 - [x] Unit tests (35 assertions, Bitcoin genesis block vector)
 - [x] Heap allocation for all proxy buffers
 - [x] Double-init guard
-- [ ] **TCP listen fix** — raw BSD socket `listen()` rejects SYNs from AP clients
-  - [ ] Enable LWIP debug logging (TCP, IP, NAPT, sockets)
-  - [ ] Rebuild + flash + test from AP client
-  - [ ] Analyze debug output, identify root cause
-  - [ ] Implement fix (netconn API, NAPT patch, or WebSocket fallback)
-  - [ ] Verify TCP connections work from laptop via AP
-  - [ ] Integration test: BitAxe connects to stratum proxy
+- [x] TCP listen verified working (loopback + AP client)
+- [x] Loopback self-test at boot
+- [x] End-to-end: laptop stratum handshake on port 4033
+- [ ] Integration test with real BitAxe/NerdQAxe miner
+- [ ] Make self-test conditional on config flag
 
-### Phase 1B: Upstream Connection + Locking Pubkey
-- [ ] Derive locking keypair from nsec via HMAC-SHA512
-- [ ] Expose locking pubkey via HTTP endpoint
-- [ ] Modify upstream authorize to include pubkey
-- [ ] Unit test: key derivation from known nsec
+### Phase 1B: Upstream + Locking Pubkey — IN PROGRESS
+- [ ] Implement `identity_derive_locking_key()` (HMAC-SHA512 + secp256k1)
+- [ ] Add `identity_get_locking_pubkey_hex()` accessor
+- [ ] Add `GET /mining/pubkey` HTTP endpoint
+- [ ] Modify `stratum_client` authorize to include pubkey
+- [ ] Unit test: known nsec → expected pubkey
+- [ ] Verify on hardware
 
 ### Phase 1C: Ecash Token Poller
 - [ ] Investigate CDK mint REST API

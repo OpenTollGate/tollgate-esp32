@@ -84,6 +84,11 @@ static void start_ap_services(void)
     beacon_price_start();
     market_init();
 
+    if (cfg->mining_enabled) {
+        tollgate_core_fw_set_sandbox_ports(cfg->mining_port);
+        tollgate_core_fw_set_sandbox_mint_access(cfg->mining_sandbox_mint_access);
+    }
+
     s_ap_services_running = true;
     ESP_LOGI(TAG, "=== AP-only services started (no STA) ===");
 }

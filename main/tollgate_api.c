@@ -757,6 +757,29 @@ static const httpd_uri_t uri_mining_job = { .uri = "/mining/job", .method = HTTP
 static const httpd_uri_t uri_mining_share = { .uri = "/mining/share", .method = HTTP_POST, .handler = api_post_mining_share };
 static const httpd_uri_t uri_mining_stats = { .uri = "/mining/stats", .method = HTTP_GET, .handler = api_get_mining_stats };
 
+static esp_err_t api_get_mining_pubkey(httpd_req_t *req)
+{
+    const tollgate_identity_t *id = identity_get();
+    if (!id || !id->initialized) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "identity not initialized");
+        return ESP_FAIL;
+    }
+    if (id->locking_pubkey_hex[0] == '\0') {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "locking pubkey not derived");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "application/json");
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "locking_pubkey", id->locking_pubkey_hex);
+    char *json = cJSON_PrintUnformatted(root);
+    httpd_resp_sendstr(req, json);
+    free(json);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static const httpd_uri_t uri_mining_pubkey = { .uri = "/mining/pubkey", .method = HTTP_GET, .handler = api_get_mining_pubkey };
+
 static esp_err_t api_get_market(httpd_req_t *req)
 {
     const market_t *mkt = market_get();
@@ -815,6 +838,7 @@ esp_err_t tollgate_api_start(void)
         return ret;
     }
 
+    httpd_register_uri_handler(s_api_server, &uri_mining_pubkey);
     httpd_register_uri_handler(s_api_server, &uri_discovery);
     httpd_register_uri_handler(s_api_server, &uri_debug);
     httpd_register_uri_handler(s_api_server, &uri_payment);

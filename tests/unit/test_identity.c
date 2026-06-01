@@ -62,6 +62,34 @@ int main(void)
     ASSERT(memcmp(old_ap, id3->ap_mac, 6) != 0, "Different nsec produces different AP MAC");
     ASSERT(strcmp(old_ssid, id3->ap_ssid) != 0, "Different nsec produces different SSID");
 
+    printf("\n--- Locking key derivation ---\n");
+    ret = identity_init(TEST_NSEC);
+    ASSERT_EQ_INT(ESP_OK, ret, "Re-init with TEST_NSEC for locking key test");
+    const tollgate_identity_t *id4 = identity_get();
+
+    uint8_t expected_locking_priv[32] = {
+        0x2d, 0xbd, 0x14, 0x45, 0xee, 0x33, 0xe3, 0xad,
+        0x80, 0x80, 0x21, 0x76, 0xd9, 0x7a, 0x14, 0x1c,
+        0x30, 0xa3, 0xb5, 0x59, 0x80, 0xc7, 0xa3, 0x24,
+        0x03, 0x7f, 0x20, 0xa3, 0xaf, 0x3b, 0xff, 0xf8
+    };
+    ASSERT_MEM_EQ(expected_locking_priv, id4->locking_privkey, 32, "Locking private key matches golden vector");
+
+    uint8_t expected_locking_pub[33] = {
+        0x03, 0x70, 0x3b, 0x0d, 0xfe, 0xb4, 0x15, 0xa6,
+        0x0d, 0x21, 0x55, 0x48, 0x3c, 0x03, 0x67, 0xd6,
+        0x0e, 0x24, 0x96, 0xf8, 0xeb, 0xe5, 0x60, 0x40,
+        0x37, 0xee, 0x49, 0x4e, 0x8f, 0x86, 0xd8, 0x1b,
+        0x84
+    };
+    ASSERT_MEM_EQ(expected_locking_pub, id4->locking_pubkey, 33, "Locking pubkey matches golden vector");
+    ASSERT_EQ_STR("03703b0dfeb415a60d2155483c0367d60e2496f8ebe5604037ee494e8f86d81b84",
+                  id4->locking_pubkey_hex, "Locking pubkey hex matches golden vector");
+    ASSERT_EQ_INT(66, (int)strlen(id4->locking_pubkey_hex), "Locking pubkey hex is 66 chars");
+
+    ASSERT(memcmp(id4->nsec, id4->locking_privkey, 32) != 0,
+           "Locking privkey differs from nsec (different derivation)");
+
     printf("\n--- Invalid nsec ---\n");
     ret = identity_init(NULL);
     ASSERT(ret != ESP_OK, "NULL nsec returns error");
