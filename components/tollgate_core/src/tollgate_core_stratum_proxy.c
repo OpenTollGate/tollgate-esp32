@@ -1,6 +1,7 @@
 #include "tollgate_core_stratum_proxy.h"
 #include "tollgate_core_mining.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "lwip/sockets.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -8,14 +9,19 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <sys/poll.h>
+
+#ifndef TEST_HOST
+#include "lwipopts.h"
+#endif
 
 static const char *TAG = "tg_stratum";
 
-#define RECV_BUF_SIZE 2048
-#define SEND_BUF_SIZE 2048
-#define CLIENT_TASK_STACK 6144
-#define SERVER_TASK_STACK 4096
-#define MAX_LINE 1024
+#define RECV_BUF_SIZE 1024
+#define SEND_BUF_SIZE 1024
+#define SERVER_TASK_STACK 6144
+#define MAX_LINE 512
 
 static uint16_t s_port = 3333;
 static volatile bool s_running = false;
@@ -165,24 +171,28 @@ static void build_header(const tollgate_stratum_job_t *job, uint32_t nonce,
 
 static int send_response(int fd, uint32_t id, const char *result, bool error)
 {
-    char buf[SEND_BUF_SIZE];
+    char *buf = malloc(SEND_BUF_SIZE);
+    if (!buf) return -1;
     int len;
     if (error) {
-        len = snprintf(buf, sizeof(buf),
+        len = snprintf(buf, SEND_BUF_SIZE,
                        "{\"id\":%lu,\"result\":null,\"error\":[%d,\"%s\"]}\n",
                        (unsigned long)id, 20, result);
     } else {
-        len = snprintf(buf, sizeof(buf),
+        len = snprintf(buf, SEND_BUF_SIZE,
                        "{\"id\":%lu,\"result\":%s,\"error\":null}\n",
                        (unsigned long)id, result);
     }
-    return send(fd, buf, len, MSG_DONTWAIT);
+    int ret = send(fd, buf, len, MSG_DONTWAIT);
+    free(buf);
+    return ret;
 }
 
 static void handle_subscribe(int fd, miner_client_t *miner, uint32_t id)
 {
-    char buf[SEND_BUF_SIZE];
-    int len = snprintf(buf, sizeof(buf),
+    char *buf = malloc(SEND_BUF_SIZE);
+    if (!buf) return;
+    int len = snprintf(buf, SEND_BUF_SIZE,
                        "{\"id\":%lu,\"result\":[[[\"mining.notify\",\"%08lx\"]],"
                        "\"%08lx\",8],\"error\":null}\n",
                        (unsigned long)id,
@@ -191,12 +201,11 @@ static void handle_subscribe(int fd, miner_client_t *miner, uint32_t id)
     send(fd, buf, len, MSG_DONTWAIT);
 
     if (s_current_job.valid) {
-        char job_buf[SEND_BUF_SIZE];
         char prevhash_hex[65];
         for (int i = 0; i < 32; i++) {
             snprintf(prevhash_hex + i * 2, 3, "%02x", s_current_job.prevhash[i]);
         }
-        int jlen = snprintf(job_buf, sizeof(job_buf),
+        int jlen = snprintf(buf, SEND_BUF_SIZE,
                             "{\"id\":null,\"method\":\"mining.notify\","
                             "\"params\":[\"%lu\",\"%s\",\"\",\"\",\"\","
                             "\"%08lx\",\"%08lx\",\"%08lx\",%s]}\n",
@@ -206,18 +215,21 @@ static void handle_subscribe(int fd, miner_client_t *miner, uint32_t id)
                             (unsigned long)s_current_job.nbits,
                             (unsigned long)s_current_job.ntime,
                             s_current_job.clean ? "true" : "false");
-        send(fd, job_buf, jlen, MSG_DONTWAIT);
+        send(fd, buf, jlen, MSG_DONTWAIT);
     }
+    free(buf);
 }
 
 static void handle_set_difficulty(int fd)
 {
-    char buf[SEND_BUF_SIZE];
-    int len = snprintf(buf, sizeof(buf),
+    char *buf = malloc(SEND_BUF_SIZE);
+    if (!buf) return;
+    int len = snprintf(buf, SEND_BUF_SIZE,
                        "{\"id\":null,\"method\":\"mining.set_difficulty\","
                        "\"params\":[%.1f]}\n",
                        s_difficulty);
     send(fd, buf, len, MSG_DONTWAIT);
+    free(buf);
 }
 
 static void handle_line(int fd, miner_client_t *miner, char *line)
@@ -349,119 +361,108 @@ static void handle_line(int fd, miner_client_t *miner, char *line)
     }
 }
 
-static void proxy_client_handler(void *arg)
-{
-    int client_fd = (int)(intptr_t)arg;
-    struct sockaddr_in client_addr;
-    socklen_t addr_len = sizeof(client_addr);
-    getpeername(client_fd, (struct sockaddr *)&client_addr, &addr_len);
-    uint32_t client_ip = client_addr.sin_addr.s_addr;
-
-    ESP_LOGI(TAG, "Miner connected from 0x%08lx", (unsigned long)client_ip);
-
-    int idx = register_miner(client_fd, client_ip);
-    if (idx < 0) {
-        ESP_LOGW(TAG, "Max miners reached, rejecting 0x%08lx", (unsigned long)client_ip);
-        close(client_fd);
-        vTaskDelete(NULL);
-        return;
-    }
-    s_stats.active_miners++;
-
-    {
-        struct timeval tv = { .tv_sec = 30, .tv_usec = 0 };
-        setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    }
-
-    char recv_buf[RECV_BUF_SIZE];
-    char line_buf[MAX_LINE];
-    int line_pos = 0;
-
-    while (s_running) {
-        int len = recv(client_fd, recv_buf, sizeof(recv_buf) - 1, 0);
-        if (len <= 0) break;
-
-        recv_buf[len] = '\0';
-
-        for (int i = 0; i < len; i++) {
-            char c = recv_buf[i];
-            if (c == '\n' || c == '\r') {
-                if (line_pos > 0) {
-                    line_buf[line_pos] = '\0';
-                    handle_line(client_fd, &s_miners[idx], line_buf);
-                    line_pos = 0;
-                }
-            } else if (line_pos < MAX_LINE - 1) {
-                line_buf[line_pos++] = c;
-            }
-        }
-    }
-
-    unregister_miner(client_fd);
-    ESP_LOGI(TAG, "Miner disconnected from 0x%08lx", (unsigned long)client_ip);
-    close(client_fd);
-    vTaskDelete(NULL);
-}
-
 static void proxy_server_task(void *arg)
 {
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(s_port);
-
-    s_server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (s_server_fd < 0) {
-        ESP_LOGE(TAG, "Failed to create socket");
-        vTaskDelete(NULL);
-        return;
-    }
-
-    int opt = 1;
-    setsockopt(s_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    if (bind(s_server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) != 0) {
-        ESP_LOGE(TAG, "Failed to bind to port %u", (unsigned)s_port);
+    char *recv_buf = malloc(RECV_BUF_SIZE);
+    if (!recv_buf) {
+        ESP_LOGE(TAG, "OOM for recv buffer");
         close(s_server_fd);
         s_server_fd = -1;
+        s_running = false;
         vTaskDelete(NULL);
         return;
     }
 
-    if (listen(s_server_fd, 4) != 0) {
-        ESP_LOGE(TAG, "Failed to listen");
-        close(s_server_fd);
-        s_server_fd = -1;
-        vTaskDelete(NULL);
-        return;
-    }
-
-    ESP_LOGI(TAG, "Stratum proxy listening on port %u", (unsigned)s_port);
+    ESP_LOGI(TAG, "proxy_server_task started, server_fd=%d, fd_set size=%d, s_running=%d",
+             s_server_fd, (int)sizeof(fd_set), s_running);
 
     while (s_running) {
+        fd_set read_set;
+        FD_ZERO(&read_set);
+        FD_SET(s_server_fd, &read_set);
+
+        int active = select(s_server_fd + 1, &read_set, NULL, NULL, NULL);
+        if (active < 0) {
+            ESP_LOGE(TAG, "select() error: errno=%d", errno);
+            break;
+        }
+        if (active == 0) continue;
+
+        if (!FD_ISSET(s_server_fd, &read_set)) continue;
+
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
         int client_fd = accept(s_server_fd, (struct sockaddr *)&client_addr, &client_len);
-        if (client_fd < 0) continue;
+        if (client_fd < 0) {
+            ESP_LOGE(TAG, "accept() failed: errno=%d", errno);
+            continue;
+        }
 
-        char task_name[20];
-        snprintf(task_name, sizeof(task_name), "miner_%d", client_fd);
-        xTaskCreate(proxy_client_handler, task_name, CLIENT_TASK_STACK,
-                     (void *)(intptr_t)client_fd, 3, NULL);
+        uint32_t client_ip = client_addr.sin_addr.s_addr;
+        int idx = register_miner(client_fd, client_ip);
+        if (idx < 0) {
+            ESP_LOGW(TAG, "Max miners, rejecting");
+            close(client_fd);
+            continue;
+        }
+        s_stats.active_miners++;
+
+        struct timeval rto = { .tv_sec = 30, .tv_usec = 0 };
+        setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &rto, sizeof(rto));
+
+        ESP_LOGI(TAG, "Miner connected from 0x%08lx (slot %d), handling...",
+                 (unsigned long)client_ip, idx);
+
+        while (s_running) {
+            int len = recv(client_fd, recv_buf, RECV_BUF_SIZE - 1, 0);
+            if (len <= 0) {
+                ESP_LOGI(TAG, "Miner recv returned %d (errno=%d)", len, errno);
+                break;
+            }
+            recv_buf[len] = '\0';
+            char *line_start = recv_buf;
+            for (int j = 0; j < len; j++) {
+                if (recv_buf[j] == '\n' || recv_buf[j] == '\r') {
+                    recv_buf[j] = '\0';
+                    if (j > 0 && line_start < recv_buf + len && *line_start != '\0') {
+                        handle_line(client_fd, &s_miners[idx], line_start);
+                    }
+                    line_start = recv_buf + j + 1;
+                }
+            }
+            if (line_start < recv_buf + len && *line_start != '\0') {
+                handle_line(client_fd, &s_miners[idx], line_start);
+            }
+        }
+
+        ESP_LOGI(TAG, "Miner disconnected from slot %d", idx);
+        close(client_fd);
+        unregister_miner(client_fd);
     }
 
+    free(recv_buf);
+    for (int i = 0; i < TOLLGATE_PROXY_MAX_MINERS; i++) {
+        if (s_miners[i].fd >= 0) {
+            close(s_miners[i].fd);
+            s_miners[i].fd = -1;
+        }
+    }
     close(s_server_fd);
     s_server_fd = -1;
+    s_running = false;
     vTaskDelete(NULL);
 }
 
 esp_err_t tollgate_core_stratum_proxy_init(uint16_t port)
 {
+    if (s_running) {
+        ESP_LOGI(TAG, "Stratum proxy already running on port %u, skipping", (unsigned)s_port);
+        return ESP_OK;
+    }
+
     s_port = port;
     memset(&s_current_job, 0, sizeof(s_current_job));
     memset(&s_stats, 0, sizeof(s_stats));
-    s_running = true;
     s_difficulty = 1.0;
 
     for (int i = 0; i < TOLLGATE_PROXY_MAX_MINERS; i++) {
@@ -472,15 +473,90 @@ esp_err_t tollgate_core_stratum_proxy_init(uint16_t port)
         s_miners_mutex = xSemaphoreCreateMutex();
     }
 
+    struct sockaddr_in serv_addr;
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(port);
+
+    s_server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (s_server_fd < 0) {
+        ESP_LOGE(TAG, "Failed to create socket (errno=%d)", errno);
+        return ESP_FAIL;
+    }
+
+    int opt = 1;
+    setsockopt(s_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    if (bind(s_server_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) != 0) {
+        ESP_LOGE(TAG, "Failed to bind to port %u (errno=%d)", (unsigned)port, errno);
+        close(s_server_fd);
+        s_server_fd = -1;
+        return ESP_FAIL;
+    }
+
+    if (listen(s_server_fd, 4) != 0) {
+        ESP_LOGE(TAG, "Failed to listen on port %u (errno=%d)", (unsigned)port, errno);
+        close(s_server_fd);
+        s_server_fd = -1;
+        return ESP_FAIL;
+    }
+
+    s_running = true;
+    ESP_LOGI(TAG, "Stratum proxy listening on port %u, server_fd=%d",
+             (unsigned)port, s_server_fd);
+
     BaseType_t ret = xTaskCreate(proxy_server_task, "stratum_proxy", SERVER_TASK_STACK,
                                   NULL, 4, &s_task_handle);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create proxy task");
+        close(s_server_fd);
+        s_server_fd = -1;
         s_running = false;
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Stratum proxy initialized on port %u", (unsigned)port);
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    {
+        ESP_LOGI(TAG, "SELF-TEST: connecting to 127.0.0.1:%u ...", (unsigned)port);
+        struct sockaddr_in self_addr;
+        memset(&self_addr, 0, sizeof(self_addr));
+        self_addr.sin_family = AF_INET;
+        self_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        self_addr.sin_port = htons(port);
+
+        int test_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (test_fd >= 0) {
+            ESP_LOGI(TAG, "SELF-TEST: test_fd=%d", test_fd);
+            struct timeval tmo = { .tv_sec = 3, .tv_usec = 0 };
+            setsockopt(test_fd, SOL_SOCKET, SO_SNDTIMEO, &tmo, sizeof(tmo));
+            setsockopt(test_fd, SOL_SOCKET, SO_RCVTIMEO, &tmo, sizeof(tmo));
+
+            int cr = connect(test_fd, (struct sockaddr *)&self_addr, sizeof(self_addr));
+            if (cr == 0) {
+                ESP_LOGI(TAG, "SELF-TEST PASS: loopback connect to port %u succeeded, fd=%d", (unsigned)port, test_fd);
+                const char *test_msg = "{\"id\":1,\"method\":\"mining.subscribe\",\"params\":[]}\n";
+                int slen = send(test_fd, test_msg, strlen(test_msg), 0);
+                ESP_LOGI(TAG, "SELF-TEST: sent %d bytes", slen);
+                char resp[256];
+                int rlen = recv(test_fd, resp, sizeof(resp) - 1, 0);
+                if (rlen > 0) {
+                    resp[rlen] = '\0';
+                    ESP_LOGI(TAG, "SELF-TEST: got response (%d bytes): %.80s", rlen, resp);
+                } else {
+                    ESP_LOGW(TAG, "SELF-TEST: no response (recv=%d, errno=%d)", rlen, errno);
+                }
+            } else {
+                ESP_LOGE(TAG, "SELF-TEST FAIL: loopback connect to 127.0.0.1:%u failed (errno=%d %s)",
+                         (unsigned)port, errno, strerror(errno));
+            }
+            close(test_fd);
+        } else {
+            ESP_LOGE(TAG, "SELF-TEST: failed to create test socket (errno=%d)", errno);
+        }
+    }
+
     return ESP_OK;
 }
 
@@ -499,8 +575,9 @@ void tollgate_core_stratum_proxy_set_job(const tollgate_stratum_job_t *job)
         snprintf(prevhash_hex + i * 2, 3, "%02x", job->prevhash[i]);
     }
 
-    char notify[SEND_BUF_SIZE];
-    int len = snprintf(notify, sizeof(notify),
+    char *notify = malloc(SEND_BUF_SIZE);
+    if (!notify) return;
+    int len = snprintf(notify, SEND_BUF_SIZE,
                        "{\"id\":null,\"method\":\"mining.notify\","
                        "\"params\":[\"%lu\",\"%s\",\"\",\"\",\"\","
                        "\"%08lx\",\"%08lx\",\"%08lx\",%s]}\n",
@@ -512,18 +589,21 @@ void tollgate_core_stratum_proxy_set_job(const tollgate_stratum_job_t *job)
                        job->clean ? "true" : "false");
 
     broadcast_to_miners(notify, len);
+    free(notify);
 }
 
 void tollgate_core_stratum_proxy_set_difficulty(double difficulty)
 {
     s_difficulty = difficulty;
 
-    char msg[SEND_BUF_SIZE];
-    int len = snprintf(msg, sizeof(msg),
+    char *msg = malloc(SEND_BUF_SIZE);
+    if (!msg) return;
+    int len = snprintf(msg, SEND_BUF_SIZE,
                        "{\"id\":null,\"method\":\"mining.set_difficulty\","
                        "\"params\":[%.1f]}\n",
                        difficulty);
     broadcast_to_miners(msg, len);
+    free(msg);
 }
 
 const tollgate_stratum_job_t *tollgate_core_stratum_proxy_get_current_job(void)

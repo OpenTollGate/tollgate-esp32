@@ -1,8 +1,8 @@
 # Mining-for-Internet via Hashpool Ecash — Implementation Plan
 
 **Created:** 2026-05-29
-**Updated:** 2026-05-29
-**Status:** Phase 1 In Progress
+**Updated:** 2026-05-30
+**Status:** Phase 1A — Debugging TCP listen failure
 **Branch:** `feature/tollgate-core-v2` (esp32-tollgate)
 
 ---
@@ -79,29 +79,69 @@ BitAxe Miner          ESP32 TollGate (SV1 downstream, SV2 upstream)     Hashpool
 
 **Goal:** Make the stratum proxy a proper SV1 server so miners can connect, subscribe, authorize, and submit shares.
 
-**Files to modify:**
-- `components/tollgate_core/src/tollgate_core_stratum_proxy.c`
-- `components/tollgate_core/src/tollgate_core_mining.c`
-- New: `components/tollgate_core/src/tollgate_core_sv1_server.c`
-- New: `components/tollgate_core/include/tollgate_core_sv1_server.h`
+**Status:** SV1 protocol code is COMPLETE (subscribe, authorize, submit, PoW validation all working). BLOCKED on raw BSD socket TCP `listen()` not accepting connections from AP clients.
 
-**Tasks:**
-- [ ] 1A-1. Create SV1 message parser: parse `mining.subscribe`, `mining.authorize`, `mining.submit` JSON-RPC
-- [ ] 1A-2. Respond to `mining.subscribe` with subscription ID + extranonce
-- [ ] 1A-3. Respond to `mining.authorize` with success
-- [ ] 1A-4. Parse `mining.submit` to extract job_id, worker_name, nonce, ntime, version
-- [ ] 1A-5. Implement real share PoW validation in `tollgate_core_mining_validate_share()`
-  - Reconstruct 80-byte block header: version(4) + prevhash(32) + merkle_root(32) + ntime(4) + nbits(4) + nonce(4)
-  - Double-SHA256 the header
-  - Compare hash against target (256-bit LE)
-- [ ] 1A-6. Forward valid shares to upstream stratum client
-- [ ] 1A-7. Relay `mining.notify` and `mining.set_difficulty` from upstream to all connected downstream miners
-- [ ] 1A-8. Track per-client-IP hashrate using existing `tollgate_core_mining_get_or_create_client()`
-- [ ] 1A-9. Handle miner disconnection gracefully
-- [ ] 1A-10. Unit tests: SV1 message parsing, share validation with known block headers
-- [ ] 1A-11. Integration test: BitAxe connects to TollGate stratum proxy, submits shares
+#### 1A-DIAG: TCP Listen Failure Diagnostic
 
-**Effort:** 3-5 days
+**Problem:** Raw BSD socket `listen()` on any port (3333, 4033, 9999) rejects TCP SYNs from AP clients with RST. All `esp_http_server`-based servers (ports 80, 2121, 4869) work fine. httpd uses the exact same `socket()/bind()/listen()/select()/accept()` calls.
+
+**Hypotheses investigated and ruled out:**
+- ~~NAPT interception~~ — `ip_napt_recv()` is only called when `!inp->napt`; AP interface HAS NAPT, so local packets bypass
+- ~~Firewall hook~~ — `LWIP_HOOK_IP4_CANFORWARD` only fires in `ip4_forward()`, not for locally-destined packets
+- ~~FD_SET overflow~~ — LWIP `fd_set` uses `fd_bits[4]` with `LWIP_SOCKET_OFFSET=34`; fd=45 maps to `fd_bits[1]`, within bounds
+- ~~PCB exhaustion~~ — Only 4/16 listening PCBs used
+- ~~Port-specific~~ — Ports 3333, 4033, 9999 all fail
+
+**Diagnostic Plan (Option 1 — LWIP Debug Logging):**
+- [ ] Enable `CONFIG_LWIP_DEBUG=y` in sdkconfig
+- [ ] Enable `CONFIG_LWIP_TCP_DEBUG=y`
+- [ ] Enable `CONFIG_LWIP_IP_DEBUG=y`
+- [ ] Enable `CONFIG_LWIP_NAPT_DEBUG=y`
+- [ ] Enable `CONFIG_LWIP_SOCKETS_DEBUG=y`
+- [ ] Enable `CONFIG_LWIP_DEBUG_ESP_LOG=y` (route through ESP_LOG)
+- [ ] `idf.py fullclean && idf.py build`
+- [ ] Flash to fan-damaged NerdAxe (reliable flash target)
+- [ ] Monitor serial output: `idf.py -p /dev/ttyACM0 monitor`
+- [ ] From laptop connected to AP: `nc 10.192.45.1 4033`
+- [ ] Capture TCP debug output — look for:
+  - `tcp_input:` — SYN received, PCB lookup
+  - `RST` — who sends it and why
+  - `ip4_input:` — IP delivery path
+  - NAPT debug — any packet interception
+- [ ] Compare: `nc 10.192.45.1 80` (working httpd port) for baseline
+- [ ] Document findings and identify root cause
+
+**Fallback options if debug logging is inconclusive:**
+- [ ] Option 2: Rewrite using LWIP `netconn` API (`netconn_new_tcp/bind/listen/accept`)
+- [ ] Option 3: Use `esp_http_server` with WebSocket upgrade (requires client-side WS bridge)
+
+**Key LWIP internals reference:**
+- `FD_SETSIZE` = newlib 64 → LWIP redefines to `MEMP_NUM_NETCONN` = 30
+- `LWIP_SOCKET_OFFSET` = 64 - 30 = 34
+- Valid VFS socket fd range: [34, 64) from `esp_vfs_register_fd_range()`
+- `lwip/sockets.h` redefines `FD_SET`/`fd_set` to use offset-aware `fd_bits[]` array
+- Board reports `server_fd=45` → valid VFS fd, internal LWIP index 11
+
+#### 1A-SV1: SV1 Protocol (COMPLETE)
+
+**Files:**
+- `components/tollgate_core/src/tollgate_core_stratum_proxy.c` — Full SV1 server
+- `components/tollgate_core/src/tollgate_core_stratum_proxy.h` — Types and API
+- `tests/unit/test_stratum_pow.c` — 35 assertions with Bitcoin genesis block vector
+
+**Done:**
+- [x] 1A-1. SV1 message parser: `mining.subscribe`, `mining.authorize`, `mining.submit`, `mining.extranonce.subscribe`, `mining.suggest_difficulty`
+- [x] 1A-2. `mining.subscribe` response with subscription ID + extranonce
+- [x] 1A-3. `mining.authorize` response with success
+- [x] 1A-4. `mining.submit` parsing: job_id, ntime, nonce, version
+- [x] 1A-5. PoW validation: double-SHA256, byte reversal, target generation from difficulty
+  - 3 critical bugs found and fixed (commit `3d41ef1`): single→double SHA256, byte reversal, target byte order
+- [x] 1A-6. Share callback mechanism for upstream forwarding
+- [x] 1A-7. Job broadcast (`mining.notify`) and difficulty broadcast to authorized miners
+- [x] 1A-8. Per-client IP tracking via `tollgate_core_mining_update_hashrate()`
+- [x] 1A-9. Miner disconnect handling, mutex-protected miner array
+- [x] 1A-10. Unit tests: 35 assertions using Bitcoin genesis block as known vector
+- [ ] 1A-11. Integration test: BitAxe connects to TollGate stratum proxy (blocked on TCP fix)
 
 ---
 
@@ -398,6 +438,7 @@ Phase 2G (depends on all above)
 
 ## Open Items
 
+- [ ] **TCP listen failure**: Raw BSD socket `listen()` rejects SYNs from AP clients; all `esp_http_server` ports work. LWIP debug diagnostic in progress.
 - [ ] **CDK mint API**: Does it have a "list paid quotes by pubkey" endpoint? If not, need custom endpoint or alternative.
 - [ ] **Blinded minting on ESP32**: Does nucula wallet support generating blinding factors and unblinding signatures? Or do we need to add this?
 - [ ] **ehash token format**: Are ehash tokens standard Cashu v3 tokens (cashuA...) that `tollgate_core_cashu_decode_token()` can parse?
@@ -406,3 +447,45 @@ Phase 2G (depends on all above)
   - b) Poll mint for all paid quotes
   - c) Custom HTTP endpoint on translator
 - [ ] **secp256k1 ellswift compatibility**: Will updating secp256k1 break nucula?
+
+---
+
+## Global Checklist
+
+### Phase 1A: SV1 Stratum Proxy
+- [x] SV1 message parser (subscribe, authorize, submit)
+- [x] PoW validation (double-SHA256, target generation)
+- [x] Unit tests (35 assertions, Bitcoin genesis block vector)
+- [x] Heap allocation for all proxy buffers
+- [x] Double-init guard
+- [ ] **TCP listen fix** — raw BSD socket `listen()` rejects SYNs from AP clients
+  - [ ] Enable LWIP debug logging (TCP, IP, NAPT, sockets)
+  - [ ] Rebuild + flash + test from AP client
+  - [ ] Analyze debug output, identify root cause
+  - [ ] Implement fix (netconn API, NAPT patch, or WebSocket fallback)
+  - [ ] Verify TCP connections work from laptop via AP
+  - [ ] Integration test: BitAxe connects to stratum proxy
+
+### Phase 1B: Upstream Connection + Locking Pubkey
+- [ ] Derive locking keypair from nsec via HMAC-SHA512
+- [ ] Expose locking pubkey via HTTP endpoint
+- [ ] Modify upstream authorize to include pubkey
+- [ ] Unit test: key derivation from known nsec
+
+### Phase 1C: Ecash Token Poller
+- [ ] Investigate CDK mint REST API
+- [ ] Implement poller task
+- [ ] Cashu blinded minting flow
+- [ ] Store proofs in nucula wallet
+
+### Phase 1D: Hashpool Translator (server-side Rust)
+- [ ] Parse locking pubkey from authorize password
+- [ ] Use downstream pubkey in SubmitSharesExtended
+
+### Phase 1E: Miner Auto-Discovery
+- [ ] Scan for TollGate SSIDs
+- [ ] Auto-configure stratum to AP IP
+
+### Phase 1F: Integration Testing
+- [ ] Full E2E test
+- [ ] Update documentation
