@@ -74,8 +74,8 @@ async function runTest() {
   console.log('\nStep 3: Generate real Cashu token');
   let token = null;
   try {
-    const mintUrl = 'testnut-nutshell.mints.orangesync.tech';
-    token = execSync(`cashu --env-mint ${mintUrl} send --legacy ${TOKEN_AMOUNT}`, {
+    const mintUrl = 'https://testnut-nutshell.mints.orangesync.tech';
+    token = execSync(`cashu -h ${mintUrl} -y send --legacy ${TOKEN_AMOUNT}`, {
       encoding: 'utf8', timeout: 30000
     }).trim();
     if (!token.startsWith('cashuA')) {
