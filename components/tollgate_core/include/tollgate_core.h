@@ -35,7 +35,7 @@ int tollgate_core_allowed_client_count(void);
 bool tollgate_core_is_owner(uint32_t client_ip);
 bool tollgate_core_is_owner_connected(void);
 
-esp_err_t tollgate_core_stratum_proxy_init(uint16_t port);
+esp_err_t tollgate_core_stratum_proxy_init(uint16_t port, bool self_test);
 void tollgate_core_stratum_proxy_stop(void);
 void tollgate_core_on_share_accepted(uint32_t client_ip, double difficulty);
 double tollgate_core_calc_hashprice(double hashrate_ghs);

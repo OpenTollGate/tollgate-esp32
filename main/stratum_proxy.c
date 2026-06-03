@@ -5,9 +5,9 @@
 _Static_assert(sizeof(stratum_job_t) == sizeof(tollgate_stratum_job_t), "job struct size mismatch");
 _Static_assert(sizeof(stratum_proxy_stats_t) == sizeof(tollgate_stratum_proxy_stats_t), "stats struct size mismatch");
 
-esp_err_t stratum_proxy_init(uint16_t port)
+esp_err_t stratum_proxy_init(uint16_t port, bool self_test)
 {
-    return tollgate_core_stratum_proxy_init(port);
+    return tollgate_core_stratum_proxy_init(port, self_test);
 }
 
 void stratum_proxy_set_job(const stratum_job_t *job)

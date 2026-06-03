@@ -39,7 +39,7 @@ typedef struct {
 typedef void (*tollgate_share_cb)(uint32_t client_ip, uint32_t job_id,
                                    uint32_t nonce, uint32_t ntime, uint32_t version);
 
-esp_err_t tollgate_core_stratum_proxy_init(uint16_t port);
+esp_err_t tollgate_core_stratum_proxy_init(uint16_t port, bool self_test);
 void tollgate_core_stratum_proxy_set_job(const tollgate_stratum_job_t *job);
 void tollgate_core_stratum_proxy_set_difficulty(double difficulty);
 const tollgate_stratum_job_t *tollgate_core_stratum_proxy_get_current_job(void);

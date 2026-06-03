@@ -46,6 +46,7 @@ esp_err_t tollgate_config_init(void)
     g_config.stratum_port = 3333;
     g_config.mining_port = 3334;
     g_config.mining_sandbox_mint_access = false;
+    g_config.proxy_self_test = true;
     g_config.sync_enabled = true;
     g_config.wifistr_enabled = true;
     g_config.local_relay_enabled = true;
@@ -366,6 +367,8 @@ esp_err_t tollgate_config_init(void)
 
         cJSON *m_sandbox = cJSON_GetObjectItem(mining, "sandbox_mint_access");
         if (m_sandbox && cJSON_IsBool(m_sandbox)) g_config.mining_sandbox_mint_access = cJSON_IsTrue(m_sandbox);
+        cJSON *m_selftest = cJSON_GetObjectItem(mining, "proxy_self_test");
+        if (m_selftest && cJSON_IsBool(m_selftest)) g_config.proxy_self_test = cJSON_IsTrue(m_selftest);
     }
 
     cJSON *market_enabled = cJSON_GetObjectItem(root, "market_enabled");

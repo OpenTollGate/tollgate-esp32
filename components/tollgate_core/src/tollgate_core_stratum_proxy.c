@@ -453,7 +453,7 @@ static void proxy_server_task(void *arg)
     vTaskDelete(NULL);
 }
 
-esp_err_t tollgate_core_stratum_proxy_init(uint16_t port)
+esp_err_t tollgate_core_stratum_proxy_init(uint16_t port, bool self_test)
 {
     if (s_running) {
         ESP_LOGI(TAG, "Stratum proxy already running on port %u, skipping", (unsigned)s_port);
@@ -518,7 +518,7 @@ esp_err_t tollgate_core_stratum_proxy_init(uint16_t port)
 
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    {
+    if (self_test) {
         ESP_LOGI(TAG, "SELF-TEST: connecting to 127.0.0.1:%u ...", (unsigned)port);
         struct sockaddr_in self_addr;
         memset(&self_addr, 0, sizeof(self_addr));

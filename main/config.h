@@ -126,6 +126,7 @@ typedef struct {
     uint16_t mining_port;
     uint64_t hashprice_sats_per_ghs_day;
     bool mining_sandbox_mint_access;
+    bool proxy_self_test;
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

@@ -31,7 +31,7 @@ typedef struct {
     int active_miners;
 } stratum_proxy_stats_t;
 
-esp_err_t stratum_proxy_init(uint16_t port);
+esp_err_t stratum_proxy_init(uint16_t port, bool self_test);
 void stratum_proxy_set_job(const stratum_job_t *job);
 const stratum_job_t *stratum_proxy_get_current_job(void);
 void stratum_proxy_get_stats(stratum_proxy_stats_t *stats);

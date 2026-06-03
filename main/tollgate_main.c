@@ -296,7 +296,7 @@ static void start_services(void)
     if (cfg->mining_enabled) {
         ESP_LOGI(TAG, "Mining subsystem enabled, initializing...");
         stratum_client_init();
-        stratum_proxy_init(cfg->mining_port);
+        stratum_proxy_init(cfg->mining_port, cfg->proxy_self_test);
 
         if (cfg->mining_payout_mode != MINING_PAYOUT_UPSTREAM) {
             stratum_client_start();
