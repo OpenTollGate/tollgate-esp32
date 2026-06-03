@@ -169,8 +169,12 @@ static void stratum_client_task(void *arg)
             send_authorize();
         }
 
-        char recv_buf[2048];
-        int len = read_line(recv_buf, sizeof(recv_buf));
+        char *recv_buf = malloc(2048);
+        if (!recv_buf) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
+        int len = read_line(recv_buf, 2048);
         if (len <= 0) {
             ESP_LOGW(TAG, "Connection lost");
             s_state.connected = false;
@@ -210,6 +214,7 @@ static void stratum_client_task(void *arg)
         }
 
         cJSON_Delete(root);
+        free(recv_buf);
     }
 
     if (s_transport) {
@@ -232,7 +237,7 @@ esp_err_t stratum_client_start(void)
 {
     if (s_running) return ESP_OK;
     s_running = true;
-    BaseType_t ret = xTaskCreate(stratum_client_task, "stratum_cli", 8192, NULL, 4, &s_task_handle);
+    BaseType_t ret = xTaskCreate(stratum_client_task, "stratum_cli", 6144, NULL, 4, &s_task_handle);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create stratum client task");
         s_running = false;
