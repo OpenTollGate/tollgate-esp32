@@ -64,6 +64,23 @@ bool tollgate_core_stratum_parse_difficulty(const void *params_json,
     return false;
 }
 
+bool tollgate_core_stratum_parse_token(const void *params_json,
+                                        char *token_out, size_t token_out_size)
+{
+    const cJSON *params = (const cJSON *)params_json;
+    if (!params || !cJSON_IsArray(params) || cJSON_GetArraySize(params) < 1) return false;
+
+    const cJSON *token_item = cJSON_GetArrayItem(params, 0);
+    if (!token_item || !cJSON_IsString(token_item)) return false;
+
+    const char *token = token_item->valuestring;
+    size_t len = strlen(token);
+    if (len == 0 || len >= token_out_size) return false;
+
+    memcpy(token_out, token, len + 1);
+    return true;
+}
+
 int tollgate_core_stratum_build_subscribe(char *buf, size_t buf_size, uint32_t req_id)
 {
     return snprintf(buf, buf_size,

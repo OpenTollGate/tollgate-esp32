@@ -121,5 +121,49 @@ int main(void)
         ASSERT(strstr(buf, "12345678") != NULL, "contains nonce");
     }
 
+    printf("\n--- parse_token valid ---\n");
+    {
+        cJSON *params = cJSON_Parse("[\"cashuAeyJwcm9vZnMiOlt7fV19\"]");
+        char token[512];
+        bool ok = tollgate_core_stratum_parse_token(params, token, sizeof(token));
+        ASSERT(ok, "parse_token returns true");
+        ASSERT(strcmp(token, "cashuAeyJwcm9vZnMiOlt7fV19") == 0, "token matches");
+        cJSON_Delete(params);
+    }
+
+    printf("\n--- parse_token empty params ---\n");
+    {
+        cJSON *params = cJSON_Parse("[]");
+        char token[512];
+        bool ok = tollgate_core_stratum_parse_token(params, token, sizeof(token));
+        ASSERT(!ok, "parse_token returns false for empty array");
+        cJSON_Delete(params);
+    }
+
+    printf("\n--- parse_token null ---\n");
+    {
+        char token[512];
+        bool ok = tollgate_core_stratum_parse_token(NULL, token, sizeof(token));
+        ASSERT(!ok, "parse_token returns false for NULL");
+    }
+
+    printf("\n--- parse_token buffer too small ---\n");
+    {
+        cJSON *params = cJSON_Parse("[\"cashuAeyJwcm9vZnMiOlt7fV19\"]");
+        char token[5];
+        bool ok = tollgate_core_stratum_parse_token(params, token, sizeof(token));
+        ASSERT(!ok, "parse_token returns false when buffer too small");
+        cJSON_Delete(params);
+    }
+
+    printf("\n--- parse_token non-string param ---\n");
+    {
+        cJSON *params = cJSON_Parse("[42]");
+        char token[512];
+        bool ok = tollgate_core_stratum_parse_token(params, token, sizeof(token));
+        ASSERT(!ok, "parse_token returns false for non-string param");
+        cJSON_Delete(params);
+    }
+
     TEST_SUMMARY();
 }

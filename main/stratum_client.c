@@ -4,6 +4,7 @@
 #include "tollgate_core_stratum_client.h"
 #include "config.h"
 #include "identity.h"
+#include "tls_worker.h"
 #include "esp_log.h"
 #include "esp_transport.h"
 #include "esp_transport_tcp.h"
@@ -19,6 +20,7 @@ static esp_transport_handle_t s_transport = NULL;
 static bool s_running = false;
 static uint32_t s_req_id = 1;
 static TaskHandle_t s_task_handle = NULL;
+static tollgate_stratum_token_cb s_token_cb = NULL;
 
 static int read_line(char *buf, int max_len)
 {
@@ -129,6 +131,28 @@ static void handle_mining_set_difficulty(cJSON *params)
     }
 }
 
+static void handle_mining_token(cJSON *params)
+{
+    char token[TG_STRATUM_MAX_TOKEN_LEN];
+    if (!tollgate_core_stratum_parse_token(params, token, sizeof(token))) {
+        ESP_LOGW(TAG, "Failed to parse mining.token params");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Received mining.token: %s", token);
+
+    if (s_token_cb) {
+        s_token_cb(token);
+    } else {
+        tls_worker_submit(token);
+    }
+}
+
+void stratum_client_set_token_callback(tollgate_stratum_token_cb cb)
+{
+    s_token_cb = cb;
+}
+
 static void stratum_client_task(void *arg)
 {
     const tollgate_config_t *cfg = tollgate_config_get();
@@ -170,6 +194,8 @@ static void stratum_client_task(void *arg)
                 handle_mining_notify(params);
             } else if (strcmp(method->valuestring, "mining.set_difficulty") == 0) {
                 handle_mining_set_difficulty(params);
+            } else if (strcmp(method->valuestring, "mining.token") == 0) {
+                handle_mining_token(params);
             }
         }
 

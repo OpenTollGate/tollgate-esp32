@@ -1,8 +1,8 @@
 # Mining-for-Internet via Hashpool Ecash — Implementation Plan
 
 **Created:** 2026-05-29
-**Updated:** 2026-05-30
-**Status:** Phase 1A — Debugging TCP listen failure
+**Updated:** 2026-06-03
+**Status:** Phase 1C — Ecash Token Delivery via SV1 Notification (Option B3)
 **Branch:** `feature/tollgate-core-v2` (esp32-tollgate)
 
 ---
@@ -14,30 +14,39 @@ BitAxe Miner          ESP32 TollGate                    Hashpool Translator     
     |                        |                                |                              |
     |--1. WiFi connect ---->| AP (sandbox mode)               |                              |
     |                        |                                |                              |
-    |--2. SV1 stratum ------>| SV1 Proxy (port 3334)           |                              |
+    |--2. SV1 stratum ------>| SV1 Proxy (port 4033)           |                              |
     |   subscribe/auth       | - Full SV1 handshake            |                              |
     |   mining.submit        | - Local PoW validation          |                              |
     |                        | - Per-client hashrate tracking   |                              |
     |                        |                                |                              |
     |                        |--3. SV1 upstream -------------->| Translator (SV1->SV2)          |                              |
     |                        |   authorize password includes   | Extracts TollGate's           |
-    |                        |   TollGate's locking_pubkey     | locking_pubkey, forwards      |
-    |                        |                                | as own in SubmitSharesExtended|
+    |                        |   TollGate's locking_pubkey     | locking_pubkey, registers     |
+    |                        |                                | pubkey→channel mapping        |
     |                        |                                |--4. SV2 SubmitSharesExtended->|
     |                        |                                |                              |
     |                        |                                |<--5. Pool mints ehash quote ---|
     |                        |                                |    for TollGate's pubkey      |
     |                        |                                |                              |
-    |                        |--6. Poll CDK mint HTTP API ---------------------------------->|
-    |                        |   GET /v1/mint/quote (paid quotes for our pubkey)             |
-    |                        |   POST /v1/mint (blinded minting -> ecash proofs)             |
-    |                        |<--7. Ecash proofs stored in nucula wallet -------------------|
+    |                        |                                |--6. Proof sweeper mints ------|
+    |                        |                                |    tokens for pubkey          |
+    |                        |                                |    (mint_tokens_for_pubkey)   |
+    |                        |                                |                              |
+    |                        |                                |--7. Generate cashuA... token->|
+    |                        |                                |    lookup pubkey in registry  |
+    |                        |                                |    send via mining.token      |
+    |                        |<--8. mining.token notification--|                              |
+    |                        |    {"method":"mining.token",    |                              |
+    |                        |     "params":["cashuA..."]}     |                              |
+    |                        |                                |                              |
+    |                        |--9. Decode token + store in nucula wallet                   |
+    |                        |    (existing cashu_decode_token + wallet_receive)           |
     |                        |                                                              |
-    |                        |   8. Miner submits ecash token to TollGate (existing          |
-    |                        |      Cashu payment endpoint, same as manual payment)          |
-    |                        |   9. Session created, firewall grants NAT                     |
+    |                        |   10. Miner submits ecash token to TollGate (existing        |
+    |                        |      Cashu payment endpoint, same as manual payment)        |
+    |                        |   11. Session created, firewall grants NAT                   |
     |                        |                                                              |
-    |<--10. Internet ---------| NAT open                                                     |
+    |<--12. Internet ---------| NAT open                                                     |
 ```
 
 ### SV2 Future Path (Phase 2)
@@ -49,11 +58,9 @@ BitAxe Miner          ESP32 TollGate (SV1 downstream, SV2 upstream)     Hashpool
     |                        |                                              |
     |                        |-- SV2 direct (Noise NX encrypted) ---------->|
     |                        |   SubmitSharesExtended with locking_pubkey   |
-    |                        |   MintQuoteRequest/Response                  |
-    |                        |<-- NewMiningJob, SetNewPrevHash -------------|
     |                        |                                              |
-    |                        |-- Poll mint HTTP for ecash ----------------->|
-    |                        |<-- Ecash tokens -----------------------------|
+    |                        |<-- mining.token (or NUT-XX direct query) ----|
+    |                        |<-- Ecash tokens stored in nucula wallet -----|
 ```
 
 ---
@@ -101,70 +108,103 @@ BitAxe Miner          ESP32 TollGate (SV1 downstream, SV2 upstream)     Hashpool
 
 ---
 
-### 1B: Upstream Connection + Locking Pubkey — IN PROGRESS
+### 1B: Upstream Connection + Locking Pubkey — COMPLETE
 
-**Goal:** Derive a deterministic Cashu locking keypair from the device nsec, and include the pubkey in upstream stratum authorize so the hashpool translator can attribute ehash minting to this specific TollGate.
+**Commit:** `c07a7c0`
 
-**Design:**
-```
-HMAC-SHA512(nsec_bytes, "tollgate-cashu-locking-key") -> 64 bytes
-  -> first 32 bytes = locking_privkey (secp256k1 scalar)
-  -> secp256k1 compressed pubkey (33 bytes) = locking_pubkey
-  -> hex string (66 chars) included in authorize password: "worker_name.locking_pubkey_hex"
-```
+**Verified on hardware:** `GET /mining/pubkey` returns `{"locking_pubkey":"03703b0d..."}` on Board B (fan-damaged NerdAxe at `10.192.45.1`).
 
-**Files to modify:**
-- `main/identity.c/h` — add `identity_get_locking_pubkey()` / `identity_get_locking_privkey()`
-- `main/stratum_client.c` — modify `send_authorize()` to append pubkey
-- `main/tollgate_api.c` — add `GET /mining/pubkey` endpoint
-
-**Tasks:**
-- [ ] 1B-1. Implement `identity_derive_locking_key()` in `identity.c`:
+- [x] 1B-1. Implement `identity_derive_locking_key()` in `identity.c`:
   - HMAC-SHA512(nsec_bytes, "tollgate-cashu-locking-key") using mbedtls
   - First 32 bytes → secp256k1 scalar (verify < curve order)
   - Compute compressed pubkey (33 bytes)
   - Store in static, return on demand
-- [ ] 1B-2. Add `identity_get_locking_pubkey_hex()` — returns 66-char hex string
-- [ ] 1B-3. Add `GET /mining/pubkey` endpoint in `tollgate_api.c`
-- [ ] 1B-4. Modify `stratum_client send_authorize()` to include `.locking_pubkey_hex` in password
-- [ ] 1B-5. Unit test: known nsec → expected HMAC output → expected pubkey
-- [ ] 1B-6. Verify on hardware: check `/mining/pubkey` returns correct hex
+- [x] 1B-2. Add `identity_get_locking_pubkey_hex()` — returns 66-char hex string
+- [x] 1B-3. Add `GET /mining/pubkey` endpoint in `tollgate_api.c`
+- [x] 1B-4. Modify `stratum_client send_authorize()` to include `.locking_pubkey_hex` in password
+- [x] 1B-5. Unit test: known nsec → expected HMAC output → expected pubkey (6 golden vectors)
+- [x] 1B-6. Verify on hardware: check `/mining/pubkey` returns correct hex
 
 ---
 
-### 1C: Ecash Token Poller
+### 1C: Ecash Token Delivery via SV1 Notification (Option B3)
 
-**Goal:** The TollGate periodically polls the hashpool CDK mint for paid ehash quotes and claims tokens into its nucula wallet.
+**Goal:** The hashpool translator mints ehash tokens for the TollGate's locking pubkey and pushes them downstream via a custom `mining.token` SV1 JSON-RPC notification. The ESP32 receives the `cashuA...` token, decodes it, and stores proofs in the nucula wallet.
 
-**Files to create:**
-- New: `components/tollgate_core/src/tollgate_core_mint_poller.c`
-- New: `components/tollgate_core/include/tollgate_core_mint_poller.h`
+**Why B3 instead of A (poll CDK mint directly):**
+- No CDK fork needed — translator already mints tokens via `mint_tokens_for_pubkey()`
+- No blinded minting on ESP32 — saves ~8KB RAM and avoids complex crypto
+- Push model (near-instant) vs poll model (60s latency)
+- Uses existing TCP connection, no new HTTP endpoints
+- Standard `cashuA...` v3 tokens — existing `cashu_decode_token()` works
 
-**Files to modify:**
-- `main/tollgate_main.c` — start poller in services
-- `components/nucula_lib/nucula_wallet.h` — add blinded minting functions if needed
+**Architecture change in translator:**
+```
+Current:
+  accept_connections() → new_downstream() → 3 tasks per connection
+  proof_sweeper() → mints tokens → generate_single_ehash_token() → logs token (unused)
+
+New:
+  accept_connections() → new_downstream(tx_token) → 4 tasks per connection
+  TranslatorSv2 maintains: HashMap<PublicKey, Sender<String>> (downstream registry)
+  proof_sweeper() → mints tokens → looks up pubkey in registry → sends token via channel
+  new token_sender_task per downstream → writes mining.token to TCP socket
+```
+
+**Translator files to modify:**
+- `roles/translator/src/lib/downstream_sv1/downstream.rs` — add `locking_pubkey` to `Downstream`, add `tx_token: Sender<String>`, add token sender task
+- `roles/translator/src/lib/downstream_sv1/mod.rs` — add token channel to `SubmitShareWithChannelId` or new struct
+- `roles/translator/src/lib/mod.rs` — add downstream registry (`HashMap<PublicKey, Sender<String>>`), route tokens from proof sweeper, modify `spawn_proof_sweeper()` and `generate_single_ehash_token()`
+- `roles/translator/src/lib/proxy/bridge.rs` — parse locking pubkey from authorize password, register in downstream map
+
+**ESP32 files to modify:**
+- `components/tollgate_core/src/tollgate_core_stratum_client.c` — handle `mining.token` notification from upstream
+- `main/tollgate_main.c` — wire token callback to nucula wallet receive
+
+**Test files to create:**
+- `tests/unit/test_stratum_token.c` — unit test for token notification parsing
 
 **Tasks:**
-- [ ] 1C-1. Investigate CDK mint REST API for "list paid quotes" endpoint
-- [ ] 1C-2. If no endpoint exists, add custom endpoint to CDK mint (server-side) OR implement quote ID relay via translator
-- [ ] 1C-3. Create FreeRTOS poller task (configurable interval, default 60s)
-- [ ] 1C-4. HTTP GET paid quotes for TollGate's locking pubkey
-- [ ] 1C-5. Implement Cashu blinded minting flow:
-  - Generate random blinding factors (secp256k1)
-  - Create blinded messages (NUT-00)
-  - POST `/v1/mint` with blinded messages + quote_id
-  - Receive blinded signatures, unblind to create proofs
-- [ ] 1C-6. Store proofs in nucula wallet
-- [ ] 1C-7. Error handling: mint unreachable, no quotes, network timeout
-- [ ] 1C-8. Unit tests: blinding/unblinding with known test vectors
-- [ ] 1C-9. Integration test: claim tokens from test CDK mint
+- [ ] 1C-1. Add `locking_pubkey: Option<String>` to `Downstream` struct in `downstream.rs`
+- [ ] 1C-2. Add `tx_token: Sender<String>` to `Downstream` for per-connection token delivery
+- [ ] 1C-3. Add downstream registry: `HashMap<PublicKey, Sender<String>>` in `TranslatorSv2`
+- [ ] 1C-4. Parse locking pubkey from `mining.authorize` password in `handle_submit` or bridge
+- [ ] 1C-5. Register downstream pubkey→channel mapping after successful authorize
+- [ ] 1C-6. Spawn `token_sender_task` per downstream that listens on `rx_token` and writes `mining.token` JSON-RPC notification
+- [ ] 1C-7. Modify `generate_single_ehash_token()` to route token to correct downstream via registry instead of just logging
+- [ ] 1C-8. ESP32: handle `mining.token` notification in `stratum_client.c` upstream reader
+- [ ] 1C-9. ESP32: decode `cashuA...` token via existing `cashu_decode_token()` and call `nucula_wallet_receive()`
+- [ ] 1C-10. Unit test: token notification JSON parsing on ESP32
+- [ ] 1C-11. Integration test: translator mints → sends token → ESP32 receives and stores
 
-**Effort:** 5-7 days (may increase if CDK mint needs modification)
+**Effort:** 5-7 days
 
-**Open items:**
-- [ ] Investigate whether CDK mint has a "list quotes by pubkey" endpoint
-- [ ] Investigate whether nucula wallet supports blinded minting (generate blinding factors, unblind signatures)
-- [ ] Determine ehash token format: standard Cashu (cashuA...) or custom?
+---
+
+### 1C-ROADMAP: Future Migration to NUT-XX (Option A — Direct Mint Polling)
+
+**When NUT-XX ("Mint Quote Lookup by Public Key") merges into CDK upstream:**
+
+The NUT spec (`cashubtc/nuts#341`) is now OPEN and actively developed. callebtc himself opened it after initially concept-NACKing the earlier attempt. Key developments:
+- **NUT spec:** `cashubtc/nuts#341` — "NUT-XX: Get quotes by pubkeys", requires Schnorr signatures, domain-separated with timestamps
+- **CDK mint-side PR:** `cashubtc/cdk#1834` — route `v1/mint/quote/{method}/pubkey`, DB migration, thesimplekid reviewing
+- **CDK wallet-side PR:** `cashubtc/cdk#1932` — HTTP client, wallet sign function, cdk-cli command, lorenzolfm approved
+- **CDK custom router:** `cashubtc/cdk#1251` — MERGED into v0.15.0 (Jan 2026), mintd accepts custom Axum routers
+- **Signature scheme:** `cashubtc/nuts#363` — domain-separated signatures with timestamps to prevent replay
+
+**Migration path (when ready):**
+1. Hashpool mint upgrades to CDK with NUT-XX support
+2. ESP32 calls `POST /v1/mint/quote/{method}/pubkey` with Schnorr signature
+3. ESP32 receives quote IDs, then calls standard `POST /v1/mint/bolt11` for blinded minting
+4. Remove `mining.token` notification path from translator
+5. ESP32 no longer depends on translator for token delivery
+
+**Community engagement plan:**
+- [ ] Post supportive comment on `cashubtc/nuts#341` explaining our ESP32 use case
+- [ ] Post supportive comment on `cashubtc/cdk#1834` offering to test
+- [ ] Acknowledge vnprc's earlier rejected PRs were correct in principle
+- [ ] Thank thesimplekid for the custom router suggestion (now merged)
+- [ ] Note that B3 is our temporary workaround, not urgent
 
 ---
 
@@ -404,14 +444,12 @@ Phase 2G (depends on all above)
 ## Open Items
 
 - [x] ~~**TCP listen failure**: Raw BSD socket `listen()` rejects SYNs from AP clients~~ — RESOLVED, was not a bug
-- [ ] **CDK mint API**: Does it have a "list paid quotes by pubkey" endpoint? If not, need custom endpoint or alternative.
-- [ ] **Blinded minting on ESP32**: Does nucula wallet support generating blinding factors and unblinding signatures? Or do we need to add this?
-- [ ] **ehash token format**: Are ehash tokens standard Cashu v3 tokens (cashuA...) that `tollgate_core_cashu_decode_token()` can parse?
-- [ ] **Translator quote ID relay**: How does the TollGate learn its quote IDs? Options:
-  - a) Translator relays in SV1 submit response
-  - b) Poll mint for all paid quotes
-  - c) Custom HTTP endpoint on translator
-- [ ] **secp256k1 ellswift compatibility**: Will updating secp256k1 break nucula?
+- [x] ~~**CDK mint API**: Does it have a "list paid quotes by pubkey" endpoint?~~ — RESOLVED: No, but NUT-XX spec is being standardized (`nuts#341`) with active CDK PRs (`cdk#1834`, `cdk#1932`). Using B3 workaround in the meantime.
+- [x] ~~**Blinded minting on ESP32**: Does nucula wallet support generating blinding factors and unblinding signatures?~~ — RESOLVED: Yes, nucula has `cashu_blind_message()` and `cashu_unblind()`, but NOT needed for B3 approach.
+- [x] ~~**ehash token format**: Are ehash tokens standard Cashu v3 tokens (cashuA...) that `tollgate_core_cashu_decode_token()` can parse?~~ — RESOLVED: Yes, standard `cashuA...` v3 tokens.
+- [x] ~~**Translator quote ID relay**: How does the TollGate learn its quote IDs?~~ — RESOLVED: Option B3 — translator mints tokens and pushes them downstream via `mining.token` SV1 notification.
+- [ ] **secp256k1 ellswift compatibility**: Will updating secp256k1 break nucula? (Phase 2)
+- [ ] **NUT-XX migration**: Track `nuts#341`, `cdk#1834`, `cdk#1932` — migrate when merged
 
 ---
 
@@ -429,19 +467,26 @@ Phase 2G (depends on all above)
 - [ ] Integration test with real BitAxe/NerdQAxe miner
 - [ ] Make self-test conditional on config flag
 
-### Phase 1B: Upstream + Locking Pubkey — IN PROGRESS
-- [ ] Implement `identity_derive_locking_key()` (HMAC-SHA512 + secp256k1)
-- [ ] Add `identity_get_locking_pubkey_hex()` accessor
-- [ ] Add `GET /mining/pubkey` HTTP endpoint
-- [ ] Modify `stratum_client` authorize to include pubkey
-- [ ] Unit test: known nsec → expected pubkey
-- [ ] Verify on hardware
+### Phase 1B: Upstream + Locking Pubkey — COMPLETE
+- [x] Implement `identity_derive_locking_key()` (HMAC-SHA512 + secp256k1)
+- [x] Add `identity_get_locking_pubkey_hex()` accessor
+- [x] Add `GET /mining/pubkey` HTTP endpoint
+- [x] Modify `stratum_client` authorize to include pubkey
+- [x] Unit test: known nsec → expected pubkey (6 golden vectors)
+- [x] Verify on hardware: `/mining/pubkey` returns `03703b0d...`
 
-### Phase 1C: Ecash Token Poller
-- [ ] Investigate CDK mint REST API
-- [ ] Implement poller task
-- [ ] Cashu blinded minting flow
-- [ ] Store proofs in nucula wallet
+### Phase 1C: Ecash Token Delivery via SV1 Notification (Option B3)
+- [ ] Translator: add `locking_pubkey` to `Downstream` struct
+- [ ] Translator: add `tx_token` channel to `Downstream`
+- [ ] Translator: add downstream registry `HashMap<Pubkey, Sender<String>>`
+- [ ] Translator: parse locking pubkey from authorize password
+- [ ] Translator: register downstream pubkey→channel after authorize
+- [ ] Translator: spawn token_sender_task per downstream
+- [ ] Translator: route minted tokens from proof sweeper via registry
+- [ ] ESP32: handle `mining.token` notification in stratum_client
+- [ ] ESP32: decode cashuA token + store in nucula wallet
+- [ ] Unit test: token notification JSON parsing
+- [ ] Integration test: translator → token → ESP32 wallet
 
 ### Phase 1D: Hashpool Translator (server-side Rust)
 - [ ] Parse locking pubkey from authorize password
