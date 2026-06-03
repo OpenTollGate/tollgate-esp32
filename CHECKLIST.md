@@ -256,11 +256,73 @@
 
 ### Mining-for-Internet — Phase 1D+: Hardware + E2E (needs board)
 - [x] Switch test mint to testnut.cashu.exchange (commit 61ea067)
-- [ ] Flash mining config to Board A + run test-mining-token
+- [x] Community engagement: supportive comments on nuts#341 and cdk#1834 (posted 2026-06-03)
+- [ ] Flash mining config to working NerdAxe + run test-mining-token
 - [ ] Full E2E with translator: translator mints → mining.token → ESP32 wallet
 - [ ] 1E: Miner auto-discovery (NerdQAxe scans for TollGate-* SSIDs)
 - [ ] 1F: Full E2E: Board + NerdAxe + hashpool VPS → mining → token → internet
-- [ ] Community engagement: supportive comments on nuts#341 and cdk#1834
+
+---
+
+## Session 2026-06-03 — Hardware Integration Sprint
+
+### Board Status (verified 2026-06-03)
+- `/dev/ttyACM0`: Working NerdAxe (MAC `80:b5:4e:c7:7a:d0`) — SSID `TollGate-B96D80`, IP `10.185.47.1`
+- `/dev/ttyACM1`: Fan-damaged NerdAxe (MAC `80:b5:4e:c7:79:88`) — unreliable flash
+- `/dev/ttyACM2`: ESP32-C3 (MAC `b0:a6:04:00:96:dc`) — incompatible chip
+- Laptop connected to `TollGate-B96D80` at `10.185.47.2`
+
+### T1: Housekeeping
+- [x] Add untracked test binaries to .gitignore
+- [ ] Investigate nucula_src dirty state
+- [ ] Verify `make test-unit` passes
+- [ ] Commit + push
+
+### T2: Restore Hashpool Workspace
+- [ ] Restore `/home/c03rad0r/ehash-setup/hashpool/Cargo.toml` from git
+- [ ] `cargo check` passes
+
+### T3: Flash Mining Config + Test (hardware)
+- [ ] `make lock-a PHASE="mining-config-flash"`
+- [ ] Build firmware
+- [ ] Erase SPIFFS: `esptool.py erase_region 0x410000 0xF0000`
+- [ ] `make write-mining-config TOLLGATE_IP=10.185.47.1`
+- [ ] `make flash-a`
+- [ ] Verify serial: mining tasks created
+- [ ] Verify `GET /debug` shows mining enabled
+- [ ] `make test-mining-token TOLLGATE_IP=10.185.47.1`
+- [ ] Commit results
+
+### T4: Integration Test Suite (hardware)
+- [ ] Flash standard config (if needed)
+- [ ] `make test-integration TOLLGATE_IP=10.185.47.1`
+- [ ] Record pass/fail
+- [ ] Fix issues, commit green tests
+
+### T5: E2E Playwright Tests (hardware)
+- [ ] Verify Playwright installed
+- [ ] `make test-e2e TOLLGATE_IP=10.185.47.1`
+- [ ] Record results
+
+### T6: Individual Integration Tests (hardware, selective)
+- [ ] test-reset-auth.mjs
+- [ ] test-dns-firewall.mjs
+- [ ] test-local-relay.mjs
+- [ ] test-relay-nip11.mjs
+- [ ] test-market.mjs
+- [ ] test-cvm-roundtrip.mjs (needs internet)
+- [ ] test-cvm.mjs
+
+### T7: Update SPIFFS Config (hardware)
+- [ ] Erase SPIFFS region
+- [ ] Write fresh config with `testnut.cashu.exchange` mint URL
+- [ ] Verify via `GET /`
+
+### T8: Documentation
+- [ ] Update AGENTS.md firewall description
+- [ ] Update AGENTS.md session.c description
+- [ ] Update CHECKLIST.md reminders (board ports, mint URL)
+- [ ] Update PLAN_MINING_INTERNET.md (community engagement done)
 
 ---
 
@@ -314,13 +376,16 @@
 
 ## Reminders
 - **Commit + push every time a test passes that previously didn't pass**
-- Board A: `/dev/ttyACM0`, MAC `94:a9:90:2e:37:7c`, SSID `TollGate-B96D80`, AP IP `10.185.47.1`
-- Board B: `/dev/ttyACM1`, MAC `fc:01:2c:c5:50:50`, SSID `TollGate-C0E9CA`, AP IP `10.192.45.1`
-- Board C: `/dev/ttyACM3`, MAC `20:6e:f1:98:d7:08`
+- Working NerdAxe: `/dev/ttyACM0`, MAC `80:b5:4e:c7:7a:d0`, SSID `TollGate-B96D80`, AP IP `10.185.47.1`
+- Fan-damaged NerdAxe: `/dev/ttyACM1`, MAC `80:b5:4e:c7:79:88` — unreliable flash
+- ESP32-C3: `/dev/ttyACM2` — incompatible (wrong chip)
+- Board ports shift on USB replug — always verify with `esptool.py chip_id`
 - `source ~/esp/esp-idf/export.sh` before `idf.py`
 - sudo password: `c03rad0r123`
-- Token generation: `cashu -h https://testnut.cashu.space send --legacy 21`
+- Token generation: `cashu -h https://testnut.cashu.exchange send --legacy 21`
+- Test mint: `testnut.cashu.exchange`
 - SPIFFS offset `0x410000`, size `0xF0000`
 - See `AGENTS.md` for full testing rules
 - **Per-board locks:** `make lock-a PHASE="desc"` before hardware access
 - **WiFi country code:** Must set `esp_wifi_set_country_code("DE")` before `esp_wifi_start()`
+- **Lock directory:** `/home/c03rad0r/physical-router-test-automation/locks/`

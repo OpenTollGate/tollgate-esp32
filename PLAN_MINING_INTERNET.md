@@ -282,8 +282,8 @@ The NUT spec (`cashubtc/nuts#341`) is now OPEN and actively developed. callebtc 
 5. ESP32 no longer depends on translator for token delivery
 
 **Community engagement plan:**
-- [ ] Post supportive comment on `cashubtc/nuts#341` explaining our ESP32 use case
-- [ ] Post supportive comment on `cashubtc/cdk#1834` offering to test
+- [x] Post supportive comment on `cashubtc/nuts#341` explaining ESP32 use case — POSTED 2026-06-03
+- [x] Post supportive comment on `cashubtc/cdk#1834` offering to test — POSTED 2026-06-03
 - [ ] Acknowledge vnprc's earlier rejected PRs were correct in principle
 - [ ] Thank thesimplekid for the custom router suggestion (now merged)
 - [ ] Note that B3 is our temporary workaround, not urgent
