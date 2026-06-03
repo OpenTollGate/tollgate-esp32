@@ -104,7 +104,7 @@ BitAxe Miner          ESP32 TollGate (SV1 downstream, SV2 upstream)     Hashpool
 - [x] 1A-12. End-to-end verified: AP client connects, subscribe + authorize both succeed
 - [x] 1A-13. TCP "listen failure" resolved — was not a bug; earlier failures were from older firmware
 - [ ] 1A-14. Integration test with real BitAxe/NerdQAxe miner
-- [ ] 1A-15. Make self-test conditional on config flag (currently runs every boot)
+- [x] 1A-15. Make self-test conditional on config flag (commit `4b8d89f`)
 
 ---
 
@@ -560,7 +560,7 @@ Phase 2G (depends on all above)
 - [x] Heap allocation for all proxy buffers
 - [x] Double-init guard
 - [x] TCP listen verified working (loopback + AP client)
-- [x] Loopback self-test at boot
+- [x] Loopback self-test at boot (conditional via `proxy_self_test` config flag)
 - [x] End-to-end: laptop stratum handshake on port 4033
 - [ ] Integration test with real BitAxe/NerdQAxe miner
 - [ ] Make self-test conditional on config flag
