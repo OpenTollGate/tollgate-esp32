@@ -23,8 +23,8 @@ function runJson(cmd) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function mintToken(amount = 21) {
-  run('cashu -h https://testnut-nutshell.mints.orangesync.tech invoice ' + amount + ' 2>&1');
-  const out = run('cashu -h https://testnut-nutshell.mints.orangesync.tech send --legacy ' + amount + ' 2>&1');
+  run('cashu -h https://testnut.cashu.exchange invoice ' + amount + ' 2>&1');
+  const out = run('cashu -h https://testnut.cashu.exchange send --legacy ' + amount + ' 2>&1');
   const match = out && out.match(/cashuA[a-zA-Z0-9_-]+/);
   return match ? match[0] : null;
 }
