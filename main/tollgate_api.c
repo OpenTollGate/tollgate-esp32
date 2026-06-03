@@ -737,6 +737,10 @@ static esp_err_t api_get_debug(httpd_req_t *req)
     cJSON_AddStringToObject(root, "sta_ip", sta_ip_str);
     cJSON_AddStringToObject(root, "sta_gw", sta_gw_str);
 
+    const tollgate_identity_t *id = identity_get();
+    cJSON_AddBoolToObject(root, "identity_initialized", id && id->initialized);
+    cJSON_AddBoolToObject(root, "api_server_running", s_api_server != NULL);
+
     char *json = cJSON_PrintUnformatted(root);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, json);
@@ -744,6 +748,26 @@ static esp_err_t api_get_debug(httpd_req_t *req)
     cJSON_Delete(root);
     return ESP_OK;
 }
+
+static esp_err_t api_get_identity_debug(httpd_req_t *req)
+{
+    const tollgate_identity_t *id = identity_get();
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "initialized", id && id->initialized);
+    if (id && id->initialized) {
+        cJSON_AddStringToObject(root, "locking_pubkey", id->locking_pubkey_hex[0] ? id->locking_pubkey_hex : "(empty)");
+        cJSON_AddStringToObject(root, "npub", id->npub_hex);
+        cJSON_AddStringToObject(root, "ssid", id->ap_ssid);
+    }
+    char *json = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json);
+    cJSON_free(json);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static const httpd_uri_t uri_identity_debug = { .uri = "/identity", .method = HTTP_GET, .handler = api_get_identity_debug };
 
 static const httpd_uri_t uri_discovery = { .uri = "/", .method = HTTP_GET, .handler = api_get_discovery };
 static const httpd_uri_t uri_payment = { .uri = "/", .method = HTTP_POST, .handler = api_post_payment };
@@ -824,7 +848,7 @@ esp_err_t tollgate_api_start(void)
 {
     if (s_api_server) return ESP_OK;
 
-     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
      config.server_port = 2121;
      config.ctrl_port = 32769;
      config.max_uri_handlers = 16;
@@ -838,7 +862,10 @@ esp_err_t tollgate_api_start(void)
         return ret;
     }
 
+    ESP_LOGI(TAG, "httpd_start OK, registering handlers...");
+
     httpd_register_uri_handler(s_api_server, &uri_mining_pubkey);
+    httpd_register_uri_handler(s_api_server, &uri_identity_debug);
     httpd_register_uri_handler(s_api_server, &uri_discovery);
     httpd_register_uri_handler(s_api_server, &uri_debug);
     httpd_register_uri_handler(s_api_server, &uri_payment);
