@@ -247,11 +247,11 @@
 - [x] 1C-translator: Fix DownstreamMap visibility (pub type + re-export)
 - [x] 1C-translator: Add [mint] section to tproxy.config.toml
 - [x] Translator compiles clean (cargo check, 0 errors)
-- [ ] 1D-1: Add locking_pubkey field to SubmitShareWithChannelId
-- [ ] 1D-2: Populate locking_pubkey in Downstream.handle_submit()
-- [ ] 1D-3: Use per-share pubkey in Bridge.translate_submit(), fallback to self.locking_pubkey
-- [ ] 1D-4: cargo check passes after 1D changes
-- [ ] 1D-5: Commit all translator changes (1C-translator + 1D together)
+- [x] 1D-1: Add locking_pubkey field to SubmitShareWithChannelId
+- [x] 1D-2: Populate locking_pubkey in Downstream.handle_submit()
+- [x] 1D-3: Use per-share pubkey in Bridge.translate_submit(), fallback to self.locking_pubkey
+- [x] 1D-4: cargo check passes after 1D changes
+- [x] 1D-5: Commit all translator changes (hashpool 6e13aa78)
 - [ ] 1D-6: Integration test: SV1 client with pubkey -> verify reaches pool
 
 ### Mining-for-Internet — Phase 1D+: Hardware + E2E (needs board)
