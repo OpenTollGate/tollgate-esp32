@@ -273,25 +273,30 @@
 - Laptop connected to `TollGate-B96D80` at `10.185.47.2`
 
 ### T1: Housekeeping
-- [x] Add untracked test binaries to .gitignore
-- [ ] Investigate nucula_src dirty state
-- [ ] Verify `make test-unit` passes
-- [ ] Commit + push
+- [x] Add untracked test binaries to .gitignore (commit `f60105d`)
+- [x] Investigate nucula_src dirty state — committed save_proofs visibility fix
+- [x] Verify `make test-unit` passes — 701 tests all pass
+- [x] Commit + push (commit `f60105d`)
 
 ### T2: Restore Hashpool Workspace
-- [ ] Restore `/home/c03rad0r/ehash-setup/hashpool/Cargo.toml` from git
-- [ ] `cargo check` passes
+- [x] Restore `roles/Cargo.toml` from git (was deleted)
+- [x] `cargo check -p translator_sv2` passes (8 warnings, 0 errors)
 
 ### T3: Flash Mining Config + Test (hardware)
-- [ ] `make lock-a PHASE="mining-config-flash"`
-- [ ] Build firmware
-- [ ] Erase SPIFFS: `esptool.py erase_region 0x410000 0xF0000`
-- [ ] `make write-mining-config TOLLGATE_IP=10.185.47.1`
-- [ ] `make flash-a`
-- [ ] Verify serial: mining tasks created
-- [ ] Verify `GET /debug` shows mining enabled
-- [ ] `make test-mining-token TOLLGATE_IP=10.185.47.1`
-- [ ] Commit results
+- [x] `make lock-a PHASE="mining-config-flash-and-test"`
+- [x] Build firmware (up to date)
+- [x] Erase SPIFFS: `esptool.py erase_region 0x410000 0xF0000`
+- [x] Write mining config manually (stratum_host=10.185.47.2)
+- [x] `idf.py flash` (bootloader + partition table + app)
+- [x] Verify serial: all 3 mining tasks created (stratum_cli, sw_miner, stratum_proxy)
+- [x] Verify `GET /debug` shows mining services running
+- [x] Stratum proxy self-test PASS (loopback port 3334)
+- [x] Verify `GET /identity` returns correct locking pubkey
+- [x] Verify `GET /` shows `testnut.cashu.exchange` mint URL
+- [ ] `make test-mining-token` — BLOCKED: AP SSID not visible from laptop (NerdAxe antenna issue)
+- [x] Payment test via upstream IP: 21 sat token → session created
+- [x] `make unlock-a`
+- [ ] AP SSID visibility issue — NerdAxe hardware antenna weak for AP mode
 
 ### T4: Integration Test Suite (hardware)
 - [ ] Flash standard config (if needed)
