@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-29
 **Updated:** 2026-06-03
-**Status:** Phase 1D — Pubkey Passthrough in Share Pipeline (implementing)
+**Status:** Phase 1D Complete — Phase 1F (E2E Testing) Next
 **Branch:** `feature/tollgate-core-v2` (esp32-tollgate)
 
 ---
@@ -298,7 +298,7 @@ The NUT spec (`cashubtc/nuts#341`) is now OPEN and actively developed. callebtc 
 
 **Solution:** Route the downstream's locking pubkey through the share pipeline: `Downstream.handle_authorize()` → `locking_pubkey` field → `SubmitShareWithChannelId` → `Bridge.translate_submit()`.
 
-**Prerequisite (done, uncommitted):**
+**Prerequisite (done, committed hashpool `6e13aa78`):**
 - [x] 1C-translator-1. Add `locking_pubkey: RefCell<Option<String>>` to `Downstream` struct
 - [x] 1C-translator-2. Extract pubkey from `mining.authorize` password in `handle_authorize()`
 - [x] 1C-translator-3. Add `DownstreamMap` registry in `TranslatorSv2` + register after authorize
@@ -308,12 +308,12 @@ The NUT spec (`cashubtc/nuts#341`) is now OPEN and actively developed. callebtc 
 - [x] 1C-translator-7. Fix `DownstreamMap` visibility (`pub type` + re-export in `main.rs`)
 - [x] 1C-translator-8. Add `[mint]` section to `tproxy.config.toml`
 
-**Phase 1D tasks (pubkey passthrough in share pipeline):**
-- [ ] 1D-1. Add `locking_pubkey: Option<String>` to `SubmitShareWithChannelId` in `downstream_sv1/mod.rs`
-- [ ] 1D-2. Populate `locking_pubkey` in `Downstream.handle_submit()` from `self.locking_pubkey.borrow()`
-- [ ] 1D-3. Use per-share pubkey in `Bridge.translate_submit()`, fallback to `self.locking_pubkey`
-- [ ] 1D-4. `cargo check` passes
-- [ ] 1D-5. Commit translator changes (1C-translator + 1D together)
+**Phase 1D tasks (pubkey passthrough in share pipeline) — COMPLETE:**
+- [x] 1D-1. Add `locking_pubkey: Option<String>` to `SubmitShareWithChannelId` in `downstream_sv1/mod.rs`
+- [x] 1D-2. Populate `locking_pubkey` in `Downstream.handle_submit()` from `self.locking_pubkey.borrow()`
+- [x] 1D-3. Use per-share pubkey in `Bridge.translate_submit()`, fallback to `self.locking_pubkey`
+- [x] 1D-4. `cargo check` passes
+- [x] 1D-5. Commit translator changes (hashpool `6e13aa78`)
 
 **Files modified (in ehash-setup/hashpool):**
 - `roles/translator/src/lib/downstream_sv1/mod.rs` — add field to struct
@@ -573,7 +573,7 @@ Phase 2G (depends on all above)
 - [x] Unit test: known nsec → expected pubkey (6 golden vectors)
 - [x] Verify on hardware: `/mining/pubkey` returns `03703b0d...`
 
-### Phase 1C: Ecash Token Delivery via SV1 Notification (Option B3)
+### Phase 1C: Ecash Token Delivery via SV1 Notification (Option B3) — COMPLETE
 - [x] Translator: add `locking_pubkey` to `Downstream` struct
 - [x] Translator: add `tx_token` channel to `Downstream`
 - [x] Translator: add downstream registry `HashMap<Pubkey, Sender<String>>`
@@ -583,8 +583,8 @@ Phase 2G (depends on all above)
 - [x] Translator: route minted tokens from proof sweeper via registry
 - [x] ESP32: handle `mining.token` notification in stratum_client
 - [x] ESP32: decode cashuA token + store in nucula wallet
-- [x] Unit test: token notification JSON parsing
-- [ ] Integration test: translator → token → ESP32 wallet
+- [x] Unit test: token notification JSON parsing (40 assertions)
+- [ ] Integration test: translator → token → ESP32 wallet (needs hardware)
 
 ### Phase 1C-HW: Memory Optimization + Mining Integration Test
 - [x] Add service flags to config.h (sync_enabled, wifistr_enabled, local_relay_enabled, mint_health_enabled)
@@ -599,24 +599,27 @@ Phase 2G (depends on all above)
 - [x] Run integration test with real Cashu token
 - [x] Commit + push
 
-### Phase 1D: Hashpool Translator (server-side Rust)
+### Phase 1D: Hashpool Translator Pubkey Passthrough — COMPLETE (hashpool `6e13aa78`)
 - [x] Parse locking pubkey from authorize password (handle_authorize)
 - [x] Store per-downstream pubkey in Downstream.locking_pubkey (RefCell)
 - [x] Add downstream registry (HashMap<Pubkey, Downstream>)
 - [x] Add send_token_notification() for mining.token push
 - [x] Route minted tokens from proof sweeper to registered downstreams
 - [x] Fix E0521 lifetime error
+- [x] Fix DownstreamMap visibility (pub type + re-export in main.rs)
 - [x] Add [mint] section to translator config
-- [ ] Add locking_pubkey to SubmitShareWithChannelId
-- [ ] Populate locking_pubkey in handle_submit()
-- [ ] Use per-share pubkey in translate_submit()
-- [ ] Commit all translator changes
-- [ ] Integration test: SV1 client with pubkey -> verify reaches pool
+- [x] Add locking_pubkey to SubmitShareWithChannelId
+- [x] Populate locking_pubkey in handle_submit()
+- [x] Use per-share pubkey in translate_submit()
+- [x] Commit all translator changes (hashpool `6e13aa78`)
+- [ ] Integration test: SV1 client with pubkey -> verify reaches pool (needs hardware)
 
 ### Phase 1E: Miner Auto-Discovery
 - [ ] Scan for TollGate SSIDs
 - [ ] Auto-configure stratum to AP IP
 
-### Phase 1F: Integration Testing
-- [ ] Full E2E test
-- [ ] Update documentation
+### Phase 1F: Integration Testing (CRITICAL PATH — needs hardware)
+- [ ] 1F-1. Flash mining config to Board A + run test-mining-token
+- [ ] 1F-2. Full E2E with translator: translator mints → mining.token → ESP32 wallet
+- [ ] 1F-3. Full E2E: Board + NerdAxe + hashpool VPS → mining → token → internet
+- [ ] 1F-4. Update documentation
