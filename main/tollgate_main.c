@@ -254,8 +254,10 @@ static void start_services(void)
         cvm_server_start();
     }
 
-    mint_health_init(cfg->accepted_mints, cfg->accepted_mint_count);
-    mint_health_start();
+    if (cfg->mint_health_enabled) {
+        mint_health_init(cfg->accepted_mints, cfg->accepted_mint_count);
+        mint_health_start();
+    }
 
     if (cfg->accepted_mint_count > 1) {
         nucula_wallet_init_multi(cfg->accepted_mints, cfg->accepted_mint_count);
@@ -277,13 +279,19 @@ static void start_services(void)
         market_init();
     }
 
-    relay_selector_init(&s_relay_selector);
-    relay_selector_seed_from_config(&s_relay_selector);
+    if (cfg->sync_enabled || cfg->wifistr_enabled) {
+        relay_selector_init(&s_relay_selector);
+        relay_selector_seed_from_config(&s_relay_selector);
+    }
 
-    sync_manager_init(&s_sync_manager, &s_relay_selector);
-    sync_manager_start(&s_sync_manager);
+    if (cfg->sync_enabled) {
+        sync_manager_init(&s_sync_manager, &s_relay_selector);
+        sync_manager_start(&s_sync_manager);
+    }
 
-    xTaskCreate(publish_wifistr_task, "wifistr_init", 16384, NULL, 3, NULL);
+    if (cfg->wifistr_enabled) {
+        xTaskCreate(publish_wifistr_task, "wifistr_init", 16384, NULL, 3, NULL);
+    }
 
     if (cfg->mining_enabled) {
         ESP_LOGI(TAG, "Mining subsystem enabled, initializing...");
@@ -329,11 +337,12 @@ static void stop_services(void)
         tollgate_api_stop();
         beacon_price_stop();
     }
+    const tollgate_config_t *cfg = tollgate_config_get();
     dns_server_stop();
     cvm_server_stop();
-    sync_manager_stop(&s_sync_manager);
-    local_relay_stop();
-    relay_selector_destroy(&s_relay_selector);
+    if (cfg->sync_enabled) sync_manager_stop(&s_sync_manager);
+    if (cfg->local_relay_enabled) local_relay_stop();
+    if (cfg->sync_enabled || cfg->wifistr_enabled) relay_selector_destroy(&s_relay_selector);
     tollgate_core_fw_revoke_all();
     s_services_running = false;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
@@ -457,8 +466,10 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    local_relay_init();
-    local_relay_start();
+    if (tollgate_config_get()->local_relay_enabled) {
+        local_relay_init();
+        local_relay_start();
+    }
 
     ESP_LOGI(TAG, "WiFi AP+STA started, waiting for connection...");
 

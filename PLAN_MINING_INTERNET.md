@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-29
 **Updated:** 2026-06-03
-**Status:** Phase 1C — Ecash Token Delivery via SV1 Notification (Option B3)
+**Status:** Phase 1C-HW — Memory Optimization + Mining Integration Test
 **Branch:** `feature/tollgate-core-v2` (esp32-tollgate)
 
 ---
@@ -165,19 +165,92 @@ New:
 - `tests/unit/test_stratum_token.c` — unit test for token notification parsing
 
 **Tasks:**
-- [ ] 1C-1. Add `locking_pubkey: Option<String>` to `Downstream` struct in `downstream.rs`
-- [ ] 1C-2. Add `tx_token: Sender<String>` to `Downstream` for per-connection token delivery
-- [ ] 1C-3. Add downstream registry: `HashMap<PublicKey, Sender<String>>` in `TranslatorSv2`
-- [ ] 1C-4. Parse locking pubkey from `mining.authorize` password in `handle_submit` or bridge
-- [ ] 1C-5. Register downstream pubkey→channel mapping after successful authorize
-- [ ] 1C-6. Spawn `token_sender_task` per downstream that listens on `rx_token` and writes `mining.token` JSON-RPC notification
-- [ ] 1C-7. Modify `generate_single_ehash_token()` to route token to correct downstream via registry instead of just logging
-- [ ] 1C-8. ESP32: handle `mining.token` notification in `stratum_client.c` upstream reader
-- [ ] 1C-9. ESP32: decode `cashuA...` token via existing `cashu_decode_token()` and call `nucula_wallet_receive()`
-- [ ] 1C-10. Unit test: token notification JSON parsing on ESP32
+- [x] 1C-1. Add `locking_pubkey: Option<String>` to `Downstream` struct in `downstream.rs`
+- [x] 1C-2. Add `tx_token: Sender<String>` to `Downstream` for per-connection token delivery
+- [x] 1C-3. Add downstream registry: `HashMap<PublicKey, Sender<String>>` in `TranslatorSv2`
+- [x] 1C-4. Parse locking pubkey from `mining.authorize` password in `handle_submit` or bridge
+- [x] 1C-5. Register downstream pubkey→channel mapping after successful authorize
+- [x] 1C-6. Spawn `token_sender_task` per downstream that listens on `rx_token` and writes `mining.token` JSON-RPC notification
+- [x] 1C-7. Modify `generate_single_ehash_token()` to route token to correct downstream via registry instead of just logging
+- [x] 1C-8. ESP32: handle `mining.token` notification in `stratum_client.c` upstream reader
+- [x] 1C-9. ESP32: decode `cashuA...` token via existing `cashu_decode_token()` and call `nucula_wallet_receive()`
+- [x] 1C-10. Unit test: token notification JSON parsing on ESP32
 - [ ] 1C-11. Integration test: translator mints → sends token → ESP32 receives and stores
 
 **Effort:** 5-7 days
+
+### 1C-HW: Memory Optimization + Mining Integration Test
+
+**Problem:** `stratum_cli` (8192) and `sw_miner` (8192) tasks fail to create at boot due to ~28KB free internal RAM. Other services consume ~106KB of stack before mining tasks are reached.
+
+**Solution:** Individual boolean flags in config.json to control which services start. In mining mode, disable display, CVM, sync, wifistr, local relay — saving ~90KB of stack.
+
+**New config flags:**
+| Flag | Default | Controls | Stack Saved |
+|------|---------|----------|-------------|
+| `sync_enabled` | `true` | sync_manager task | 16384 |
+| `wifistr_enabled` | `true` | wifistr_init task + periodic timer | 16384 |
+| `local_relay_enabled` | `true` | local Nostr relay (ws_server + cleanup) | 16384 |
+| `mint_health_enabled` | `true` | mint health monitoring + wallet queue | 16384 |
+
+*(Existing: `display_enabled`, `cvm_enabled`, `mining_enabled`)*
+
+**relay_selector** is bundled with sync/wifistr — only initialized when either is enabled.
+
+**Mining test config.json:**
+```json
+{
+  "display_enabled": false,
+  "cvm_enabled": false,
+  "sync_enabled": false,
+  "wifistr_enabled": false,
+  "local_relay_enabled": false,
+  "mint_health_enabled": true,
+  "mining": {
+    "enabled": true,
+    "payout_mode": "auto",
+    "stratum_host": "<auto-detected-host-ip>",
+    "stratum_port": 34255,
+    "stratum_user": "tollgate_test",
+    "stratum_pass": "x",
+    "mining_port": 3334
+  }
+}
+```
+
+**Key dependency:** `mint_health` creates the wallet queue (`tls_worker_set_queue()`) used by `stratum_client`'s `mining.token` handler via `tls_worker_submit()`. Must stay enabled in mining profile so token receive runs async in 16384-stack task, not sync in 8192-stack stratum_client.
+
+**Task stack budget (mining profile):**
+| Task | Stack | Running |
+|------|-------|---------|
+| ~~display~~ | ~~24576~~ | Disabled |
+| ~~cvm_relay~~ | ~~16384~~ | Disabled |
+| ~~sync_mgr~~ | ~~16384~~ | Disabled |
+| ~~wifistr_init~~ | ~~16384~~ | Disabled |
+| ~~ws_server (relay)~~ | ~~12288~~ | Disabled |
+| ~~relay_cleanup~~ | ~~4096~~ | Disabled |
+| mint_health | 16384 | Running |
+| stratum_cli | 8192 | Running |
+| sw_miner | 8192 | Running |
+| stratum_proxy | 6144 | Running |
+| httpd (API) | 16384 | Running |
+| httpd (portal) | 4096 | Running |
+| dns_server | 4096 | Running |
+| dot_reject | 3072 | Running |
+| **Total** | **58048** | |
+
+**Tasks:**
+- [ ] 1C-HW-1. Add `sync_enabled`, `wifistr_enabled`, `local_relay_enabled`, `mint_health_enabled` to `config.h`
+- [ ] 1C-HW-2. Add defaults (all `true`) + JSON parsing in `config.c`
+- [ ] 1C-HW-3. Conditional task creation in `tollgate_main.c` (`app_main`, `start_services`, `stop_services`)
+- [ ] 1C-HW-4. Bundle `relay_selector` with sync/wifistr — skip when both disabled
+- [ ] 1C-HW-5. Unit tests pass (`make test-unit`)
+- [ ] 1C-HW-6. Build firmware, write mining config to SPIFFS, flash to working NerdAxe
+- [ ] 1C-HW-7. Verify serial: "Stratum client started" + "Software miner started"
+- [ ] 1C-HW-8. Write `tests/integration/test-mining-token.mjs` (mock SV1 server → mining.token → wallet verify)
+- [ ] 1C-HW-9. Add Makefile targets: `write-mining-config`, `test-mining-token`
+- [ ] 1C-HW-10. Run integration test end-to-end with real Cashu token
+- [ ] 1C-HW-11. Commit + push
 
 ---
 
@@ -476,17 +549,30 @@ Phase 2G (depends on all above)
 - [x] Verify on hardware: `/mining/pubkey` returns `03703b0d...`
 
 ### Phase 1C: Ecash Token Delivery via SV1 Notification (Option B3)
-- [ ] Translator: add `locking_pubkey` to `Downstream` struct
-- [ ] Translator: add `tx_token` channel to `Downstream`
-- [ ] Translator: add downstream registry `HashMap<Pubkey, Sender<String>>`
-- [ ] Translator: parse locking pubkey from authorize password
-- [ ] Translator: register downstream pubkey→channel after authorize
-- [ ] Translator: spawn token_sender_task per downstream
-- [ ] Translator: route minted tokens from proof sweeper via registry
-- [ ] ESP32: handle `mining.token` notification in stratum_client
-- [ ] ESP32: decode cashuA token + store in nucula wallet
-- [ ] Unit test: token notification JSON parsing
+- [x] Translator: add `locking_pubkey` to `Downstream` struct
+- [x] Translator: add `tx_token` channel to `Downstream`
+- [x] Translator: add downstream registry `HashMap<Pubkey, Sender<String>>`
+- [x] Translator: parse locking pubkey from authorize password
+- [x] Translator: register downstream pubkey→channel after authorize
+- [x] Translator: spawn token_sender_task per downstream
+- [x] Translator: route minted tokens from proof sweeper via registry
+- [x] ESP32: handle `mining.token` notification in stratum_client
+- [x] ESP32: decode cashuA token + store in nucula wallet
+- [x] Unit test: token notification JSON parsing
 - [ ] Integration test: translator → token → ESP32 wallet
+
+### Phase 1C-HW: Memory Optimization + Mining Integration Test
+- [ ] Add service flags to config.h (sync_enabled, wifistr_enabled, local_relay_enabled, mint_health_enabled)
+- [ ] Add defaults + JSON parsing in config.c
+- [ ] Conditional task creation in tollgate_main.c
+- [ ] Bundle relay_selector with sync/wifistr
+- [ ] Unit tests pass
+- [ ] Build + flash mining config to working NerdAxe
+- [ ] Verify stratum_cli + sw_miner tasks created on boot
+- [ ] Write test-mining-token.mjs integration test
+- [ ] Add Makefile targets
+- [ ] Run integration test with real Cashu token
+- [ ] Commit + push
 
 ### Phase 1D: Hashpool Translator (server-side Rust)
 - [ ] Parse locking pubkey from authorize password

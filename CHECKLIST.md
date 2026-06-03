@@ -223,6 +223,19 @@
 - [ ] Add unit tests for QR generation and escape_wifi_field()
 - [ ] Update AGENTS.md with display module docs
 
+### Mining-for-Internet — Phase 1C-HW: Memory Optimization + Integration Test
+- [ ] Add `sync_enabled`, `wifistr_enabled`, `local_relay_enabled`, `mint_health_enabled` to config.h
+- [ ] Add defaults (all true) + JSON parsing in config.c
+- [ ] Conditional task creation in tollgate_main.c (app_main, start_services, stop_services)
+- [ ] Bundle relay_selector with sync/wifistr — skip when both disabled
+- [ ] Unit tests pass (`make test-unit`)
+- [ ] Build firmware + write mining config to SPIFFS on working NerdAxe
+- [ ] Verify serial: "Stratum client started" + "Software miner started"
+- [ ] Write `tests/integration/test-mining-token.mjs` (mock SV1 server + real Cashu token)
+- [ ] Add Makefile targets: `write-mining-config`, `test-mining-token`
+- [ ] Run integration test end-to-end
+- [ ] Commit + push
+
 ---
 
 ## TODO — Remaining

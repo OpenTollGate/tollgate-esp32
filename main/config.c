@@ -46,6 +46,10 @@ esp_err_t tollgate_config_init(void)
     g_config.stratum_port = 3333;
     g_config.mining_port = 3334;
     g_config.mining_sandbox_mint_access = false;
+    g_config.sync_enabled = true;
+    g_config.wifistr_enabled = true;
+    g_config.local_relay_enabled = true;
+    g_config.mint_health_enabled = true;
     g_config.market_enabled = true;
     g_config.market_scan_interval_s = 30;
     g_config.client_auto_switch = false;
@@ -372,6 +376,18 @@ esp_err_t tollgate_config_init(void)
 
     cJSON *client_auto_switch = cJSON_GetObjectItem(root, "client_auto_switch");
     if (client_auto_switch && cJSON_IsBool(client_auto_switch)) g_config.client_auto_switch = cJSON_IsTrue(client_auto_switch);
+
+    cJSON *sync_en = cJSON_GetObjectItem(root, "sync_enabled");
+    if (sync_en && cJSON_IsBool(sync_en)) g_config.sync_enabled = cJSON_IsTrue(sync_en);
+
+    cJSON *wifistr_en = cJSON_GetObjectItem(root, "wifistr_enabled");
+    if (wifistr_en && cJSON_IsBool(wifistr_en)) g_config.wifistr_enabled = cJSON_IsTrue(wifistr_en);
+
+    cJSON *relay_en = cJSON_GetObjectItem(root, "local_relay_enabled");
+    if (relay_en && cJSON_IsBool(relay_en)) g_config.local_relay_enabled = cJSON_IsTrue(relay_en);
+
+    cJSON *mh_en = cJSON_GetObjectItem(root, "mint_health_enabled");
+    if (mh_en && cJSON_IsBool(mh_en)) g_config.mint_health_enabled = cJSON_IsTrue(mh_en);
 
     cJSON_Delete(root);
 

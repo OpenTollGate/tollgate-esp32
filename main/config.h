@@ -110,6 +110,11 @@ typedef struct {
     int market_scan_interval_s;
     bool client_auto_switch;
 
+    bool sync_enabled;
+    bool wifistr_enabled;
+    bool local_relay_enabled;
+    bool mint_health_enabled;
+
     bool mining_enabled;
     mining_payout_mode_t mining_payout_mode;
     char stratum_host[128];

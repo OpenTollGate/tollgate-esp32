@@ -91,9 +91,10 @@ endef
 .PHONY: test-smoke test-api test-network test-portal test-payment
 .PHONY: test-reset-auth test-session-expiry test-dns-firewall test-cvm
 .PHONY: test-local-relay test-relay-nip11 test-cvm-roundtrip test-cross-board test-cvm-mcp
-.PHONY: test-market test-price-discovery
+.PHONY: test-market test-price-discovery test-mining-token
 .PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log bootstrap-config
+.PHONY: write-mining-config
 .PHONY: cvm-pubkey cvm-test-tool cvm-announce
 .PHONY: lock-a lock-b unlock-a unlock-b force-unlock-a force-unlock-b lock-status
 
@@ -126,6 +127,7 @@ help:
 	@echo "  test-cvm-roundtrip CVM MCP request/response via public relay"
 	@echo "  test-cvm-mcp      CVM MCP relay integration test"
 	@echo "  test-cross-board  Cross-board payment test"
+	@echo "  test-mining-token Mining token flow test (needs mining config)"
 	@echo ""
 	@echo "ContextVM:"
 	@echo "  cvm-pubkey        Print board's ContextVM npub"
@@ -332,6 +334,11 @@ test-price-discovery:
 	@echo "=== Running two-board price discovery test ==="
 	TOLLGATE_IP=$(TOLLGATE_IP) TOLLGATE_B_IP=$(TOLLGATE_B_IP) $(NODE) tests/integration/test-price-discovery.mjs
 
+test-mining-token:
+	$(call _require_board_lock)
+	@echo "=== Running mining token flow test ==="
+	TOLLGATE_IP=$(TOLLGATE_IP) $(NODE) tests/integration/test-mining-token.mjs
+
 # ──────────────────────────────────────────────
 # SPIFFS Config
 # ──────────────────────────────────────────────
@@ -375,6 +382,24 @@ write-config-ap-only-a:
 
 write-config-ap-only-b:
 	$(call write_board_config_ap_only,B)
+
+write-mining-config:
+	$(call _require_board_lock)
+	@HOST_IP=$$(ip -4 addr show | grep -oP "inet \\K[\\d.]+" | while read ip; do \
+		IFS='.' read -r a b c d <<< "$$ip"; \
+		IFS='.' read -r ta tb tc td <<< "$(TOLLGATE_IP)"; \
+		if [ "$$a" = "$$ta" ] && [ "$$b" = "$$tb" ] && [ "$$c" = "$$tc" ]; then echo "$$ip"; break; fi; \
+	done); \
+	if [ -z "$$HOST_IP" ]; then echo "ERROR: Host IP not found on AP network (TOLLGATE_IP=$(TOLLGATE_IP))"; exit 1; fi; \
+	echo "=== Writing mining config (stratum_host=$$HOST_IP) to $(PORT) ==="; \
+	TMPDIR=$$(mktemp -d) && \
+	echo '{"nsec":"$(NSEC_A)","wifi_networks":[{"ssid":"$(WIFI_SSID)","password":"$(WIFI_PASSWORD)"}],"ap_password":"","mint_url":"$(MINT_URL)","accepted_mints":["$(MINT_URL)"],"price_per_step":21,"step_size_ms":60000,"display_enabled":false,"cvm_enabled":false,"sync_enabled":false,"wifistr_enabled":false,"local_relay_enabled":false,"mint_health_enabled":true,"mining":{"enabled":true,"payout_mode":"auto","stratum_host":"'"$$HOST_IP"'","stratum_port":34255,"stratum_user":"tollgate_test","stratum_pass":"x","mining_port":3334}}' > "$$TMPDIR/config.json" && \
+	echo "  Generating SPIFFS image..." && \
+	python3 $(SPIFFSGEN) --page-size 256 --obj-name-len 32 --use-magic --use-magic-len $(SPIFFS_SIZE) "$$TMPDIR" "$$TMPDIR/spiffs.bin" && \
+	echo "  Writing to flash..." && \
+	python3 -m esptool --port $(PORT) --baud $(BAUD) write_flash $(SPIFFS_OFFSET) "$$TMPDIR/spiffs.bin" && \
+	rm -rf "$$TMPDIR" && \
+	echo "Mining config written (stratum_host=$$HOST_IP)."
 
 # ──────────────────────────────────────────────
 # Wallet
