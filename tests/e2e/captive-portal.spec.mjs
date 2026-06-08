@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const PORTAL_IP = process.env.TOLLGATE_IP || '10.192.45.1';
+const PORTAL_IP = process.env.TOLLGATE_IP || '10.185.47.1';
 const PORTAL_URL = `http://${PORTAL_IP}`;
 const API_URL = `http://${PORTAL_IP}:2121`;
 

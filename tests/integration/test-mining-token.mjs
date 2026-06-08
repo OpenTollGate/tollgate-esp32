@@ -1,7 +1,7 @@
 import net from 'net';
 import { execSync } from 'child_process';
 
-const IP = process.env.TOLLGATE_IP || '10.192.45.1';
+const IP = process.env.TOLLGATE_IP || '10.185.47.1';
 const API = `http://${IP}:2121`;
 const MOCK_STRATUM_PORT = parseInt(process.env.MOCK_STRATUM_PORT || '34255');
 const TOKEN_AMOUNT = parseInt(process.env.TOKEN_AMOUNT || '1');

@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-const IP = process.env.TOLLGATE_IP || '10.192.45.1';
+const IP = process.env.TOLLGATE_IP || '10.185.47.1';
 const RELAY = 'wss://relay.primal.net';
 const OWNER_NSEC = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
 

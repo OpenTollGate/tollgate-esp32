@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-const BOARD_B_IP = process.env.TOLLGATE_IP || '10.192.45.1';
+const BOARD_B_IP = process.env.TOLLGATE_IP || '10.185.47.1';
 const BOARD_B_SSID = process.env.TOLLGATE_SSID || 'TollGate-C0E9CA';
 const WIFI_IFACE = process.env.WIFI_IFACE || 'wlp59s0';
 const SUDO_PW = process.env.SUDO_PW || 'c03rad0r123';

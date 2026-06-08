@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-const API_URL = `http://${process.env.TOLLGATE_IP || '10.192.45.1'}:2121`;
+const API_URL = `http://${process.env.TOLLGATE_IP || '10.185.47.1'}:2121`;
 
 function run(cmd) {
   try { return execSync(cmd, { encoding: 'utf8', timeout: 15000 }); }

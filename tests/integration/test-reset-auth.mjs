@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-const IP = process.env.TOLLGATE_IP || '10.192.45.1';
+const IP = process.env.TOLLGATE_IP || '10.185.47.1';
 const API = `http://${IP}:2121`;
 const SUDO_PW = process.env.SUDO_PW || 'c03rad0r123';
 let passed = 0, failed = 0;

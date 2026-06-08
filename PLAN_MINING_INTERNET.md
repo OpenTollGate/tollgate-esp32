@@ -1,8 +1,8 @@
 # Mining-for-Internet via Hashpool Ecash — Implementation Plan
 
 **Created:** 2026-05-29
-**Updated:** 2026-06-03
-**Status:** Phase 1D Complete — Phase 1F (E2E Testing) Next
+**Updated:** 2026-06-08
+**Status:** Phase 1D Complete — Session 2026-06-08: Code Fixes + Smoke Tests
 **Branch:** `feature/tollgate-core-v2` (esp32-tollgate)
 
 ---

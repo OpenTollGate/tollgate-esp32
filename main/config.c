@@ -312,6 +312,8 @@ esp_err_t tollgate_config_init(void)
             strncpy(g_config.cvm_relays, cvm_relays->valuestring, sizeof(g_config.cvm_relays) - 1);
         }
     }
+    cJSON *cvm_en_top = cJSON_GetObjectItem(root, "cvm_enabled");
+    if (cvm_en_top && cJSON_IsBool(cvm_en_top)) g_config.cvm_enabled = cJSON_IsTrue(cvm_en_top);
 
     cJSON *auth_mode = cJSON_GetObjectItem(root, "wifi_auth_mode");
     if (auth_mode && cJSON_IsString(auth_mode)) {

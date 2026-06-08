@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-const IP = process.env.TOLLGATE_IP || '10.192.45.1';
+const IP = process.env.TOLLGATE_IP || '10.185.47.1';
 
 console.log(`\n=== WiFi Setup Integration Test ===`);
 console.log(`Portal IP: ${IP}\n`);
