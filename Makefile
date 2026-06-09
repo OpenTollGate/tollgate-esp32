@@ -411,13 +411,13 @@ PORT_FOR_BOARD := $(PORT_$(UPPER_BOARD))
 write-mining-config-vps:
 	$(call _require_board_lock)
 	@if [ -z "$(STRATUM_HOST)" ]; then echo "ERROR: STRATUM_HOST is required (e.g., make write-mining-config-vps STRATUM_HOST=66.92.204.38)"; exit 1; fi
-	@echo "=== Writing VPS mining config (board=$(BOARD), stratum=$(STRATUM_HOST):$(STRATUM_PORT)) to $(PORT) ==="
+	@echo "=== Writing VPS mining config (board=$(BOARD), stratum=$(STRATUM_HOST):$(STRATUM_PORT)) to $(PORT_FOR_BOARD) ==="
 	@TMPDIR=$$(mktemp -d) && \
 	echo '{"nsec":"$(NSEC_FOR_BOARD)","wifi_networks":[{"ssid":"$(WIFI_SSID)","password":"$(WIFI_PASSWORD)"}],"ap_password":"","mint_url":"$(MINT_URL)","accepted_mints":["$(MINT_URL)"],"price_per_step":21,"step_size_ms":60000,"display_enabled":false,"cvm_enabled":false,"sync_enabled":false,"wifistr_enabled":false,"local_relay_enabled":false,"mint_health_enabled":true,"mining":{"enabled":true,"payout_mode":"auto","stratum_host":"$(STRATUM_HOST)","stratum_port":$(STRATUM_PORT),"stratum_user":"tollgate_test","stratum_pass":"x","mining_port":3334}}' > "$$TMPDIR/config.json" && \
 	echo "  Generating SPIFFS image..." && \
 	python3 $(SPIFFSGEN) --page-size 256 --obj-name-len 32 --use-magic --use-magic-len $(SPIFFS_SIZE) "$$TMPDIR" "$$TMPDIR/spiffs.bin" && \
 	echo "  Writing to flash..." && \
-	python3 -m esptool --port $(PORT) --baud $(BAUD) write_flash $(SPIFFS_OFFSET) "$$TMPDIR/spiffs.bin" && \
+	python3 -m esptool --port $(PORT_FOR_BOARD) --baud $(BAUD) write_flash $(SPIFFS_OFFSET) "$$TMPDIR/spiffs.bin" && \
 	rm -rf "$$TMPDIR" && \
 	echo "VPS mining config written (stratum_host=$(STRATUM_HOST):$(STRATUM_PORT))."
 
