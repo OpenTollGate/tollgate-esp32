@@ -34,7 +34,7 @@
 | Branch | HEAD | Status | Pushed to |
 |--------|------|--------|-----------|
 | `master` | `10c69b0` | Production | GitHub, relay.ngit.dev |
-| `feature/tollgate-core-v2` | `8f18b7a` (v1.3.0) | Active — tollgate_core extraction + fixes | GitHub, relay.ngit.dev |
+| `feature/tollgate-core-v2` | `037a8ff` (v1.3.0) | Active — tollgate_core extraction + fixes | GitHub, relay.ngit.dev |
 | `feature/miner-integration` | `e75c350` | Merged into feature/tollgate-core-v2 | — |
 | `feature/tollgate-core-component` | `144b48f` | Superseded by feature/tollgate-core-v2 | — |
 | `feature/display-fix` | `565d6a7` | Stale — Playwright E2E test plan | No |
@@ -59,9 +59,8 @@
 
 | Board | Port | MAC | SSID | AP IP | Notes |
 |-------|------|-----|------|-------|-------|
-| A | `/dev/ttyACM1` | `94:a9:90:2e:37:7c` | `TollGate-B96D80` | `10.185.47.1` | USB flash failing, cable issue |
-| B | `/dev/ttyACM0` | `fc:01:2c:c5:50:50` | `TollGate-C0E9CA` | `10.192.45.1` | Flashed with NerdQAxePlus TOLLGATE=1 |
-| NerdAxe | `/dev/ttyACM2` | `80:b5:4e:c7:79:88` | TBD | TBD | Actual BM1366 ASIC, fan-damaged |
+| A | `/dev/ttyACM0` | `80:b5:4e:c7:7a:d0` | Working NerdAxe | — | Working NerdAxe, BM1366 ASIC |
+| B | `/dev/ttyACM1` | `80:b5:4e:c7:79:88` | Fan-damaged NerdAxe | — | Fan-damaged, BM1366 ASIC |
 
 **Important:** Ports shift on every USB replug. Always verify with `esptool --port <port> chip-id`.
 
@@ -116,13 +115,17 @@ compote component upload --name tollgate_core --namespace c03rad0r
 
 The "failed to list from https://..." messages during `git push` are cosmetic noise from relays that don't support git smart HTTP. Look for "Everything up-to-date" or "new state" from the primary relay.
 
-- **relay.ngit.dev** — most reliable, always works
+- **relay.ngit.dev** — most reliable, always works via nostr:// protocol
 - **gitnostr.com** — auth issues, often fails
 - **ngit.orangesync.tech** — offline
+- **HTTPS mirrors** (git.upleb.uk, git.shakespeare.diy, etc.) — have purgatory issues with stale state events; only nostr:// push works reliably
+- **NerdQAxePlus** — too large (70MB) for Nostr relays; GitHub only
 
 ## Current Status
 
 - **orangesync.tech** — entirely offline (git, ngit, relay all DOWN)
-- **GitHub** — primary remote, active
-- **relay.ngit.dev** — secondary, working
+- **GitHub** — primary remote, active, up to date
+- **relay.ngit.dev** — secondary, working via nostr:// protocol
 - **IDF Component Registry** — v1.2.0 live, v1.3.0 pending upload
+- **VPS1 (66.92.204.38)** — hashpool chain running (bitcoind + pool + mint + translator)
+- **VPS2 (23.182.128.51)** — 7 CDK mints running, Nostr relay :7777
