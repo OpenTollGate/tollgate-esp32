@@ -1,8 +1,8 @@
 # Mining-for-Internet via Hashpool Ecash — Implementation Plan
 
 **Created:** 2026-05-29
-**Updated:** 2026-06-08
-**Status:** Phase 1D Complete — Session 2026-06-08: Code Fixes + Smoke Tests
+**Updated:** 2026-06-10
+**Status:** Phase 1G — Ship Phase 1: Full Mining Chain Deployment
 **Branch:** `feature/tollgate-core-v2` (esp32-tollgate)
 
 ---
@@ -623,3 +623,120 @@ Phase 2G (depends on all above)
 - [ ] 1F-2. Full E2E with translator: translator mints → mining.token → ESP32 wallet
 - [ ] 1F-3. Full E2E: Board + NerdAxe + hashpool VPS → mining → token → internet
 - [ ] 1F-4. Update documentation
+
+---
+
+### Phase 1G: Ship Phase 1 — Full Mining Chain Deployment (Session 2026-06-10)
+
+**Goal:** Deploy hashpool mining stack on VPS1, connect ESP32 boards via stratum, verify full chain: miner → translator → pool → mint → token → wallet → internet.
+
+**Architecture:**
+```
+NerdQAxe Miner              Laptop                     VPS1 (66.92.204.38)
+    |                          |                            |
+    +-- WiFi -> TollGate AP -->|                            |
+    |   SV1 stratum :3334      |                            |
+    |                          |                            |
+    |   ESP32 stratum_client --+--- internet :34255 ------->|  bitcoind (regtest)
+    |   (VPS translator)       |                            |  pool (SV2 :34254)
+    |                          |                            |  jd-server (:34264)
+    |                          |                            |  jd-client
+    |                          |                            |  mint (:3338)
+    |                          |                            |  translator (:34255)
+    |                          |                            |
+    |   Token -> wallet -> session -> internet             |
+```
+
+**Board mapping (verified 2026-06-10):**
+- `/dev/ttyACM0`: Working NerdAxe (MAC `80:b5:4e:c7:7a:d0`) — Board A
+- `/dev/ttyACM1`: Fan-damaged NerdAxe (MAC `80:b5:4e:c7:79:88`) — Board B
+- WiFi: `studio` / `statek2017` (WPA2, 2.4GHz)
+- TollGate-B96D80 AP visible at 82% signal
+
+**VPS1 (66.92.204.38):**
+- Debian 12, 2 CPUs, 7.8GB RAM, 29GB free
+- bitcoind installed (not running), sudo access, Docker running
+- No Nix/Rust yet — will install Nix + devenv
+
+**VPS2 (23.182.128.51):**
+- 7 CDK mints running, Nostr relay on :7777
+- 23GB free, no Rust
+
+**Local machine:**
+- 13GB free (95% full), Rust 1.95.0, no Nix
+
+**Deployment choice: VPS1 via Nix** — 30GB free, matches future Ansible workflows, devenv orchestrates all 9 services.
+
+#### Phase 1G Checklist
+
+##### Step 0: Update .env for new WiFi
+- [ ] 1G-0-1. Change WIFI_SSID to `studio`, WIFI_PASSWORD to `statek2017` in `.env`
+
+##### Step 1: Local code changes (no hardware)
+- [ ] 1G-1-1. Fix display init timeout: move `display_enabled` check after `tollgate_config_init()` in `tollgate_main.c`
+- [ ] 1G-1-2. Make `display_init()` fail gracefully (if axs15231b_init fails, set enabled=false and continue)
+- [ ] 1G-1-3. Add `write-mining-config-vps` Makefile target (accepts STRATUM_HOST param)
+- [ ] 1G-1-4. Run `make test-unit` — all tests pass
+- [ ] 1G-1-5. Build firmware (`idf.py build`)
+
+##### Step 2: Install Nix on VPS1
+- [ ] 1G-2-1. Install Nix multi-user on VPS1 (66.92.204.38)
+- [ ] 1G-2-2. Install devenv via `nix profile install`
+- [ ] 1G-2-3. Verify: `devenv version`
+
+##### Step 3: Deploy hashpool on VPS1
+- [ ] 1G-3-1. Clone hashpool: `git clone https://github.com/vnprc/hashpool.git ~/hashpool`
+- [ ] 1G-3-2. Change `devenv.nix`: `bitcoinNetwork = "regtest"`
+- [ ] 1G-3-3. Change `mint.config.toml`: `listen_host = "0.0.0.0"` (currently localhost)
+- [ ] 1G-3-4. Verify translator `tproxy.config.toml`: `downstream_address = "0.0.0.0"` (already correct)
+- [ ] 1G-3-5. Verify pool `pool.config.toml`: `listen_address = "0.0.0.0:34254"` (already correct)
+- [ ] 1G-3-6. Create state directories: `mkdir -p .devenv/state/{bitcoind,cln,translator,mint} logs`
+- [ ] 1G-3-7. Run `devenv up` — start all 9 services
+- [ ] 1G-3-8. Generate regtest blocks: `just generate-blocks 16`
+- [ ] 1G-3-9. Verify translator listening on `0.0.0.0:34255`
+- [ ] 1G-3-10. Verify mint listening on `0.0.0.0:3338`
+- [ ] 1G-3-11. Verify pool listening on `0.0.0.0:34254`
+
+##### Step 4: Open VPS1 firewall
+- [ ] 1G-4-1. `sudo ufw allow 34255/tcp` (translator SV1 downstream)
+- [ ] 1G-4-2. Verify connectivity: `nc -z 66.92.204.38 34255` from laptop
+
+##### Step 5: Flash TollGate firmware to both boards
+- [ ] 1G-5-1. `make lock-a PHASE="flash+config"`
+- [ ] 1G-5-2. `make flash-a` — flash Board A (working NerdAxe, ACM0)
+- [ ] 1G-5-3. `make write-mining-config-vps BOARD=a STRATUM_HOST=66.92.204.38` — write config A
+- [ ] 1G-5-4. Verify Board A serial: boot + WiFi connect + stratum_client start
+- [ ] 1G-5-5. `make lock-b PHASE="flash+config"`
+- [ ] 1G-5-6. `make flash-b` — flash Board B (fan-damaged NerdAxe, ACM1)
+- [ ] 1G-5-7. `make write-mining-config-vps BOARD=b STRATUM_HOST=66.92.204.38` — write config B
+- [ ] 1G-5-8. Verify Board B serial: boot + WiFi connect + stratum_client start
+
+##### Step 6: Verify ESP32 stratum connection to VPS translator
+- [ ] 1G-6-1. Check Board A serial: stratum_client connects to 66.92.204.38:34255
+- [ ] 1G-6-2. Check VPS translator logs: downstream connected from ESP32 IP
+- [ ] 1G-6-3. Verify mining.subscribe + mining.authorize succeed
+- [ ] 1G-6-4. Repeat for Board B
+
+##### Step 7: Verify token flow with devenv test miner
+- [ ] 1G-7-1. Check VPS translator logs: test miner submitting shares
+- [ ] 1G-7-2. Check pool logs: shares accepted
+- [ ] 1G-7-3. Check mint logs: quotes generated, tokens minted
+- [ ] 1G-7-4. Check translator logs: token routed to downstream (test miner or ESP32)
+
+##### Step 8: Flash NerdQAxe firmware (TOLLGATE-enabled)
+- [ ] 1G-8-1. Reflash existing May 28 TOLLGATE build to Board A (NERDQAXEPLUS)
+- [ ] 1G-8-2. Configure NerdQAxe stratum: NVS `stratumurl` = TollGate AP IP, `stratumport` = 3334
+- [ ] 1G-8-3. Reflash existing May 28 TOLLGATE build to Board B
+- [ ] 1G-8-4. Configure NerdQAxe stratum for Board B
+
+##### Step 9: Full E2E — Mine → Token → Internet
+- [ ] 1G-9-1. NerdQAxe connects to TollGate AP, SV1 handshake on port 3334
+- [ ] 1G-9-2. TollGate proxy forwards to VPS translator
+- [ ] 1G-9-3. Verify shares flow: NerdQAxe → TollGate → translator → pool
+- [ ] 1G-9-4. Verify token: pool → mint → ehash token → mining.token → TollGate wallet
+- [ ] 1G-9-5. Payment: token → session → internet access
+
+##### Step 10: Smoke tests + cleanup
+- [ ] 1G-10-1. Run `make smoke` integration tests
+- [ ] 1G-10-2. Commit + push all local changes
+- [ ] 1G-10-3. Update CHECKLIST.md and PLAN_MINING_INTERNET.md with results

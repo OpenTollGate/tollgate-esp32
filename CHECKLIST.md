@@ -343,16 +343,96 @@
 
 ---
 
+## Session 2026-06-10 — Ship Phase 1: Full Mining Chain Deployment
+
+### Board Status (verified 2026-06-10)
+- `/dev/ttyACM0`: Working NerdAxe (MAC `80:b5:4e:c7:7a:d0`) — Board A
+- `/dev/ttyACM1`: Fan-damaged NerdAxe (MAC `80:b5:4e:c7:79:88`) — Board B
+- WiFi: `studio` / `statek2017` (WPA2, 2.4GHz) — new location
+- `TollGate-B96D80` AP visible at 82% signal
+- Both boards need firmware flash + config for new WiFi
+
+### VPS Infrastructure
+- **VPS1** (`66.92.204.38`): Debian 12, 2 CPU, 7.8GB RAM, 29GB free, bitcoind installed, Docker running, sudo access
+- **VPS2** (`23.182.128.51`): 7 CDK mints running, Nostr relay, 23GB free
+- **Local**: 13GB free (95%), Rust 1.95.0, no Nix
+
+### Deployment Plan: Hashpool on VPS1 via Nix
+- Install Nix + devenv on VPS1
+- Clone hashpool, switch to regtest, bind translator to 0.0.0.0
+- ESP32 stratum_client connects to VPS1:34255 over internet
+- Full chain: NerdQAxe → TollGate → VPS translator → SV2 pool → CDK mint → token → wallet
+
+### Checklist
+
+#### Step 0: Update WiFi credentials
+- [ ] 1G-0-1. Change `.env`: WIFI_SSID=`studio`, WIFI_PASSWORD=`statek2017`
+
+#### Step 1: Local code changes
+- [ ] 1G-1-1. Fix display init timeout (move check after config_init in tollgate_main.c)
+- [ ] 1G-1-2. Make display_init fail gracefully
+- [ ] 1G-1-3. Add `write-mining-config-vps` Makefile target
+- [ ] 1G-1-4. `make test-unit` passes
+- [ ] 1G-1-5. Build firmware
+
+#### Step 2: Install Nix on VPS1
+- [ ] 1G-2-1. Nix multi-user installed on 66.92.204.38
+- [ ] 1G-2-2. devenv installed
+- [ ] 1G-2-3. `devenv version` works
+
+#### Step 3: Deploy hashpool on VPS1
+- [ ] 1G-3-1. Clone hashpool repo
+- [ ] 1G-3-2. Switch to regtest, bind to 0.0.0.0
+- [ ] 1G-3-3. `devenv up` — all 9 services running
+- [ ] 1G-3-4. Generate 16 regtest blocks
+- [ ] 1G-3-5. Verify translator :34255, mint :3338, pool :34254
+
+#### Step 4: VPS firewall
+- [ ] 1G-4-1. Open port 34255/tcp
+- [ ] 1G-4-2. Verify connectivity from laptop
+
+#### Step 5: Flash boards
+- [ ] 1G-5-1. Lock + flash Board A (ACM0, MAC 7a:d0)
+- [ ] 1G-5-2. Write mining config A (stratum_host=66.92.204.38)
+- [ ] 1G-5-3. Verify Board A serial: WiFi + stratum
+- [ ] 1G-5-4. Lock + flash Board B (ACM1, MAC 79:88)
+- [ ] 1G-5-5. Write mining config B
+- [ ] 1G-5-6. Verify Board B serial: WiFi + stratum
+
+#### Step 6: Verify stratum connection
+- [ ] 1G-6-1. Board A → VPS translator handshake
+- [ ] 1G-6-2. Board B → VPS translator handshake
+- [ ] 1G-6-3. Shares flowing through test miner
+
+#### Step 7: Verify token flow
+- [ ] 1G-7-1. Shares → pool → mint → token
+- [ ] 1G-7-2. mining.token → ESP32 wallet
+
+#### Step 8: NerdQAxe firmware
+- [ ] 1G-8-1. Reflash TOLLGATE firmware on Board A
+- [ ] 1G-8-2. Configure NerdQAxe stratum to TollGate AP
+- [ ] 1G-8-3. Reflash TOLLGATE firmware on Board B
+- [ ] 1G-8-4. Configure NerdQAxe stratum for Board B
+
+#### Step 9: Full E2E
+- [ ] 1G-9-1. NerdQAxe → TollGate → translator → pool → mint → token → wallet → session → internet
+- [ ] 1G-9-2. Smoke tests pass
+
+#### Step 10: Cleanup
+- [ ] 1G-10-1. Commit + push all changes
+- [ ] 1G-10-2. Update planning docs
+
+---
+
 ## TODO — Remaining
+
+### Phase 1G: Ship Phase 1 (Session 2026-06-10) — IN PROGRESS
+- See Session 2026-06-10 checklist above
 
 ### Local Relay (branch `feature/local-relay`) — DONE, merging to master
 - [ ] Integration test: CVM through local relay
 - [ ] E2E test: CVM tool call via relay
 - [ ] Future: implement negentropy binary protocol (NIP-77 NEG_OPEN/NEG_MSG) — currently using REQ-diff
-
-### Future Code Fixes
-- [ ] Display init timeout: move `display_enabled` check after `tollgate_config_init()` in `tollgate_main.c`
-- [ ] Config JSON: align Makefile template key names with parser expectations
 
 ### OpenWRT Interop
 - [ ] SSH to `root@10.47.41.1`, verify `tollgate-wrt` still running
@@ -373,7 +453,8 @@
 - **Commit + push every time a test passes that previously didn't pass**
 - Ports shift on USB replug — always verify with `esptool chip-id`:
   - Working NerdAxe: MAC `80:b5:4e:c7:7a:d0`, SSID `TollGate-B96D80`, AP IP `10.185.47.1`
-  - Fan-damaged NerdAxe: MAC `80:b5:4e:c7:79:88` — unreliable flash
+  - Fan-damaged NerdAxe: MAC `80:b5:4e:c7:79:88`
+- WiFi: `studio` / `statek2017` (WPA2, 2.4GHz) — updated 2026-06-10
 - `source ~/esp/esp-idf/export.sh` before `idf.py`
 - sudo password: `c03rad0r123`
 - Token generation: `cashu -h https://testnut.cashu.exchange send --legacy 21`
@@ -382,4 +463,8 @@
 - **Per-board locks:** `make lock-a PHASE="desc"` before hardware access
 - **WiFi country code:** Must set `esp_wifi_set_country_code("DE")` before `esp_wifi_start()`
 - **Lock directory:** `/home/c03rad0r/physical-router-test-automation/locks/`
-- **`.env` PORT_A/PORT_B** may be swapped after replug — always verify
+- **VPS1:** `66.92.204.38` (debian, sudo, bitcoind, Docker)
+- **VPS2:** `23.182.128.51` (debian, CDK mints, Nostr relay)
+- **Hashpool:** `https://github.com/vnprc/hashpool` (translator at `6e13aa78`)
+- **Translator config:** SV1 on `0.0.0.0:34255`, SV2 upstream `127.0.0.1:34254`, CDK mint `testnut.cashu.exchange`
+- **NerdQAxe firmware:** `BOARD=NERDQAXEPLUS TOLLGATE=1` build from May 28
