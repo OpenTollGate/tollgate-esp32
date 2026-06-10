@@ -739,4 +739,129 @@ NerdQAxe Miner              Laptop                     VPS1 (66.92.204.38)
 ##### Step 10: Smoke tests + cleanup
 - [ ] 1G-10-1. Run `make smoke` integration tests
 - [ ] 1G-10-2. Commit + push all local changes
+
+---
+
+## Phase 1H: Token-to-Session E2E — Complete the Chain
+
+**Status:** NEXT
+**Branch:** `feature/tollgate-core-v2`
+**Tag:** `v1.4.0` (SV1 submit fix + stable stratum)
+
+### What's Working (as of v1.4.0)
+
+- ESP32 connects to VPS1 translator at `66.92.204.38:34255` — stable, no reconnects
+- SV1 handshake: `mining.subscribe` + `mining.authorize` + `mining.submit` — all succeed
+- 3,558 shares/55s flowing through translator → pool
+- Tokens being minted: `Minted 1280 ehash from 2 quotes`, wallet balance 513k ehash
+- Translator proof sweeper runs every ~15s, batch-minting accumulated quotes
+
+### What's Not Working Yet
+
+The minted tokens accumulate in the translator's CDK wallet but are **not delivered to the ESP32**. The chain breaks at step 6 in the architecture:
+
+```
+Shares → pool → mint → tokens (IN TRANSLATOR WALLET) → ✗ mining.token delivery → ✗ ESP32 wallet
+```
+
+### Root Cause: Token Delivery Gap
+
+The translator's proof sweeper (`quote_sweeper.rs`) mints tokens into its local CDK wallet but does NOT:
+1. Generate a `cashuA...` token string from the minted proofs
+2. Look up the downstream connection for the locking pubkey
+3. Send a `mining.token` notification via `send_token_notification()`
+
+The `send_token_notification()` method exists on `Downstream` (added in Phase 1D) but is never called from the proof sweeper path. The connection between minting and delivery is missing.
+
+### Architecture: Token Delivery Flow (Target)
+
+```
+proof_sweeper::sweep()
+  → cdk_wallet.mint() → proofs[]
+  → generate cashuA token from proofs
+  → lookup locking_pubkey in DownstreamMap
+  → downstream.send_token_notification(token)
+  → SV1 JSON-RPC notification: {"method":"mining.token","params":["cashuA..."]}
+  → ESP32 stratum_client receives mining.token
+  → tls_worker_submit(token) or s_token_cb(token)
+  → cashu_decode_token() → wallet_receive() → proofs stored in nucula wallet
+```
+
+### Phase 1H Checklist
+
+#### Step 1: Investigate translator token delivery path
+- [ ] 1H-1-1. Read `quote_sweeper.rs` — find where tokens are minted and what happens after
+- [ ] 1H-1-2. Read `cdk_handler.rs` — find MintQuoteNotification handling
+- [ ] 1H-1-3. Read `payment/mod.rs` — find token→downstream routing
+- [ ] 1H-1-4. Identify exact gap: which function needs to call `send_token_notification()`
+- [ ] 1H-1-5. Check if `DownstreamMap` is accessible from the payment/sweeper context
+
+#### Step 2: Implement token delivery in translator (Rust, hashpool repo)
+- [ ] 1H-2-1. Add `generate_token_from_proofs()` — serialize CDK proofs into cashuA v3 token
+- [ ] 1H-2-2. Wire `DownstreamMap` into proof sweeper (via Arc<Mutex<>> or channel)
+- [ ] 1H-2-3. After mint, lookup pubkey in DownstreamMap, send `mining.token` notification
+- [ ] 1H-2-4. Handle case where downstream disconnected (queue or discard token)
+- [ ] 1H-2-5. `cargo check` passes
+
+#### Step 3: Verify token delivery on ESP32
+- [ ] 1H-3-1. Rebuild translator on VPS1: `cargo build --release`
+- [ ] 1H-3-2. Restart translator with new binary
+- [ ] 1H-3-3. Monitor ESP32 serial for `Received mining.token:` log
+- [ ] 1H-3-4. Verify token stored in nucula wallet (check `/wallet` endpoint)
+- [ ] 1H-3-5. Check wallet balance increases over time
+
+#### Step 4: E2E — Token to Session
+- [ ] 1H-4-1. Verify ESP32 wallet accumulates tokens from mining
+- [ ] 1H-4-2. Test payment: submit token via captive portal → session created
+- [ ] 1H-4-3. Verify internet access granted after payment
+- [ ] 1H-4-4. Test session expiry → internet revoked
+- [ ] 1H-4-5. Test re-mining → new token → re-pay → internet restored
+
+#### Step 5: Integration tests
+- [ ] 1H-5-1. Update `test-mining-token.mjs` — verify token received + wallet balance
+- [ ] 1H-5-2. Create `test-mining-e2e.mjs` — full chain: mine → token → wallet → session → internet
+- [ ] 1H-5-3. `make test-unit` passes
+- [ ] 1H-5-4. Smoke tests pass
+
+#### Step 6: Cleanup
+- [ ] 1H-6-1. Commit translator changes (hashpool repo)
+- [ ] 1H-6-2. Commit ESP32 changes (if any)
+- [ ] 1H-6-3. Tag `v1.5.0` — mining-for-internet MVP
+- [ ] 1H-6-4. Update CHECKLIST.md, PLAN_MINING_INTERNET.md, AGENTS.md
+- [ ] 1H-6-5. Push all repos
+
+### Alternative: Direct Token Query (Fallback)
+
+If the push-based `mining.token` delivery proves difficult to implement in the translator, the fallback approach is:
+
+1. ESP32 periodically polls the CDK mint's `/v1/keys` endpoint (or the translator's wallet API)
+2. ESP32 uses its locking pubkey to query for pending tokens
+3. ESP32 receives and stores tokens
+
+This requires either:
+- A new HTTP endpoint on the translator (e.g., `GET /mining/tokens?pubkey=...`)
+- Direct CDK mint integration on ESP32 (heavier, requires blinded minting)
+
+The push approach (1H-2 above) is preferred — lower latency, simpler ESP32 code.
+
+### Estimated Effort
+
+| Step | Time | Difficulty | Risk |
+|------|------|-----------|------|
+| 1H-1: Investigate | 1h | Medium | Low |
+| 1H-2: Implement | 2-4h | High | Medium (Rust, unfamiliar codebase) |
+| 1H-3: Verify | 1h | Medium | Low |
+| 1H-4: E2E | 2h | Medium | Medium (depends on translator fix) |
+| 1H-5: Tests | 1h | Low | Low |
+| 1H-6: Cleanup | 30m | Low | Low |
+| **Total** | **7-9h** | | |
+
+### Future (Phase 2+)
+
+After 1H is complete:
+- **Phase 2A:** NerdQAxe ASIC miner connects to TollGate AP → real hashrate
+- **Phase 2B:** Auto-payment: ESP32 auto-submits mined tokens for sessions (no manual step)
+- **Phase 2C:** SV2 direct on ESP32 — bypass translator, Noise NX + ElligatorSwift
+- **Phase 2D:** Multiple miners per TollGate, per-miner token accounting
+- **Phase 3:** Production deployment — Ansible playbooks, monitoring, alerts
 - [ ] 1G-10-3. Update CHECKLIST.md and PLAN_MINING_INTERNET.md with results
