@@ -538,19 +538,94 @@ The ESP32 `mining.submit` message omits the required `extranonce2` field, shifti
 
 ---
 
-## TODO — Remaining
+## Session 2026-06-11 — Faucet Hardware Verification Sprint
 
-### Phase 1H: Faucet Hardware Verification — IN PROGRESS
-- See Phase 1H checklist above (Phase 0-7)
-- Phase 0 COMPLETE: VPS mint URL, faucet cashuA format, keyset prefix matching
-- Phase 1 COMPLETE: firmware flashed twice, saw two bugs and fixed them
-- Phase 2 IN PROGRESS: faucet_client produces no logs after second flash, diagnosing
+### Phase 0 Fixes (ALL COMPLETE)
+- [x] 0-1. VPS mint.config.toml: `url` → `http://66.92.204.38:3338`
+- [x] 0-2. VPS tproxy.config.toml `[mint]`: `url` → `http://66.92.204.38:3338`
+- [x] 0-3. VPS services restarted (mint + pool + translator)
+- [x] 0-4. Faucet returns external URL in tokens (verified: `66.92.204.38:3338` in base64)
+- [x] 0-5. Faucet token format fixed: `cashuB` → `cashuA` (V3) via `token.to_v3_string()`
+- [x] 0-6. Keyset ID prefix matching fixed in nucula wallet (16-char short → 64-char full)
+- [x] 0-7. Makefile config: `mint_url` = hashpool mint, `accepted_mints` = [hashpool, testnut]
+- [x] 0-8. `make test-unit` passes, firmware builds clean
+- [x] 0-9. Board A locked, mining config written, firmware flashed
+
+### Bugs Found & Fixed on First Flash
+- [x] BUG-1: Faucet returned `cashuB` (V4 CBOR) tokens → nucula only supports `cashuA` (V3 JSON)
+  - Fix: Changed `token.to_string()` → `token.to_v3_string()` in VPS faucet_api.rs, rebuilt translator
+- [x] BUG-2: Keyset ID mismatch (proofs use 16-char short ID, wallet stores 64-char full ID)
+  - Fix: `keyset_for_id()` now matches by prefix (commit `7041726`)
+- [x] BUG-3: Token decoded OK but `receive()` failed with "unknown keyset id 0170bc02c93eab97"
+  - Root cause: BUG-2 above. Fix applied, firmware reflashed.
+
+### Phase 1-2: Hardware Flash & Boot Verification
+- [x] 1-1. `make lock-a PHASE="faucet-hw-test"`
+- [x] 1-2. `make write-mining-config-vps BOARD=a STRATUM_HOST=66.92.204.38`
+- [x] 1-3. `make flash-a` (first flash)
+- [x] 1-4. Second flash with keyset fix
+- [x] 2-1. Board boots, WiFi connects, stratum connects to VPS translator
+- [x] 2-2. Stratum client works (mining jobs flowing, job ID 11552+)
+- [ ] 2-3. **BLOCKER: faucet_client produces NO logs** after second flash
+  - First flash showed: `faucet_client: Received 32 ehash from faucet` + `wallet: receive: unknown keyset id`
+  - Second flash (keyset fix): no faucet logs at all, but stratum + wallet init working
+  - Hypothesis: firmware may not have reflashed correctly, or task creation failing silently
+
+### Phase 2 Diagnosis: Faucet Client Silence — IN PROGRESS
+
+#### Step 1: Clean flash + capture full boot sequence
+- [ ] 1-1. Erase app partition: `esptool --port /dev/ttyACM0 erase_region 0x10000 0x3f0000`
+- [ ] 1-2. Rebuild + flash: `make flash-a`
+- [ ] 1-3. Capture first 60s of serial output — look for faucet_client logs
+- [ ] 1-4. If no faucet logs, add debug ESP_LOGI before the `if` check in `faucet_client_start()`
+
+#### Step 2: Connect to board WiFi + verify config
+- [ ] 2-1. `nmcli dev wifi connect TollGate-B96D80`
+- [ ] 2-2. `curl http://10.185.47.1:2121/debug` — check mining_enabled, faucet_url
+- [ ] 2-3. `curl http://10.185.47.1:2121/wallet` — check wallet state
+
+#### Step 3: Diagnose + fix
+- [ ] 3-1. If `faucet_url` is empty in debug output → config parsing bug
+- [ ] 3-2. If `mining_enabled` is false → config JSON issue
+- [ ] 3-3. If faucet_url present but task not created → RAM issue, reduce stack to 4096
+- [ ] 3-4. If task created but no logs → log level or buffer issue
+
+#### Step 4: Verify faucet poll + wallet receive
+- [ ] 4-1. Serial shows: `faucet_client: Faucet client started (url=..., interval=120s)`
+- [ ] 4-2. After 30s: `faucet_client: Received 32 ehash from faucet`
+- [ ] 4-3. `nucula_wallet: Received 32 sat (N proofs) via wallet[http://66.92.204.38:3338], new balance=32`
+- [ ] 4-4. If receive still fails → investigate ehash unit handling in nucula
+
+#### Step 5: Wallet balance accumulation
+- [ ] 5-1. Wait 2-3 faucet polls (4-6 min)
+- [ ] 5-2. `curl http://10.185.47.1:2121/wallet` — balance > 0, proof_count > 0
+- [ ] 5-3. Balance grows with each poll
+
+#### Step 6: Manual E2E — payment → session → internet
+- [ ] 6-1. `curl -X POST http://10.185.47.1:2121/wallet/send -d '21'` → get cashuA token
+- [ ] 6-2. `curl -X POST http://10.185.47.1/ -d '<token>'` → session created
+- [ ] 6-3. `curl http://10.185.47.1:2121/usage` → active session
+- [ ] 6-4. From TollGate AP: `ping -c 1 1.1.1.1` → internet works
+- [ ] 6-5. Wait for session expiry → internet blocked
+- [ ] 6-6. Re-pay → session restored
+
+#### Step 7: Integration tests
+- [ ] 7-1. `TOLLGATE_IP=10.185.47.1 make test-mining-token`
+- [ ] 7-2. `TOLLGATE_IP=10.185.47.1 make smoke`
+- [ ] 7-3. Write `test-faucet-wallet.mjs` integration test (optional)
+
+#### Step 8: Cleanup
+- [ ] 8-1. Commit all fixes
+- [ ] 8-2. Tag `v1.5.0`
+- [ ] 8-3. Update CHECKLIST.md, PLAN_MINING_INTERNET.md
+- [ ] 8-4. `make unlock-a`
+- [ ] 8-5. Push all repos
 
 ### Phase 1G: Ship Phase 1 (Session 2026-06-10) — MOSTLY COMPLETE
 - [x] SV1 submit bug FIXED (tag v1.4.0)
 - [x] Hashpool chain running on VPS1
 - [x] Faucet API exposed and working
-- [ ] Full E2E: mine → faucet → wallet → session → internet (Phase 1H)
+- [ ] Full E2E: mine → faucet → wallet → session → internet (blocked by faucet silence)
 
 ### Local Relay (branch `feature/local-relay`) — DONE, merging to master
 - [ ] Integration test: CVM through local relay

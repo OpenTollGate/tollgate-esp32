@@ -882,15 +882,55 @@ I nucula_wallet: Received 32 sat (N proofs) via wallet[http://66.92.204.38:3338]
 - [ ] 8-4. `make unlock-a`
 - [ ] 8-5. Push all repos
 
+### Current Status (Session 2026-06-11)
+
+**Phase 0 fixes all applied and verified on VPS.** Three bugs found and fixed:
+1. Faucet returned `cashuB` (V4) → fixed to `cashuA` (V3)
+2. Keyset ID mismatch (16-char vs 64-char) → fixed with prefix matching
+3. (Still diagnosing) Faucet client produces no logs after second flash
+
+**Board A running** with hashpool mint config, stratum connected to VPS, mining jobs flowing.
+**BLOCKER:** `faucet_client` FreeRTOS task produces zero log output after the keyset-fix reflash.
+
+#### Diagnosis Steps (Faucet Client Silence)
+
+**Step 1: Clean reflash**
+- Erase app partition + full rebuild + flash to ensure firmware is current
+- Capture full boot sequence (first 60s) from serial
+
+**Step 2: Verify config via HTTP**
+- Connect laptop to `TollGate-B96D80` WiFi AP
+- Query `GET /debug` for `mining_enabled` and faucet config
+- Query `GET /wallet` for wallet state
+
+**Step 3: Diagnose root cause**
+- If `faucet_url` empty → config parsing bug
+- If `mining_enabled` false → config JSON issue
+- If task creation fails → RAM shortage, reduce task stack
+- If task runs but no logs → log level or buffer issue
+
+#### Remaining Steps (after diagnosis)
+
+**Step 4: Verify faucet poll + wallet receive**
+- Serial: `faucet_client: Received 32 ehash from faucet`
+- Serial: `nucula_wallet: Received 32 sat (N proofs) via wallet[...], new balance=32`
+
+**Step 5: Wallet balance accumulation** (2-3 polls, 4-6 min)
+
+**Step 6: Manual E2E** (wallet send → portal pay → session → internet)
+
+**Step 7: Integration tests**
+
+**Step 8: Cleanup, tag v1.5.0**
+
 ### Key Risks
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| `ehash` unit not handled by nucula `receive()` | Wallet can't swap proofs with mint | Test on hardware first; may need nucula code change |
-| VPS mint restart clears keysets | Existing tokens become invalid | Faucet generates fresh tokens, safe |
-| ESP32 can't reach `66.92.204.38:3338` (firewall) | Wallet can't contact mint for swap | Verify port 3338 open on VPS; check ESP32 STA routing |
-| Faucet returns `success: false` | No tokens to receive | Ensure translator has accumulated quotes (miner shares flowing) |
-| Wallet send produces ehash token but portal expects sat | Payment rejected by allotment calc | May need allotment calculation update for ehash vs sat |
+| Faucet task can't be created (RAM) | No token polling | Reduce task stack to 4096, reduce sw_miner stack |
+| `nucula_wallet_receive()` fails with ehash proofs | Can't store tokens | Check swap path for ehash unit support |
+| `wallet send` produces ehash token, portal expects sat | Payment rejected | Bypass allotment check for self-wallet tokens |
+| WiFi disconnect when switching APs | Lose connectivity | Use serial for critical steps |
 
 ### Log Tags Reference
 
