@@ -160,7 +160,7 @@ static void dns_server_task(void *arg)
     struct sockaddr_in bind_addr = {
         .sin_family = AF_INET,
         .sin_port = htons(DNS_PORT),
-        .sin_addr.s_addr = INADDR_ANY,
+        .sin_addr.s_addr = s_ap_ip.addr,
     };
     if (bind(sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
         ESP_LOGE(TAG, "Failed to bind DNS socket");

@@ -1,7 +1,7 @@
 import WebSocket from 'ws';
 import crypto from 'crypto';
 
-const IP = process.env.TOLLGATE_IP || '10.192.45.1';
+const IP = process.env.TOLLGATE_IP || '10.185.47.1';
 const RELAY_PORT = 4869;
 const RELAY_URL = `ws://${IP}:${RELAY_PORT}`;
 const TIMEOUT_MS = 8000;

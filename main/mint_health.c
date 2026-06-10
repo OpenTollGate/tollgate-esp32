@@ -1,4 +1,6 @@
 #include "mint_health.h"
+#include "tls_worker.h"
+#include "tollgate_core_mint_health.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
@@ -7,7 +9,6 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "nucula_wallet.h"
-#include "tollgate_api.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -18,8 +19,7 @@ static QueueHandle_t s_wallet_queue = NULL;
 
 static int s_last_probe_err = 0;
 
-static mint_status_t s_mints[MINT_HEALTH_MAX];
-static int s_mint_count = 0;
+static tollgate_mint_health_t s_health_state;
 static bool s_running = false;
 static TaskHandle_t s_task_handle = NULL;
 static SemaphoreHandle_t s_mutex = NULL;
@@ -38,18 +38,18 @@ static void fire_callbacks(void)
 esp_err_t mint_health_init(const char urls[][256], int count)
 {
     if (count > MINT_HEALTH_MAX) count = MINT_HEALTH_MAX;
-    s_mint_count = count;
+    s_health_state.count = count;
     s_callback_count = 0;
 
     if (!s_mutex) s_mutex = xSemaphoreCreateMutex();
 
-    memset(s_mints, 0, sizeof(s_mints));
+    memset(s_health_state.mints, 0, sizeof(s_health_state.mints));
     for (int i = 0; i < count; i++) {
-        strncpy(s_mints[i].url, urls[i], sizeof(s_mints[i].url) - 1);
-        s_mints[i].reachable = false;
-        s_mints[i].consecutive_successes = 0;
-        s_mints[i].last_probe_ms = 0;
-        s_mints[i].last_http_status = 0;
+        strncpy(s_health_state.mints[i].url, urls[i], sizeof(s_health_state.mints[i].url) - 1);
+        s_health_state.mints[i].reachable = false;
+        s_health_state.mints[i].consecutive_successes = 0;
+        s_health_state.mints[i].last_probe_ms = 0;
+        s_health_state.mints[i].last_http_status = 0;
     }
 
     ESP_LOGI(TAG, "Initialized with %d mints", count);
@@ -106,35 +106,17 @@ static void run_probes(void)
 
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return;
 
-    for (int i = 0; i < s_mint_count; i++) {
-        if (s_mints[i].reachable) old_reachable++;
+    old_reachable = tollgate_core_mint_health_count_reachable(&s_health_state);
+
+    for (int i = 0; i < s_health_state.count; i++) {
+        bool ok = probe_mint(s_health_state.mints[i].url);
+        int64_t probe_time = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        tollgate_core_mint_health_update(&s_health_state, i, ok, ok ? 200 : 0,
+                                          ok ? 0 : s_last_probe_err, probe_time);
     }
 
-    for (int i = 0; i < s_mint_count; i++) {
-        bool ok = probe_mint(s_mints[i].url);
-        s_mints[i].last_probe_ms = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
-        s_mints[i].last_http_status = ok ? 200 : 0;
-        s_mints[i].last_err = ok ? 0 : s_last_probe_err;
-
-        if (ok) {
-            s_mints[i].consecutive_successes++;
-            if (s_mints[i].consecutive_successes >= MINT_HEALTH_RECOVERY_THRESHOLD) {
-                if (!s_mints[i].reachable) {
-                    ESP_LOGI(TAG, "Mint RECOVERED: %s", s_mints[i].url);
-                }
-                s_mints[i].reachable = true;
-            }
-        } else {
-            if (s_mints[i].reachable) {
-                ESP_LOGW(TAG, "Mint UNREACHABLE: %s err=0x%x", s_mints[i].url, s_last_probe_err);
-            }
-            s_mints[i].reachable = false;
-            s_mints[i].consecutive_successes = 0;
-        }
-
-        if (s_mints[i].reachable) new_reachable++;
-    }
-
+    new_reachable = tollgate_core_mint_health_count_reachable(&s_health_state);
     bool changed = (old_reachable != new_reachable);
     xSemaphoreGive(s_mutex);
 
@@ -148,20 +130,17 @@ static void run_initial_probes(void)
 {
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return;
 
-    for (int i = 0; i < s_mint_count; i++) {
-        bool ok = probe_mint(s_mints[i].url);
-        s_mints[i].last_probe_ms = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
-        s_mints[i].last_http_status = ok ? 200 : 0;
-        s_mints[i].last_err = ok ? 0 : s_last_probe_err;
+    for (int i = 0; i < s_health_state.count; i++) {
+        bool ok = probe_mint(s_health_state.mints[i].url);
+        int64_t probe_time = (int64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        tollgate_core_mint_health_update_initial(&s_health_state, i, ok, ok ? 200 : 0,
+                                                   ok ? 0 : s_last_probe_err, probe_time);
 
         if (ok) {
-            s_mints[i].consecutive_successes = MINT_HEALTH_RECOVERY_THRESHOLD;
-            s_mints[i].reachable = true;
-            ESP_LOGI(TAG, "Initial probe OK: %s (reachable)", s_mints[i].url);
+            ESP_LOGI(TAG, "Initial probe OK: %s (reachable)", s_health_state.mints[i].url);
         } else {
-            s_mints[i].consecutive_successes = 0;
-            s_mints[i].reachable = false;
-            ESP_LOGW(TAG, "Initial probe FAIL: %s (unreachable)", s_mints[i].url);
+            ESP_LOGW(TAG, "Initial probe FAIL: %s (unreachable)", s_health_state.mints[i].url);
         }
     }
 
@@ -246,24 +225,18 @@ const mint_status_t *mint_health_get_all(int *out_count)
 {
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
         *out_count = 0;
-        return s_mints;
+        return (const mint_status_t *)s_health_state.mints;
     }
-    *out_count = s_mint_count;
+    *out_count = s_health_state.count;
     xSemaphoreGive(s_mutex);
-    return s_mints;
+    return (const mint_status_t *)s_health_state.mints;
 }
 
 bool mint_health_is_reachable(const char *url)
 {
     if (!url) return false;
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) return false;
-    bool result = false;
-    for (int i = 0; i < s_mint_count; i++) {
-        if (strcmp(s_mints[i].url, url) == 0 || strstr(url, s_mints[i].url) != NULL) {
-            result = s_mints[i].reachable;
-            break;
-        }
-    }
+    bool result = tollgate_core_mint_health_is_reachable(&s_health_state, url);
     xSemaphoreGive(s_mutex);
     return result;
 }
@@ -272,16 +245,7 @@ void mint_health_mark_unreachable(const char *url)
 {
     if (!url) return;
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) return;
-    for (int i = 0; i < s_mint_count; i++) {
-        if (strcmp(s_mints[i].url, url) == 0 || strstr(url, s_mints[i].url) != NULL) {
-            if (s_mints[i].reachable) {
-                s_mints[i].reachable = false;
-                s_mints[i].consecutive_successes = 0;
-                ESP_LOGW(TAG, "Reactively marked unreachable: %s", url);
-            }
-            break;
-        }
-    }
+    tollgate_core_mint_health_mark_unreachable(&s_health_state, url);
     xSemaphoreGive(s_mutex);
 }
 

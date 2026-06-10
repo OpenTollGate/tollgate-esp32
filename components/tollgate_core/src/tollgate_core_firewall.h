@@ -11,6 +11,8 @@ struct pbuf;
 #define TG_FW_MAX_MAC_LEN 18
 
 esp_err_t tollgate_core_fw_init(esp_ip4_addr_t ap_ip);
+void tollgate_core_fw_set_sandbox_ports(uint16_t mining_port);
+void tollgate_core_fw_set_sandbox_mint_access(bool enabled);
 void tollgate_core_fw_grant(uint32_t client_ip);
 void tollgate_core_fw_revoke(uint32_t client_ip);
 void tollgate_core_fw_revoke_all(void);

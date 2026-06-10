@@ -1,0 +1,72 @@
+---
+# CI Runner role: Docker + ESP-IDF + nostr listener for CI/CD
+
+- name: Install Docker
+  become: true
+  block:
+    - name: Check if Docker is installed
+      command: docker --version
+      changed_when: false
+      ignore_errors: true
+      register: docker_check
+
+    - name: Install Docker
+      when: docker_check.failed
+      block:
+        - name: Install Docker packages
+          apt:
+            name:
+              - docker.io
+              - docker-compose-v2
+            state: present
+            update_cache: true
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user_id }}"
+        groups: docker
+        append: true
+
+- name: Pull ESP-IDF Docker image
+  become: true
+  community.docker.docker_image:
+    name: espressif/idf
+    tag: latest
+    source: pull
+
+- name: Install Python dependencies for CI listener
+  pip:
+    name:
+      - websockets
+    state: present
+    extra_args: --user
+
+- name: Install CI listener systemd service
+  become: true
+  block:
+    - name: Copy service file
+      copy:
+        src: ../../systemd/tollgate-ci-listener.service
+        dest: /etc/systemd/system/tollgate-ci-listener.service
+        mode: "0644"
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: true
+
+    - name: Enable and start CI listener
+      systemd:
+        name: tollgate-ci-listener
+        enabled: true
+        state: started
+
+- name: Verify CI listener is running
+  block:
+    - name: Check service status
+      command: systemctl is-active tollgate-ci-listener
+      changed_when: false
+      register: listener_status
+
+    - name: Report status
+      debug:
+        msg: "CI listener status: {{ listener_status.stdout }}"

@@ -62,6 +62,7 @@ tg_session_t *tollgate_core_session_create(uint32_t client_ip, uint64_t allotmen
             s_sessions[i].allotment_ms = allotment_ms;
             s_sessions[i].start_time_ms = get_time_ms();
             s_sessions[i].active = true;
+            s_sessions[i].payment_method = TG_PAYMENT_CASHU;
             populate_mac(&s_sessions[i], client_ip);
 
             s_session_count++;
@@ -86,6 +87,7 @@ tg_session_t *tollgate_core_session_create_bytes(uint32_t client_ip, uint64_t al
         s->allotment_bytes = allotment_bytes;
         s->bytes_consumed = 0;
         s->allotment_ms = INT64_MAX;
+        s->payment_method = TG_PAYMENT_BYTES;
         esp_ip4_addr_t ip = { .addr = client_ip };
         ESP_LOGI(TAG, "Bytes session created: " IPSTR " allotment=%llu bytes", IP2STR(&ip),
                  (unsigned long long)allotment_bytes);
@@ -134,6 +136,10 @@ void tollgate_core_session_extend(tg_session_t *session, uint64_t additional_ms)
 bool tollgate_core_session_is_expired(const tg_session_t *session)
 {
     if (!session || !session->active) return true;
+
+    if (session->payment_method == TG_PAYMENT_BYTES) {
+        return session->bytes_consumed >= session->allotment_bytes;
+    }
 
     if (s_platform && s_platform->get_metric) {
         const char *metric = s_platform->get_metric();

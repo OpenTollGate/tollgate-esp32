@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-const ESP32_IP = process.env.TOLLGATE_IP || '10.192.45.1';
+const ESP32_IP = process.env.TOLLGATE_IP || '10.185.47.1';
 const TIMEOUT = 5000;
 
 export function curl(args, expectStatus = null) {

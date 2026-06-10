@@ -1,7 +1,7 @@
 #include "sw_miner.h"
 #include "stratum_proxy.h"
 #include "stratum_client.h"
-#include "mining_payment.h"
+#include "tollgate_core_mining.h"
 #include "config.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -59,8 +59,8 @@ static void sw_miner_task(void *arg)
 
             if (memcmp(hash, local_job.target, local_job.target_len) <= 0) {
                 ESP_LOGI(TAG, "Valid share found! nonce=%08lx", (unsigned long)nonce);
-                stratum_client_submit_share(local_job.job_id, nonce, local_job.ntime, local_job.version);
-                mining_update_hashrate(0, true);
+                stratum_client_submit_share(local_job.job_id, nonce, local_job.ntime);
+                tollgate_core_mining_update_hashrate(0, true);
                 break;
             }
         }
@@ -83,7 +83,7 @@ esp_err_t sw_miner_start(void)
     s_running = true;
     s_hashrate = 0.0;
 
-    BaseType_t ret = xTaskCreate(sw_miner_task, "sw_miner", 8192, NULL, 2, &s_task_handle);
+    BaseType_t ret = xTaskCreate(sw_miner_task, "sw_miner", 6144, NULL, 2, &s_task_handle);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create sw_miner task");
         s_running = false;

@@ -22,7 +22,7 @@ static int32_t platform_get_step_ms(void)
 static const char *platform_get_mint_url(void)
 {
     const tollgate_config_t *cfg = tollgate_config_get();
-    return cfg ? cfg->mint_url : "https://testnut-nutshell.mints.orangesync.tech";
+    return cfg ? cfg->mint_url : "https://testnut.cashu.exchange";
 }
 
 static const char *platform_get_metric(void)

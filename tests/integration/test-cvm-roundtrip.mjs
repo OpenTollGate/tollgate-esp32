@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import WebSocket from 'ws';
 
-const IP = process.env.TOLLGATE_IP || '10.192.45.1';
+const IP = process.env.TOLLGATE_IP || '10.185.47.1';
 const CVM_RELAY = process.env.CVM_RELAY || 'wss://nos.lol';
 const NSEC = process.env.CVM_NSEC || 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
 

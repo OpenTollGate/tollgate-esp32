@@ -4,7 +4,7 @@
 #include "identity.h"
 #include "nostr_event.h"
 #include "config.h"
-#include "session.h"
+#include "tollgate_core_session.h"
 #include "nucula_wallet.h"
 #include "cJSON.h"
 #include "esp_log.h"

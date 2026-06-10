@@ -19,6 +19,10 @@ typedef struct {
     esp_ip4_addr_t ap_ip;
     char ap_ip_str[16];
 
+    uint8_t locking_privkey[32];
+    uint8_t locking_pubkey[33];
+    char locking_pubkey_hex[67];
+
     bool initialized;
 } tollgate_identity_t;
 

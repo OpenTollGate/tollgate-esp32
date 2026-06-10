@@ -1,7 +1,8 @@
 #include "mcp_handler.h"
 #include "config.h"
 #include "nucula_wallet.h"
-#include "session.h"
+#include "tollgate_core_session.h"
+#include "tollgate_core.h"
 #include "cJSON.h"
 #include "lwip/ip4_addr.h"
 #include <string.h>
@@ -157,12 +158,10 @@ mcp_response_t mcp_handle_wallet_send(const char *params_json)
 mcp_response_t mcp_handle_get_sessions(void)
 {
     mcp_response_t resp = {0};
-    extern session_t *cvm_get_sessions_array(void);
-    extern int cvm_get_sessions_count(void);
 
     cJSON *arr = cJSON_CreateArray();
-    int count = cvm_get_sessions_count();
-    session_t *sessions = cvm_get_sessions_array();
+    int count = tollgate_core_session_get_array_size();
+    tg_session_t *sessions = tollgate_core_session_get_array();
 
     if (sessions && count > 0) {
         for (int i = 0; i < count; i++) {

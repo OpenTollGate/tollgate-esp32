@@ -12,12 +12,14 @@
 #include "lwip/dns.h"
 #include "esp_sntp.h"
 #include "dhcpserver/dhcpserver.h"
+#include "tollgate_core.h"
+#include "tollgate_core_firewall.h"
+#include "tollgate_core_mining.h"
+#include "tollgate_esp_platform.h"
 #include "config.h"
 #include "identity.h"
 #include "dns_server.h"
 #include "captive_portal.h"
-#include "firewall.h"
-#include "session.h"
 #include "tollgate_api.h"
 #include "nucula_wallet.h"
 #include "wifistr.h"
@@ -35,7 +37,12 @@
 #include "stratum_proxy.h"
 #include "sw_miner.h"
 #include "asic_miner.h"
-#include "mining_payment.h"
+#include "lwip/prot/ip4.h"
+
+int tollgate_ip4_canforward_filter(struct pbuf *p, u32_t dest_addr_hostorder)
+{
+    return tollgate_core_ip4_canforward_filter(p, dest_addr_hostorder);
+}
 
 #define MAX_STA_RETRY 5
 static const char *TAG = "tollgate_main";
@@ -76,6 +83,11 @@ static void start_ap_services(void)
     tollgate_api_start();
     beacon_price_start();
     market_init();
+
+    if (cfg->mining_enabled) {
+        tollgate_core_fw_set_sandbox_ports(cfg->mining_port);
+        tollgate_core_fw_set_sandbox_mint_access(cfg->mining_sandbox_mint_access);
+    }
 
     s_ap_services_running = true;
     ESP_LOGI(TAG, "=== AP-only services started (no STA) ===");
@@ -233,8 +245,7 @@ static void start_services(void)
              IP2STR(&(esp_ip4_addr_t){.addr=dns_getserver(1)->addr}),
              IP2STR(&(esp_ip4_addr_t){.addr=dns_getserver(2)->addr}));
 
-    firewall_init(ap_ip_info.ip);
-    session_manager_init();
+    tollgate_core_init(tollgate_esp_get_platform(), ap_ip_info.ip);
 
     const tollgate_config_t *cfg = tollgate_config_get();
 
@@ -243,8 +254,10 @@ static void start_services(void)
         cvm_server_start();
     }
 
-    mint_health_init(cfg->accepted_mints, cfg->accepted_mint_count);
-    mint_health_start();
+    if (cfg->mint_health_enabled) {
+        mint_health_init(cfg->accepted_mints, cfg->accepted_mint_count);
+        mint_health_start();
+    }
 
     if (cfg->accepted_mint_count > 1) {
         nucula_wallet_init_multi(cfg->accepted_mints, cfg->accepted_mint_count);
@@ -253,8 +266,8 @@ static void start_services(void)
     }
 
     if (cfg->mining_enabled) {
-        firewall_set_mining_port(cfg->mining_port);
-        firewall_set_sandbox_mint_access(cfg->mining_sandbox_mint_access);
+        tollgate_core_fw_set_sandbox_ports(cfg->mining_port);
+        tollgate_core_fw_set_sandbox_mint_access(cfg->mining_sandbox_mint_access);
     }
     lightning_payout_init(&cfg->payout);
 
@@ -266,19 +279,24 @@ static void start_services(void)
         market_init();
     }
 
-    relay_selector_init(&s_relay_selector);
-    relay_selector_seed_from_config(&s_relay_selector);
+    if (cfg->sync_enabled || cfg->wifistr_enabled) {
+        relay_selector_init(&s_relay_selector);
+        relay_selector_seed_from_config(&s_relay_selector);
+    }
 
-    sync_manager_init(&s_sync_manager, &s_relay_selector);
-    sync_manager_start(&s_sync_manager);
+    if (cfg->sync_enabled) {
+        sync_manager_init(&s_sync_manager, &s_relay_selector);
+        sync_manager_start(&s_sync_manager);
+    }
 
-    xTaskCreate(publish_wifistr_task, "wifistr_init", 16384, NULL, 3, NULL);
+    if (cfg->wifistr_enabled) {
+        xTaskCreate(publish_wifistr_task, "wifistr_init", 16384, NULL, 3, NULL);
+    }
 
     if (cfg->mining_enabled) {
         ESP_LOGI(TAG, "Mining subsystem enabled, initializing...");
-        mining_payment_init();
         stratum_client_init();
-        stratum_proxy_init(cfg->mining_port);
+        stratum_proxy_init(cfg->mining_port, cfg->proxy_self_test);
 
         if (cfg->mining_payout_mode != MINING_PAYOUT_UPSTREAM) {
             stratum_client_start();
@@ -319,12 +337,13 @@ static void stop_services(void)
         tollgate_api_stop();
         beacon_price_stop();
     }
+    const tollgate_config_t *cfg = tollgate_config_get();
     dns_server_stop();
     cvm_server_stop();
-    sync_manager_stop(&s_sync_manager);
-    local_relay_stop();
-    relay_selector_destroy(&s_relay_selector);
-    firewall_revoke_all();
+    if (cfg->sync_enabled) sync_manager_stop(&s_sync_manager);
+    if (cfg->local_relay_enabled) local_relay_stop();
+    if (cfg->sync_enabled || cfg->wifistr_enabled) relay_selector_destroy(&s_relay_selector);
+    tollgate_core_fw_revoke_all();
     s_services_running = false;
     if (s_services_mutex) xSemaphoreGive(s_services_mutex);
     ESP_LOGI(TAG, "=== TollGate services stopped ===");
@@ -386,14 +405,9 @@ static void wifi_init_sta(void)
     s_sta_netif = esp_netif_create_default_wifi_sta();
 }
 
-void app_main(void)
+ void app_main(void)
 {
     ESP_LOGI(TAG, "=== TollGate ESP32 Starting ===");
-
-    if (tollgate_config_get()->display_enabled) {
-        display_init();
-        display_set_state(DISPLAY_BOOT);
-    }
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -403,6 +417,14 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     ESP_ERROR_CHECK(tollgate_config_init());
+
+    if (tollgate_config_get()->display_enabled) {
+        if (display_init() == ESP_OK) {
+            display_set_state(DISPLAY_BOOT);
+        } else {
+            ESP_LOGW(TAG, "Display init failed — continuing without display");
+        }
+    }
 
     ESP_ERROR_CHECK(identity_init(tollgate_config_get()->nsec));
 
@@ -447,8 +469,10 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    local_relay_init();
-    local_relay_start();
+    if (tollgate_config_get()->local_relay_enabled) {
+        local_relay_init();
+        local_relay_start();
+    }
 
     ESP_LOGI(TAG, "WiFi AP+STA started, waiting for connection...");
 
@@ -459,7 +483,7 @@ void app_main(void)
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
-        session_tick();
+        tollgate_core_tick();
         tollgate_client_tick();
         lightning_payout_tick();
         market_tick();

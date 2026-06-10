@@ -2,9 +2,6 @@ idf_component_register(SRCS "tollgate_main.c"
                             "config.c"
                             "dns_server.c"
                             "captive_portal.c"
-                            "firewall.c"
-                            "cashu.c"
-                            "session.c"
                             "tollgate_api.c"
                             "identity.c"
                             "nostr_event.c"
@@ -17,6 +14,7 @@ idf_component_register(SRCS "tollgate_main.c"
                             "mcp_handler.c"
                             "cvm_server.c"
                             "mint_health.c"
+                            "tls_worker.c"
                             "display.c"
                             "font.c"
                             "local_relay.c"
@@ -25,18 +23,16 @@ idf_component_register(SRCS "tollgate_main.c"
                             "beacon_price.c"
                             "market.c"
                             "negentropy_adapter.c"
-                            "mining_payment.c"
                             "stratum_client.c"
                             "stratum_proxy.c"
                             "sw_miner.c"
                             "asic_miner.c"
-                            "tollgate_platform.c"
                             "touch.c"
                             "keyboard.c"
                             "wifi_setup.c"
                     INCLUDE_DIRS "."
                      REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_http_server
-                              lwip json esp_http_client mbedtls esp-tls log spiffs
-                              nucula_lib secp256k1 axs15231b qrcode wisp_relay
-                              negentropy_lib tcp_transport tollgate_core
-                     PRIV_REQUIRES esp-tls)
+                               lwip json esp_http_client mbedtls esp-tls log spiffs
+                               nucula_lib secp256k1 axs15231b qrcode wisp_relay
+                               negentropy_lib tcp_transport tollgate_esp
+                      PRIV_REQUIRES esp-tls)

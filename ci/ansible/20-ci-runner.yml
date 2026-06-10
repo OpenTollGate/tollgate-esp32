@@ -1,0 +1,9 @@
+---
+# Deploy CI runner for esp32-tollgate
+# Usage: ansible-playbook 20-ci-runner.yml
+
+- name: Deploy CI runner
+  hosts: localhost
+  connection: local
+  roles:
+    - role: ci_runner

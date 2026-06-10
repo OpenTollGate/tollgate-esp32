@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-const DEFAULT_IP = '10.192.45.1';
+const DEFAULT_IP = '10.185.47.1';
 const WIFI_IFACE = 'wlp59s0';
 
 export function getPortalIP() {

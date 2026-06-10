@@ -11,71 +11,78 @@
 | Name | URL | Type | Purpose |
 |------|-----|------|---------|
 | `origin` | `nostr://npub12m5.../relay.ngit.dev/esp32-tollgate` | nostr (ngit) | Primary ngit relay |
-| `orangesync` | `nostr://npub12m5.../ngit.orangesync.tech/esp32-tollgate` | nostr (ngit) | Self-hosted ngit relay |
+| `orangesync` | `nostr://npub12m5.../ngit.orangesync.tech/esp32-tollgate` | nostr (ngit) | Self-hosted ngit relay (offline) |
+| `github` | `https://github.com/OpenTollGate/tollgate-esp32` | HTTPS | Primary GitHub mirror |
+| `ngit-dev` | `nostr://npub12m5.../relay.ngit.dev/esp32-tollgate` | nostr (ngit) | Public ngit relay (same as origin) |
+| `gitnostr` | `nostr://npub12m5.../gitnostr.com/esp32-tollgate` | nostr (ngit) | gitnostr.com (auth issues) |
 
 ## Infrastructure
 
-| Service | URL | Role |
-|---------|-----|------|
-| GRASP (Git Server) | `https://git.orangesync.tech` | Git smart HTTP over Nostr (NIP-34) |
-| ngit Relay (Nostr) | `wss://ngit.orangesync.tech` | Nostr relay for git state events |
-| GitWorkshop | `https://workshop.orangesync.tech` | Web UI for browsing nostr git repos |
-| relay.ngit.dev | `wss://relay.ngit.dev` | Public ngit relay (secondary) |
+| Service | URL | Role | Status |
+|---------|-----|------|--------|
+| GitHub (primary) | `https://github.com/OpenTollGate/tollgate-esp32` | Main code host | Active |
+| GitHub (NerdQAxePlus) | `https://github.com/c03rad0r/ESP-Miner-NerdQAxePlus` | Fork repo | Active |
+| GRASP (Git Server) | `https://git.orangesync.tech` | Git smart HTTP over Nostr | Offline |
+| ngit Relay (Nostr) | `wss://ngit.orangesync.tech` | Nostr relay for git state events | Offline |
+| GitWorkshop | `https://workshop.orangesync.tech` | Web UI for browsing nostr git repos | Offline |
+| relay.ngit.dev | `wss://relay.ngit.dev` | Public ngit relay (most reliable) | Active |
+| gitnostr.com | `https://gitnostr.com` | Public ngit relay | Auth issues |
+| IDF Component Registry | `components.espressif.com/c03rad0r/tollgate_core` | Published component v1.2.0 | Active |
 
-## GRASP Servers
+## Branches (esp32-tollgate)
 
-Configured in NIP-34 repo announcement:
+| Branch | HEAD | Status | Pushed to |
+|--------|------|--------|-----------|
+| `master` | `10c69b0` | Production | GitHub, relay.ngit.dev |
+| `feature/tollgate-core-v2` | `037a8ff` (v1.3.0) | Active — tollgate_core extraction + fixes | GitHub, relay.ngit.dev |
+| `feature/miner-integration` | `e75c350` | Merged into feature/tollgate-core-v2 | — |
+| `feature/tollgate-core-component` | `144b48f` | Superseded by feature/tollgate-core-v2 | — |
+| `feature/display-fix` | `565d6a7` | Stale — Playwright E2E test plan | No |
+| `feature/cvm-integration` | `2cd372c` | Merged to master | Yes |
+| `feature/local-relay` | `25eb0c5` | Merged to master | Yes |
+| `feature/mining-payment` | `ef9ae98` | Merged to master | Yes |
 
-- `git.orangesync.tech` (self-hosted, primary)
-- `relay.anzenkodo.workers.dev`
-- `nostr.koning-degraaf.nl`
-- `relay.damus.io`
-- `nos.lol`
+## Branches (NerdQAxePlus)
 
-## Additional Relays
-
-- `wss://ngit.orangesync.tech` (self-hosted, for state events)
-
-## Branches
-
-| Branch | HEAD | Status | Merged into master |
-|--------|------|--------|--------------------|
-| `master` | `62bce81` | Production | — |
-| `feature/miner-integration` | `e75c350` | Active — tollgate_core C++ compat + NerdQAxePlus integration | No |
-| `feature/tollgate-core-component` | `144b48f` | Active — original tollgate_core extraction + E2E fixes | No |
-| `feature/display-fix` | `565d6a7` | Stale — Playwright E2E test plan for /setup | No |
-| `feature/cvm-integration` | `2cd372c` | Merged to master | Yes (squashed) |
-| `feature/local-relay` | `25eb0c5` | Merged to master | Yes (squashed) |
-| `feature/mining-payment` | `ef9ae98` | Merged to master | Yes (squashed as `e366ceb`) |
-| `backup/multi-mint-support-pre-rebase` | `ef2de0f` | Backup only | N/A |
+| Branch | HEAD | Status | Pushed to |
+|--------|------|--------|-----------|
+| `develop` | `a2fd1fa6` | Active — 9 TollGate commits rebased on upstream `4b8f3225` | GitHub |
 
 ## Local Worktrees
 
 | Path | Branch | Purpose |
 |------|--------|---------|
-| `/home/c03rad0r/esp32-tollgate` | `master` | Main repo (clean, for other LLM sessions) |
-| `/home/c03rad0r/esp32-miner-integration` | `feature/miner-integration` | tollgate_core + mining integration |
-| `/home/c03rad0r/esp32-tollgate-arch` | `feature/tollgate-core-component` | Architecture branch (original component extraction) |
+| `/home/c03rad0r/esp32-tollgate` | `feature/tollgate-core-v2` | Main working repo |
+| `/home/c03rad0r/esp-miner-nerdqaxeplus` | `develop` | NerdQAxePlus fork |
+
+## Board Inventory
+
+| Board | Port | MAC | SSID | AP IP | Notes |
+|-------|------|-----|------|-------|-------|
+| A | `/dev/ttyACM0` | `80:b5:4e:c7:7a:d0` | Working NerdAxe | — | Working NerdAxe, BM1366 ASIC |
+| B | `/dev/ttyACM1` | `80:b5:4e:c7:79:88` | Fan-damaged NerdAxe | — | Fan-damaged, BM1366 ASIC |
+
+**Important:** Ports shift on every USB replug. Always verify with `esptool --port <port> chip-id`.
 
 ## Cross-Referenced Repositories
 
-### esp-miner-nerdqaxeplus-tollgate (NerdQAxePlus Fork)
+### ESP-Miner-NerdQAxePlus (Fork)
 
-- **Identifier:** `esp-miner-nerdqaxeplus-tollgate`
-- **naddr:** `naddr1qq0k2ums94kkjmn9wgkkuetjv3ckz7r9wpk82uedw3hkcmr8v96x2q3q2m5exm2uk3xa674cc5r0hlyvccs5xxn7qv83ezuteefv5972nquqxpqqqpmejqgewaehxw309ankjapwdaexzmn8v4ehjmnr9e6x2cmggeq0vl`
+- **GitHub:** `https://github.com/c03rad0r/ESP-Miner-NerdQAxePlus`
 - **Clone:** `/home/c03rad0r/esp-miner-nerdqaxeplus`
-- **Branch:** `develop` (HEAD `83e09ab9`)
+- **Branch:** `develop` (HEAD `a2fd1fa6`)
 - **Upstream:** `https://github.com/shufps/ESP-Miner-NerdQAxePlus`
-- **Nostr remote:** `nostr://npub12m5.../git.orangesync.tech/esp-miner-nerdqaxeplus-tollgate`
-- **Dependency:** Uses `tollgate_core` component from `feature/miner-integration` branch (symlinked at `components/tollgate_core`)
-- **Build:** `BOARD=NERDAXE TOLLGATE=1 idf.py build`
-- **See:** `REMOTES.md` in that repo for full details
+- **Dependency:** Uses `tollgate_core` component v1.3.0 (rsynced from esp32-tollgate)
+- **Build:** `TOLLGATE=1 BOARD=NERDQAXEPLUS idf.py build` (or `BOARD=NERDAXE` for BM1366 variant)
+- **Nostr remote:** `ngit-dev` added but push deferred (repo too large)
 
 ### tollgate_core Component
 
-- **Source:** `components/tollgate_core/` on `feature/miner-integration` branch
-- **Files:** 7 C source files, 2 public headers, CMakeLists.txt, idf_component.yml
-- **Design doc:** `docs/TOLLGATE_CORE_DESIGN.md` on `feature/tollgate-core-component` branch
+- **Source:** `components/tollgate_core/` on `feature/tollgate-core-v2`
+- **Version:** v1.3.0
+- **Registry:** `c03rad0r/tollgate_core` on components.espressif.com (v1.2.0 published, v1.3.0 pending)
+- **Files:** 13 C source files, 2 public headers, CMakeLists.txt, idf_component.yml
+- **Design doc:** `docs/TOLLGATE_CORE_DESIGN.md`
 
 ## Backup Bundles
 
@@ -85,46 +92,40 @@ Configured in NIP-34 repo announcement:
 | `/home/c03rad0r/mining-work-backup/feature-mining-payment.bundle` | `feature/mining-payment` branch | ~755KB |
 | `/home/c03rad0r/mining-work-backup/nerdqaxeplus-tollgate.bundle` | NerdQAxePlus `develop` branch | ~48MB |
 
-### Restore from bundle
-
-```bash
-# Clone from bundle
-git clone feature-miner-integration-latest.bundle -b feature/miner-integration esp32-tollgate-restored
-
-# Or fetch into existing repo
-git remote add bundle-src /home/c03rad0r/mining-work-backup/feature-miner-integration-latest.bundle
-git fetch bundle-src
-git checkout -b feature/miner-integration bundle-src/feature/miner-integration
-```
-
 ## How to Push
 
 ```bash
-# Push all branches to orangesync
-git push orangesync --all
+# esp32-tollgate → GitHub (primary)
+git push github master
+git push github feature/tollgate-core-v2
 
-# Push specific branch
-git push orangesync feature/miner-integration
+# esp32-tollgate → nostr
+git push ngit-dev --all
 
-# Push to both remotes
-git push origin master && git push orangesync master
+# NerdQAxePlus → GitHub
+cd /home/c03rad0r/esp-miner-nerdqaxeplus
+git push github develop
 
-# Update repo metadata
-ngit repo edit -d -g git.orangesync.tech --relay wss://ngit.orangesync.tech
-
-# Sync (force GRASP servers to update)
-ngit sync -d -v
+# IDF Component Registry
+compote component pack --path components/tollgate_core
+compote component upload --name tollgate_core --namespace c03rad0r
 ```
 
 ## Nostr Push Troubleshooting
 
-The "failed to list from https://..." messages during `git push` are **cosmetic noise** from third-party nostr relays that don't support git smart HTTP. The actual push succeeds — look for "Everything up-to-date" or "new state" from the primary relay in the output.
+The "failed to list from https://..." messages during `git push` are cosmetic noise from relays that don't support git smart HTTP. Look for "Everything up-to-date" or "new state" from the primary relay.
 
-Key pattern:
-```
-failed to list from https://nos.lol/...   ← cosmetic, ignore
-failed to list from https://relay.damus.io/...  ← cosmetic, ignore
-To nostr://npub.../ngit.orangesync.tech/esp32-tollgate
- = [up to date]      master -> master     ← actual result
-Everything up-to-date
-```
+- **relay.ngit.dev** — most reliable, always works via nostr:// protocol
+- **gitnostr.com** — auth issues, often fails
+- **ngit.orangesync.tech** — offline
+- **HTTPS mirrors** (git.upleb.uk, git.shakespeare.diy, etc.) — have purgatory issues with stale state events; only nostr:// push works reliably
+- **NerdQAxePlus** — too large (70MB) for Nostr relays; GitHub only
+
+## Current Status
+
+- **orangesync.tech** — entirely offline (git, ngit, relay all DOWN)
+- **GitHub** — primary remote, active, up to date
+- **relay.ngit.dev** — secondary, working via nostr:// protocol
+- **IDF Component Registry** — v1.2.0 live, v1.3.0 pending upload
+- **VPS1 (66.92.204.38)** — hashpool chain running (bitcoind + pool + mint + translator)
+- **VPS2 (23.182.128.51)** — 7 CDK mints running, Nostr relay :7777

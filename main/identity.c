@@ -103,6 +103,21 @@ esp_err_t identity_init(const char *nsec_hex)
     snprintf(s_identity.ap_ip_str, sizeof(s_identity.ap_ip_str),
              IPSTR, IP2STR(&s_identity.ap_ip));
 
+    tollgate_derive(s_identity.nsec, "tollgate-cashu-locking-key", 0,
+                    s_identity.locking_privkey, 32);
+
+    secp256k1_pubkey locking_pub;
+    if (secp256k1_ec_pubkey_create(ctx, &locking_pub, s_identity.locking_privkey)) {
+        size_t olen = 33;
+        secp256k1_ec_pubkey_serialize(ctx, s_identity.locking_pubkey, &olen,
+                                       &locking_pub, SECP256K1_EC_COMPRESSED);
+        bytes_to_hex(s_identity.locking_pubkey, 33, s_identity.locking_pubkey_hex);
+    } else {
+        ESP_LOGE(TAG, "Failed to create locking pubkey from derived key");
+        memset(s_identity.locking_pubkey, 0, 33);
+        s_identity.locking_pubkey_hex[0] = '\0';
+    }
+
     secp256k1_context_destroy(ctx);
     s_identity.initialized = true;
 
@@ -114,6 +129,7 @@ esp_err_t identity_init(const char *nsec_hex)
              s_identity.ap_mac[0], s_identity.ap_mac[1], s_identity.ap_mac[2],
              s_identity.ap_mac[3], s_identity.ap_mac[4], s_identity.ap_mac[5]);
     ESP_LOGI(TAG, "  SSID: %s, AP IP: %s", s_identity.ap_ssid, s_identity.ap_ip_str);
+    ESP_LOGI(TAG, "  Locking pubkey: %s", s_identity.locking_pubkey_hex);
 
     return ESP_OK;
 }

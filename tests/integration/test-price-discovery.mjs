@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 
 const BOARD_A_IP = process.env.TOLLGATE_IP || '10.185.47.1';
-const BOARD_B_IP = process.env.TOLLGATE_B_IP || process.env.TOLLGATE_IP_B || '10.192.45.1';
+const BOARD_B_IP = process.env.TOLLGATE_B_IP || process.env.TOLLGATE_IP_B || '10.185.47.1';
 const API_A = `http://${BOARD_A_IP}:2121`;
 const API_B = `http://${BOARD_B_IP}:2121`;
 
