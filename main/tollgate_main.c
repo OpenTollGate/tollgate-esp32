@@ -37,6 +37,7 @@
 #include "stratum_proxy.h"
 #include "sw_miner.h"
 #include "asic_miner.h"
+#include "faucet_client.h"
 #include "lwip/prot/ip4.h"
 
 int tollgate_ip4_canforward_filter(struct pbuf *p, u32_t dest_addr_hostorder)
@@ -301,6 +302,8 @@ static void start_services(void)
         if (cfg->mining_payout_mode != MINING_PAYOUT_UPSTREAM) {
             stratum_client_start();
         }
+
+        faucet_client_start();
 
         asic_miner_init();
         if (asic_miner_is_present()) {

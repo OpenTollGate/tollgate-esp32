@@ -127,6 +127,8 @@ typedef struct {
     uint64_t hashprice_sats_per_ghs_day;
     bool mining_sandbox_mint_access;
     bool proxy_self_test;
+    char faucet_url[256];
+    int faucet_poll_interval_s;
 } tollgate_config_t;
 
 void tollgate_config_derive_unique(tollgate_config_t *cfg);

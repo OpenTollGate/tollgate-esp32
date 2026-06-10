@@ -47,6 +47,7 @@ esp_err_t tollgate_config_init(void)
     g_config.mining_port = 3334;
     g_config.mining_sandbox_mint_access = false;
     g_config.proxy_self_test = true;
+    g_config.faucet_poll_interval_s = 120;
     g_config.sync_enabled = true;
     g_config.wifistr_enabled = true;
     g_config.local_relay_enabled = true;
@@ -371,6 +372,12 @@ esp_err_t tollgate_config_init(void)
         if (m_sandbox && cJSON_IsBool(m_sandbox)) g_config.mining_sandbox_mint_access = cJSON_IsTrue(m_sandbox);
         cJSON *m_selftest = cJSON_GetObjectItem(mining, "proxy_self_test");
         if (m_selftest && cJSON_IsBool(m_selftest)) g_config.proxy_self_test = cJSON_IsTrue(m_selftest);
+
+        cJSON *m_faucet = cJSON_GetObjectItem(mining, "faucet_url");
+        if (m_faucet && cJSON_IsString(m_faucet)) strncpy(g_config.faucet_url, m_faucet->valuestring, sizeof(g_config.faucet_url) - 1);
+
+        cJSON *m_fi = cJSON_GetObjectItem(mining, "faucet_poll_interval_s");
+        if (m_fi) g_config.faucet_poll_interval_s = m_fi->valueint;
     }
 
     cJSON *market_enabled = cJSON_GetObjectItem(root, "market_enabled");
