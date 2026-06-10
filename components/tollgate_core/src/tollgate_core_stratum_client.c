@@ -98,11 +98,12 @@ int tollgate_core_stratum_build_authorize(char *buf, size_t buf_size, uint32_t r
 
 int tollgate_core_stratum_build_submit(char *buf, size_t buf_size, uint32_t req_id,
                                         const char *user, uint32_t job_id,
-                                        uint32_t ntime, uint32_t nonce, uint32_t version)
+                                        const char *extranonce2_hex,
+                                        uint32_t ntime, uint32_t nonce)
 {
     return snprintf(buf, buf_size,
-                    "{\"id\":%lu,\"method\":\"mining.submit\",\"params\":[\"%s\",\"%lu\",\"%08lx\",\"%08lx\",\"%08lx\"]}\n",
+                    "{\"id\":%lu,\"method\":\"mining.submit\",\"params\":[\"%s\",\"%lu\",\"%s\",\"%08lx\",\"%08lx\"]}\n",
                     (unsigned long)req_id, user,
-                    (unsigned long)job_id, (unsigned long)ntime,
-                    (unsigned long)nonce, (unsigned long)version);
+                    (unsigned long)job_id, extranonce2_hex,
+                    (unsigned long)ntime, (unsigned long)nonce);
 }

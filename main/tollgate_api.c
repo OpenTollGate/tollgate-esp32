@@ -618,7 +618,6 @@ static esp_err_t api_post_mining_share(httpd_req_t *req)
     uint32_t job_id = (uint32_t)j_job_id->valuedouble;
     uint32_t nonce = (uint32_t)j_nonce->valuedouble;
     uint32_t ntime = (uint32_t)j_ntime->valuedouble;
-    uint32_t version = (uint32_t)j_version->valuedouble;
     cJSON_Delete(root);
 
     const stratum_job_t *job = stratum_proxy_get_current_job();
@@ -629,7 +628,7 @@ static esp_err_t api_post_mining_share(httpd_req_t *req)
         return ESP_OK;
     }
 
-    esp_err_t share_err = stratum_client_submit_share(job_id, nonce, ntime, version);
+    esp_err_t share_err = stratum_client_submit_share(job_id, nonce, ntime);
     bool accepted = (share_err == ESP_OK);
 
     tollgate_core_mining_update_hashrate(client_ip, accepted);

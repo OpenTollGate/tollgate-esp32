@@ -366,53 +366,50 @@
 ### Checklist
 
 #### Step 0: Update WiFi credentials
-- [ ] 1G-0-1. Change `.env`: WIFI_SSID=`studio`, WIFI_PASSWORD=`statek2017`
+- [x] 1G-0-1. Change `.env`: WIFI_SSID=`studio`, WIFI_PASSWORD=`statek2017`
 
 #### Step 1: Local code changes
-- [ ] 1G-1-1. Fix display init timeout (move check after config_init in tollgate_main.c)
-- [ ] 1G-1-2. Make display_init fail gracefully
-- [ ] 1G-1-3. Add `write-mining-config-vps` Makefile target
-- [ ] 1G-1-4. `make test-unit` passes
-- [ ] 1G-1-5. Build firmware
+- [x] 1G-1-1. Fix display init timeout (move check after config_init in tollgate_main.c)
+- [x] 1G-1-2. Make display_init fail gracefully
+- [x] 1G-1-3. Add `write-mining-config-vps` Makefile target
+- [x] 1G-1-4. `make test-unit` passes
+- [x] 1G-1-5. Build firmware
 
-#### Step 2: Install Nix on VPS1
-- [ ] 1G-2-1. Nix multi-user installed on 66.92.204.38
-- [ ] 1G-2-2. devenv installed
-- [ ] 1G-2-3. `devenv version` works
+#### Step 2: Deploy hashpool on VPS1
+- [x] 1G-2-1. Sjors/bitcoin v29.99.0 SV2 TP installed (native SV2, no separate binary)
+- [x] 1G-2-2. bitcoind regtest :18443 RPC, :18447 SV2 TP — wallet "test", 101+ blocks
+- [x] 1G-2-3. Pool + mint + translator built via cargo (no Nix — too large)
+- [x] 1G-2-4. Full chain running: TP → pool → mint → translator on 0.0.0.0:34255
+- [x] 1G-2-5. Blocks being mined, mint quotes flowing (2, 4, 8, 16, 64 sat)
 
-#### Step 3: Deploy hashpool on VPS1
-- [ ] 1G-3-1. Clone hashpool repo
-- [ ] 1G-3-2. Switch to regtest, bind to 0.0.0.0
-- [ ] 1G-3-3. `devenv up` — all 9 services running
-- [ ] 1G-3-4. Generate 16 regtest blocks
-- [ ] 1G-3-5. Verify translator :34255, mint :3338, pool :34254
+#### Step 3: VPS firewall
+- [x] 1G-3-1. Port 34255/tcp open
+- [x] 1G-3-2. ESP32 connects from public IP 31.30.161.125
 
-#### Step 4: VPS firewall
-- [ ] 1G-4-1. Open port 34255/tcp
-- [ ] 1G-4-2. Verify connectivity from laptop
+#### Step 4: Flash boards
+- [x] 1G-4-1. Flash Board A (ACM0, MAC 7a:d0) + write mining config
+- [x] 1G-4-2. Flash Board B (ACM1, MAC 79:88) + write mining config
+- [x] 1G-4-3. Fix Makefile bug: `$(PORT)` → `$(PORT_FOR_BOARD)` in write-mining-config-vps
 
-#### Step 5: Flash boards
-- [ ] 1G-5-1. Lock + flash Board A (ACM0, MAC 7a:d0)
-- [ ] 1G-5-2. Write mining config A (stratum_host=66.92.204.38)
-- [ ] 1G-5-3. Verify Board A serial: WiFi + stratum
-- [ ] 1G-5-4. Lock + flash Board B (ACM1, MAC 79:88)
-- [ ] 1G-5-5. Write mining config B
-- [ ] 1G-5-6. Verify Board B serial: WiFi + stratum
+#### Step 5: Verify stratum connection
+- [x] 1G-5-1. Board A → VPS translator: connects, subscribes, authorizes
+- [x] 1G-5-2. Shares flowing at ~100/sec during each connection window
+- [ ] 1G-5-3. **BUG: `InvalidSubmission` on mining.submit** — see SV1 Submit Bug section above
 
-#### Step 6: Verify stratum connection
-- [ ] 1G-6-1. Board A → VPS translator handshake
-- [ ] 1G-6-2. Board B → VPS translator handshake
-- [ ] 1G-6-3. Shares flowing through test miner
+#### Step 6: Git sync
+- [x] 1G-6-1. Push esp32-tollgate to GitHub (up to date at `04d0edb`)
+- [x] 1G-6-2. Push NerdQAxePlus to GitHub (up to date at `a2fd1fa6`)
+- [x] 1G-6-3. Push esp32-tollgate to relay.ngit.dev via nostr://
+- [x] 1G-6-4. Update REMOTES.md with current board inventory
 
-#### Step 7: Verify token flow
-- [ ] 1G-7-1. Shares → pool → mint → token
-- [ ] 1G-7-2. mining.token → ESP32 wallet
+#### Step 7: Fix SV1 submit bug — IN PROGRESS
+- [x] 1G-7-1. Root cause analysis complete (extranonce2 missing from submit)
+- [ ] 1G-7-2. Implement fix (see SV1 Submit Bug checklist above)
+- [ ] 1G-7-3. Verify shares accepted by translator
 
-#### Step 8: NerdQAxe firmware
-- [ ] 1G-8-1. Reflash TOLLGATE firmware on Board A
-- [ ] 1G-8-2. Configure NerdQAxe stratum to TollGate AP
-- [ ] 1G-8-3. Reflash TOLLGATE firmware on Board B
-- [ ] 1G-8-4. Configure NerdQAxe stratum for Board B
+#### Step 8: Verify token flow
+- [ ] 1G-8-1. Shares → pool → mint → token
+- [ ] 1G-8-2. mining.token → ESP32 wallet
 
 #### Step 9: Full E2E
 - [ ] 1G-9-1. NerdQAxe → TollGate → translator → pool → mint → token → wallet → session → internet
@@ -424,10 +421,57 @@
 
 ---
 
+## SV1 `InvalidSubmission` Bug — Root Cause Found + Fix
+
+### Root Cause
+The ESP32 `mining.submit` message omits the required `extranonce2` field, shifting all subsequent params one position left. The translator's SV1 parser interprets `ntime` as `extranonce2`, causing a size mismatch (4 bytes vs expected ~32 from SV2 channel) → `InvalidSubmission` → fatal connection kill.
+
+**What ESP32 sends:** `[user, job_id, ntime, nonce, version]` (5 params, no extranonce2)
+**What SV1 standard requires:** `[user, job_id, extranonce2, ntime, nonce]` (5 params)
+
+**Failure chain:**
+1. Translator parses ntime (`"6436eddf"`) as extranonce2 → 4 bytes
+2. Validation: `extranonce2_size (32) != extra_nonce2.len (4)` → `InvalidSubmission`
+3. `Error::V1Protocol` → `ErrorBranch::Break` → bridge task loop exits → connection killed
+4. ESP32 reconnects after ~10s → cycle repeats
+
+**Evidence:**
+- `tollgate_core_stratum_client.c:103-107` — submit builder sends `%08lx` ntime in position 2 (extranonce2 slot)
+- `client_to_server.rs:197-204` — parser maps position 2 → extranonce2
+- `lib.rs:121` — `extranonce2_size() == submit.extra_nonce2.len()` fails
+- NerdQAxePlus client (`stratum_api.cpp:488-496`) correctly includes extranonce2 → works fine
+
+### Fix Plan: Add extranonce2 to ESP32 mining.submit
+
+- [x] RC-1: Root cause identified (param layout mismatch, not authorize bug)
+- [ ] FIX-1: Add `extranonce2_size` to `stratum_client_state_t` (`stratum_client.h`)
+- [ ] FIX-2: Parse subscribe response in `stratum_client.c` — extract `result[2]` as extranonce2_size
+- [ ] FIX-3: Update `tollgate_core_stratum_build_submit()` — add extranonce2 param at position 2, drop version
+- [ ] FIX-4: Update `stratum_client_submit_share()` — generate zero-filled extranonce2 hex string
+- [ ] FIX-5: Update `sw_miner.c` call site — remove version param
+- [ ] FIX-6: Update unit test `test_stratum_client.c` — verify correct 5-param format with extranonce2
+- [ ] FIX-7: `make test-unit` — all 701+ tests pass
+- [ ] FIX-8: Build firmware + flash to Board A
+- [ ] FIX-9: Verify translator logs: no more `InvalidSubmission`, shares accepted
+- [ ] FIX-10: Commit + push
+
+### Files to Modify
+| File | Change |
+|------|--------|
+| `main/stratum_client.h` | Add `extranonce2_size` to state struct |
+| `main/stratum_client.c` | Parse subscribe response, store extranonce2_size |
+| `components/tollgate_core/src/tollgate_core_stratum_client.c` | Add extranonce2 param to submit builder, drop version |
+| `components/tollgate_core/src/tollgate_core_stratum_client.h` | Update submit builder signature |
+| `main/sw_miner.c` | Update call to stratum_client_submit_share |
+| `tests/unit/test_stratum_client.c` | Add test for correct submit format |
+
+---
+
 ## TODO — Remaining
 
 ### Phase 1G: Ship Phase 1 (Session 2026-06-10) — IN PROGRESS
 - See Session 2026-06-10 checklist above
+- See SV1 Submit Bug fix plan above
 
 ### Local Relay (branch `feature/local-relay`) — DONE, merging to master
 - [ ] Integration test: CVM through local relay

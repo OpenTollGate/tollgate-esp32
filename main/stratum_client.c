@@ -70,10 +70,12 @@ static esp_err_t stratum_connect(const char *host, uint16_t port)
 static void send_subscribe(void)
 {
     char subscribe[256];
-    int len = tollgate_core_stratum_build_subscribe(subscribe, sizeof(subscribe), s_req_id++);
+    int len = tollgate_core_stratum_build_subscribe(subscribe, sizeof(subscribe), s_req_id);
     if (len > 0) {
+        s_state.subscribe_req_id = s_req_id;
+        s_req_id++;
         esp_transport_write(s_transport, subscribe, len, 5000);
-        ESP_LOGI(TAG, "Sent mining.subscribe");
+        ESP_LOGI(TAG, "Sent mining.subscribe (id=%lu)", (unsigned long)s_state.subscribe_req_id);
     }
 }
 
@@ -148,6 +150,24 @@ static void handle_mining_token(cJSON *params)
     }
 }
 
+static void handle_subscribe_response(cJSON *result, uint32_t req_id)
+{
+    if (req_id != s_state.subscribe_req_id) return;
+    if (!cJSON_IsArray(result)) return;
+
+    int size = cJSON_GetArraySize(result);
+    if (size < 3) {
+        ESP_LOGW(TAG, "Subscribe response too short: %d params", size);
+        return;
+    }
+
+    cJSON *en2_size_item = cJSON_GetArrayItem(result, 2);
+    if (en2_size_item && cJSON_IsNumber(en2_size_item)) {
+        s_state.extranonce2_size = en2_size_item->valueint;
+        ESP_LOGI(TAG, "Subscribe response: extranonce2_size=%d", s_state.extranonce2_size);
+    }
+}
+
 void stratum_client_set_token_callback(tollgate_stratum_token_cb cb)
 {
     s_token_cb = cb;
@@ -210,6 +230,8 @@ static void stratum_client_task(void *arg)
         if (id && result) {
             if (cJSON_IsFalse(result) || (error && !cJSON_IsNull(error))) {
                 ESP_LOGW(TAG, "Request %d rejected", id->valueint);
+            } else if (cJSON_IsArray(result)) {
+                handle_subscribe_response(result, (uint32_t)id->valueint);
             }
         }
 
@@ -256,15 +278,21 @@ void stratum_client_stop(void)
     }
 }
 
-esp_err_t stratum_client_submit_share(uint32_t job_id, uint32_t nonce, uint32_t ntime, uint32_t version)
+esp_err_t stratum_client_submit_share(uint32_t job_id, uint32_t nonce, uint32_t ntime)
 {
     if (!s_state.connected || !s_transport) return ESP_FAIL;
 
     const tollgate_config_t *cfg = tollgate_config_get();
 
+    int en2_size = s_state.extranonce2_size > 0 ? s_state.extranonce2_size : 8;
+    char extranonce2_hex[65];
+    memset(extranonce2_hex, '0', en2_size * 2);
+    extranonce2_hex[en2_size * 2] = '\0';
+
     char submit[512];
     int len = tollgate_core_stratum_build_submit(submit, sizeof(submit), s_req_id++,
-                                                   cfg->stratum_user, job_id, ntime, nonce, version);
+                                                   cfg->stratum_user, job_id,
+                                                   extranonce2_hex, ntime, nonce);
     if (len <= 0) return ESP_FAIL;
 
     int written = esp_transport_write(s_transport, submit, len, 5000);
@@ -275,7 +303,8 @@ esp_err_t stratum_client_submit_share(uint32_t job_id, uint32_t nonce, uint32_t 
     }
 
     s_state.shares_accepted++;
-    ESP_LOGI(TAG, "Share submitted: job=%lu nonce=%08lx", (unsigned long)job_id, (unsigned long)nonce);
+    ESP_LOGI(TAG, "Share submitted: job=%lu nonce=%08lx en2_size=%d",
+             (unsigned long)job_id, (unsigned long)nonce, en2_size);
     return ESP_OK;
 }
 

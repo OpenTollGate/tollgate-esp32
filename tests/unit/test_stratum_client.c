@@ -112,13 +112,44 @@ int main(void)
     {
         char buf[512];
         int len = tollgate_core_stratum_build_submit(buf, sizeof(buf), 3, "worker1",
-                                                       100, 0x65a3b2c1, 0x12345678, 0x20000000);
+                                                       100, "00000000", 0x65a3b2c1, 0x12345678);
         ASSERT(len > 0, "build_submit returns positive length");
         ASSERT(strstr(buf, "mining.submit") != NULL, "contains method");
         ASSERT(strstr(buf, "worker1") != NULL, "contains worker");
         ASSERT(strstr(buf, "100") != NULL, "contains job_id");
+        ASSERT(strstr(buf, "00000000") != NULL, "contains extranonce2");
         ASSERT(strstr(buf, "65a3b2c1") != NULL, "contains ntime");
         ASSERT(strstr(buf, "12345678") != NULL, "contains nonce");
+
+        cJSON *root = cJSON_Parse(buf);
+        ASSERT(root != NULL, "submit json parses");
+        cJSON *params = cJSON_GetObjectItemCaseSensitive(root, "params");
+        ASSERT(cJSON_IsArray(params), "params is array");
+        ASSERT_EQ_INT(5, cJSON_GetArraySize(params), "submit has 5 params");
+        ASSERT_EQ_STR("worker1", cJSON_GetArrayItem(params, 0)->valuestring, "param[0] = user");
+        ASSERT_EQ_STR("100", cJSON_GetArrayItem(params, 1)->valuestring, "param[1] = job_id");
+        ASSERT_EQ_STR("00000000", cJSON_GetArrayItem(params, 2)->valuestring, "param[2] = extranonce2");
+        ASSERT_EQ_STR("65a3b2c1", cJSON_GetArrayItem(params, 3)->valuestring, "param[3] = ntime");
+        ASSERT_EQ_STR("12345678", cJSON_GetArrayItem(params, 4)->valuestring, "param[4] = nonce");
+        cJSON_Delete(root);
+    }
+
+    printf("\n--- build_submit with large extranonce2 ---\n");
+    {
+        char en2[65];
+        memset(en2, 'a', 64);
+        en2[64] = '\0';
+        char buf[512];
+        int len = tollgate_core_stratum_build_submit(buf, sizeof(buf), 4, "w2",
+                                                       42, en2, 0x11111111, 0x22222222);
+        ASSERT(len > 0, "build_submit large en2 returns positive length");
+        ASSERT(strstr(buf, en2) != NULL, "contains full 64-char extranonce2");
+
+        cJSON *root = cJSON_Parse(buf);
+        cJSON *params = cJSON_GetObjectItemCaseSensitive(root, "params");
+        ASSERT_EQ_INT(5, cJSON_GetArraySize(params), "still 5 params with large en2");
+        ASSERT_EQ_STR(en2, cJSON_GetArrayItem(params, 2)->valuestring, "large en2 in param[2]");
+        cJSON_Delete(root);
     }
 
     printf("\n--- parse_token valid ---\n");
