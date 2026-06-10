@@ -444,16 +444,16 @@ The ESP32 `mining.submit` message omits the required `extranonce2` field, shifti
 ### Fix Plan: Add extranonce2 to ESP32 mining.submit
 
 - [x] RC-1: Root cause identified (param layout mismatch, not authorize bug)
-- [ ] FIX-1: Add `extranonce2_size` to `stratum_client_state_t` (`stratum_client.h`)
-- [ ] FIX-2: Parse subscribe response in `stratum_client.c` — extract `result[2]` as extranonce2_size
-- [ ] FIX-3: Update `tollgate_core_stratum_build_submit()` — add extranonce2 param at position 2, drop version
-- [ ] FIX-4: Update `stratum_client_submit_share()` — generate zero-filled extranonce2 hex string
-- [ ] FIX-5: Update `sw_miner.c` call site — remove version param
-- [ ] FIX-6: Update unit test `test_stratum_client.c` — verify correct 5-param format with extranonce2
-- [ ] FIX-7: `make test-unit` — all 701+ tests pass
-- [ ] FIX-8: Build firmware + flash to Board A
-- [ ] FIX-9: Verify translator logs: no more `InvalidSubmission`, shares accepted
-- [ ] FIX-10: Commit + push
+- [x] FIX-1: Add `extranonce2_size` to `stratum_client_state_t` (`stratum_client.h`)
+- [x] FIX-2: Parse subscribe response in `stratum_client.c` — extract `result[2]` as extranonce2_size
+- [x] FIX-3: Update `tollgate_core_stratum_build_submit()` — add extranonce2 param at position 2, drop version
+- [x] FIX-4: Update `stratum_client_submit_share()` — generate zero-filled extranonce2 hex string
+- [x] FIX-5: Update `sw_miner.c` call site — remove version param
+- [x] FIX-6: Update unit test `test_stratum_client.c` — verify correct 5-param format with extranonce2
+- [x] FIX-7: `make test-unit` — all 701+ tests pass
+- [x] FIX-8: Build firmware + flash to Board A — verified on hardware
+- [x] FIX-9: Verify translator logs: no more `InvalidSubmission`, shares accepted
+- [x] FIX-10: Commit + push
 
 ### Files to Modify
 | File | Change |

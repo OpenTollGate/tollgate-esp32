@@ -45,3 +45,4 @@ tests/unit/test_stratum_proxy
 tests/unit/test_tollgate_client_mining
 interop/routers.env
 components/tollgate_core/dist/
+tests/unit/test_display
