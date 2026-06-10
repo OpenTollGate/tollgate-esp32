@@ -742,126 +742,171 @@ NerdQAxe Miner              Laptop                     VPS1 (66.92.204.38)
 
 ---
 
-## Phase 1H: Token-to-Session E2E — Complete the Chain
+## Phase 1H: Faucet-Based Token Delivery — Hardware Verification Plan
 
-**Status:** NEXT
-**Branch:** `feature/tollgate-core-v2`
-**Tag:** `v1.4.0` (SV1 submit fix + stable stratum)
+**Status:** IN PROGRESS
+**Branch:** `master`
+**Tag:** `v1.4.0` (SV1 submit fix + stable stratum), targeting `v1.5.0` (mining-for-internet MVP)
+**Commit:** `f7f24fa` (faucet client module)
 
-### What's Working (as of v1.4.0)
+### Architecture: Faucet Polling Approach
 
-- ESP32 connects to VPS1 translator at `66.92.204.38:34255` — stable, no reconnects
-- SV1 handshake: `mining.subscribe` + `mining.authorize` + `mining.submit` — all succeed
-- 3,558 shares/55s flowing through translator → pool
-- Tokens being minted: `Minted 1280 ehash from 2 quotes`, wallet balance 513k ehash
-- Translator proof sweeper runs every ~15s, batch-minting accumulated quotes
-
-### What's Not Working Yet
-
-The minted tokens accumulate in the translator's CDK wallet but are **not delivered to the ESP32**. The chain breaks at step 6 in the architecture:
+Instead of the translator pushing `mining.token` notifications (which was never wired up in the VPS translator), the ESP32 **periodically polls** the translator's faucet HTTP endpoint to pull ehash tokens into its on-device wallet.
 
 ```
-Shares → pool → mint → tokens (IN TRANSLATOR WALLET) → ✗ mining.token delivery → ✗ ESP32 wallet
+VPS Translator Faucet (:8083)
+  POST /mint/tokens {"amount":10}
+  → {"success":true, "token":"cashuA...", "amount":32}
+
+ESP32 faucet_client (FreeRTOS task, every 120s)
+  → HTTP POST to faucet URL
+  → Parse JSON response
+  → tls_worker_submit(token) → nucula_wallet_receive(token)
+  → Proofs stored in on-device wallet
 ```
 
-### Root Cause: Token Delivery Gap
+### Critical Blocker: Mint URL Mismatch — RESOLVED
 
-The translator's proof sweeper (`quote_sweeper.rs`) mints tokens into its local CDK wallet but does NOT:
-1. Generate a `cashuA...` token string from the minted proofs
-2. Look up the downstream connection for the locking pubkey
-3. Send a `mining.token` notification via `send_token_notification()`
+**Problem:** Faucet tokens carry mint URL `http://localhost:3338` (hashpool mint's configured URL). ESP32 wallet is initialized with `https://testnut.cashu.exchange`. These are different mints (different pubkeys, different units: `ehash` vs `sat`).
 
-The `send_token_notification()` method exists on `Downstream` (added in Phase 1D) but is never called from the proof sweeper path. The connection between minting and delivery is missing.
+**Resolution: Dual wallet + VPS mint URL fix**
+1. VPS: Change `mint.config.toml` and `tproxy.config.toml` `[mint]` URL from `http://localhost:3338` → `http://66.92.204.38:3338`
+2. Restart mint + translator on VPS
+3. ESP32: Add `http://66.92.204.38:3338` to `accepted_mints` in config → wallet[1]
+4. Token mint URL now matches wallet[1] URL → `receive()` succeeds
 
-### Architecture: Token Delivery Flow (Target)
+### What's Working
 
+| Component | Status | Evidence |
+|-----------|--------|----------|
+| ESP32 stratum client → VPS translator | Working | 6,363+ shares, 0 `InvalidSubmission` errors |
+| VPS hashpool chain | Running | bitcoind → SV2 pool → CDK mint → translator, all up |
+| Faucet API | Working | `POST http://66.92.204.38:8083/mint/tokens` returns tokens (~660K ehash minted) |
+| Faucet externally accessible | Working | Verified from dev machine: `curl` returns `{"success":true,"token":"cashuA...","amount":32}` |
+| Faucet client code | Complete | `faucet_client.c/h`, 13 unit tests pass, firmware builds clean |
+| 701+ unit tests | All passing | 34 test files |
+
+### What's Not Yet Verified (Hardware)
+
+1. Faucet client polls from ESP32 (HTTP client on ESP32 → VPS faucet)
+2. Token `receive()` succeeds with ehash-denominated proofs (unit mismatch risk)
+3. Wallet balance accumulates from repeated faucet polls
+4. Wallet `send()` can produce a token from ehash proofs for payment
+5. Captive portal accepts ehash token → creates session → grants internet
+6. Full loop: mine → faucet → wallet → pay → session → internet
+
+### Hardware Verification Plan
+
+#### Phase 0: Fix Mint URL Mismatch (VPS + Code Changes)
+
+**VPS changes:**
+- [ ] 0-1. Edit `~/hashpool/config/mint.config.toml`: change `url = "http://localhost:3338"` → `url = "http://66.92.204.38:3338"`
+- [ ] 0-2. Edit `~/hashpool/config/tproxy.config.toml` `[mint]` section: change `url = "http://localhost:3338"` → `url = "http://66.92.204.38:3338"`
+- [ ] 0-3. Restart mint + translator on VPS
+- [ ] 0-4. Verify faucet returns external URL: `curl -X POST http://66.92.204.38:8083/mint/tokens -d '{"amount":1}'` — token should contain `66.92.204.38:3338`
+
+**ESP32 code changes:**
+- [ ] 0-5. Update `write-mining-config-vps` Makefile target: add `http://66.92.204.38:3338` to `accepted_mints` array, set as `mint_url`
+- [ ] 0-6. `make test-unit` passes
+- [ ] 0-7. `idf.py build` succeeds
+
+#### Phase 1: Build & Flash
+
+- [ ] 1-1. `make lock-a PHASE="faucet-hw-test"`
+- [ ] 1-2. `make write-mining-config-vps BOARD=a STRATUM_HOST=66.92.204.38 STRATUM_PORT=34255`
+- [ ] 1-3. `make flash-a`
+- [ ] 1-4. Start serial monitor (`idf.py -p /dev/ttyACM0 monitor`)
+
+#### Phase 2: Boot Verification (Serial Monitor)
+
+Watch for these log sequences within ~30s of boot:
 ```
-proof_sweeper::sweep()
-  → cdk_wallet.mint() → proofs[]
-  → generate cashuA token from proofs
-  → lookup locking_pubkey in DownstreamMap
-  → downstream.send_token_notification(token)
-  → SV1 JSON-RPC notification: {"method":"mining.token","params":["cashuA..."]}
-  → ESP32 stratum_client receives mining.token
-  → tls_worker_submit(token) or s_token_cb(token)
-  → cashu_decode_token() → wallet_receive() → proofs stored in nucula wallet
+I identity: Derived identity: npub=... MAC=... SSID=TollGate-B96D80 IP=10.185.47.1
+I stratum_client: Connected to 66.92.204.38:34255
+I stratum_client: Subscribe response: extranonce2_size=8
+I stratum_client: Sent mining.authorize for user=tollgate_test (with locking pubkey)
+I faucet_client: Faucet client started (url=http://66.92.204.38:8083/mint/tokens, interval=120s)
+```
+After 30s initial delay:
+```
+I faucet_client: Received 32 ehash from faucet
+I nucula_wallet: Received 32 sat (N proofs) via wallet[http://66.92.204.38:3338], new balance=32
 ```
 
-### Phase 1H Checklist
+- [ ] 2-1. Board boots, connects to WiFi, gets upstream IP
+- [ ] 2-2. Stratum client connects to VPS translator
+- [ ] 2-3. Faucet client task starts
+- [ ] 2-4. First faucet poll succeeds (token received, wallet receive OK)
+- [ ] 2-5. **BLOCKER CHECK:** If `nucula_wallet_receive` fails with ehash proofs, investigate unit handling
 
-#### Step 1: Investigate translator token delivery path
-- [ ] 1H-1-1. Read `quote_sweeper.rs` — find where tokens are minted and what happens after
-- [ ] 1H-1-2. Read `cdk_handler.rs` — find MintQuoteNotification handling
-- [ ] 1H-1-3. Read `payment/mod.rs` — find token→downstream routing
-- [ ] 1H-1-4. Identify exact gap: which function needs to call `send_token_notification()`
-- [ ] 1H-1-5. Check if `DownstreamMap` is accessible from the payment/sweeper context
+#### Phase 3: Wallet Balance Verification (HTTP)
 
-#### Step 2: Implement token delivery in translator (Rust, hashpool repo)
-- [ ] 1H-2-1. Add `generate_token_from_proofs()` — serialize CDK proofs into cashuA v3 token
-- [ ] 1H-2-2. Wire `DownstreamMap` into proof sweeper (via Arc<Mutex<>> or channel)
-- [ ] 1H-2-3. After mint, lookup pubkey in DownstreamMap, send `mining.token` notification
-- [ ] 1H-2-4. Handle case where downstream disconnected (queue or discard token)
-- [ ] 1H-2-5. `cargo check` passes
+- [ ] 3-1. `curl http://10.185.47.1:2121/wallet` — verify `balance > 0`
+- [ ] 3-2. Wait 2-3 faucet poll intervals (4-6 min), check again — balance increased
+- [ ] 3-3. `curl http://10.185.47.1:2121/wallet` — verify `proof_count > 0`
 
-#### Step 3: Verify token delivery on ESP32
-- [ ] 1H-3-1. Rebuild translator on VPS1: `cargo build --release`
-- [ ] 1H-3-2. Restart translator with new binary
-- [ ] 1H-3-3. Monitor ESP32 serial for `Received mining.token:` log
-- [ ] 1H-3-4. Verify token stored in nucula wallet (check `/wallet` endpoint)
-- [ ] 1H-3-5. Check wallet balance increases over time
+#### Phase 4: Multiple Faucet Polls
 
-#### Step 4: E2E — Token to Session
-- [ ] 1H-4-1. Verify ESP32 wallet accumulates tokens from mining
-- [ ] 1H-4-2. Test payment: submit token via captive portal → session created
-- [ ] 1H-4-3. Verify internet access granted after payment
-- [ ] 1H-4-4. Test session expiry → internet revoked
-- [ ] 1H-4-5. Test re-mining → new token → re-pay → internet restored
+- [ ] 4-1. Wait for 3+ faucet polls, verify balance grows each time
+- [ ] 4-2. Check serial for any error patterns (faucet_client WARN/ERROR)
 
-#### Step 5: Integration tests
-- [ ] 1H-5-1. Update `test-mining-token.mjs` — verify token received + wallet balance
-- [ ] 1H-5-2. Create `test-mining-e2e.mjs` — full chain: mine → token → wallet → session → internet
-- [ ] 1H-5-3. `make test-unit` passes
-- [ ] 1H-5-4. Smoke tests pass
+#### Phase 5: Payment → Session → Internet (Manual E2E)
 
-#### Step 6: Cleanup
-- [ ] 1H-6-1. Commit translator changes (hashpool repo)
-- [ ] 1H-6-2. Commit ESP32 changes (if any)
-- [ ] 1H-6-3. Tag `v1.5.0` — mining-for-internet MVP
-- [ ] 1H-6-4. Update CHECKLIST.md, PLAN_MINING_INTERNET.md, AGENTS.md
-- [ ] 1H-6-5. Push all repos
+- [ ] 5-1. `curl -X POST http://10.185.47.1:2121/wallet/send -d '21'` — get cashuA token from wallet
+- [ ] 5-2. Submit token via captive portal: `curl -X POST http://10.185.47.1/ -d '<token>'`
+- [ ] 5-3. Verify session created: `curl http://10.185.47.1:2121/usage` — not `-1/-1`
+- [ ] 5-4. Connect to TollGate AP from laptop, verify internet access
+- [ ] 5-5. Wait for session expiry, verify internet blocked
+- [ ] 5-6. Repeat: wallet send → portal pay → session restored
 
-### Alternative: Direct Token Query (Fallback)
+#### Phase 6: Integration Tests
 
-If the push-based `mining.token` delivery proves difficult to implement in the translator, the fallback approach is:
+- [ ] 6-1. `TOLLGATE_IP=10.185.47.1 make test-mining-token`
+- [ ] 6-2. `TOLLGATE_IP=10.185.47.1 make smoke`
+- [ ] 6-3. Write `tests/integration/test-faucet-wallet.mjs` — faucet poll + wallet balance verification
 
-1. ESP32 periodically polls the CDK mint's `/v1/keys` endpoint (or the translator's wallet API)
-2. ESP32 uses its locking pubkey to query for pending tokens
-3. ESP32 receives and stores tokens
+#### Phase 7: Full E2E with NerdQAxe Miner (if hardware available)
 
-This requires either:
-- A new HTTP endpoint on the translator (e.g., `GET /mining/tokens?pubkey=...`)
-- Direct CDK mint integration on ESP32 (heavier, requires blinded minting)
+- [ ] 7-1. Connect NerdQAxe to TollGate-B96D80 AP
+- [ ] 7-2. Configure NerdQAxe stratum: `10.185.47.1:3334`
+- [ ] 7-3. Verify shares flow: NerdQAxe → ESP32 proxy → VPS translator → pool
+- [ ] 7-4. Faucet accumulates tokens from mining activity
+- [ ] 7-5. Wallet balance grows from faucet polls
+- [ ] 7-6. Full loop: mine → faucet → wallet → pay → session → internet
 
-The push approach (1H-2 above) is preferred — lower latency, simpler ESP32 code.
+#### Phase 8: Cleanup & Tag
 
-### Estimated Effort
+- [ ] 8-1. Commit all fixes and test results
+- [ ] 8-2. Tag `v1.5.0` — mining-for-internet MVP
+- [ ] 8-3. Update CHECKLIST.md, PLAN_MINING_INTERNET.md, AGENTS.md
+- [ ] 8-4. `make unlock-a`
+- [ ] 8-5. Push all repos
 
-| Step | Time | Difficulty | Risk |
-|------|------|-----------|------|
-| 1H-1: Investigate | 1h | Medium | Low |
-| 1H-2: Implement | 2-4h | High | Medium (Rust, unfamiliar codebase) |
-| 1H-3: Verify | 1h | Medium | Low |
-| 1H-4: E2E | 2h | Medium | Medium (depends on translator fix) |
-| 1H-5: Tests | 1h | Low | Low |
-| 1H-6: Cleanup | 30m | Low | Low |
-| **Total** | **7-9h** | | |
+### Key Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| `ehash` unit not handled by nucula `receive()` | Wallet can't swap proofs with mint | Test on hardware first; may need nucula code change |
+| VPS mint restart clears keysets | Existing tokens become invalid | Faucet generates fresh tokens, safe |
+| ESP32 can't reach `66.92.204.38:3338` (firewall) | Wallet can't contact mint for swap | Verify port 3338 open on VPS; check ESP32 STA routing |
+| Faucet returns `success: false` | No tokens to receive | Ensure translator has accumulated quotes (miner shares flowing) |
+| Wallet send produces ehash token but portal expects sat | Payment rejected by allotment calc | May need allotment calculation update for ehash vs sat |
+
+### Log Tags Reference
+
+| Tag | Key Messages |
+|-----|-------------|
+| `faucet_client` | `Received N ehash from faucet`, `Faucet request failed`, `Failed to parse faucet JSON` |
+| `stratum_client` | `Connected to`, `Subscribe response: extranonce2_size=`, `Share submitted` |
+| `nucula_wallet` | `Received N sat (X proofs) via wallet[URL]`, `Failed to decode token`, `No wallet found for mint` |
+| `tls_worker` | `No wallet queue, receiving synchronously`, `Wallet queue full` |
+| `tollgate_api` | Payment processing, session creation |
 
 ### Future (Phase 2+)
 
 After 1H is complete:
-- **Phase 2A:** NerdQAxe ASIC miner connects to TollGate AP → real hashrate
-- **Phase 2B:** Auto-payment: ESP32 auto-submits mined tokens for sessions (no manual step)
-- **Phase 2C:** SV2 direct on ESP32 — bypass translator, Noise NX + ElligatorSwift
-- **Phase 2D:** Multiple miners per TollGate, per-miner token accounting
+- **Phase 1E:** NerdQAxe ASIC miner auto-discovery (scan for TollGate-* SSIDs)
+- **Phase 1I:** Auto-payment — ESP32 auto-submits mined tokens for sessions (no manual step)
+- **Phase 2A:** SV2 direct on ESP32 — bypass translator, Noise NX + ElligatorSwift
+- **Phase 2B:** Multiple miners per TollGate, per-miner token accounting
 - **Phase 3:** Production deployment — Ansible playbooks, monitoring, alerts
-- [ ] 1G-10-3. Update CHECKLIST.md and PLAN_MINING_INTERNET.md with results

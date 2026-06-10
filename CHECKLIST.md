@@ -257,10 +257,72 @@
 ### Mining-for-Internet — Phase 1D+: Hardware + E2E (needs board)
 - [x] Switch test mint to testnut.cashu.exchange (commit 61ea067)
 - [x] Community engagement: supportive comments on nuts#341 and cdk#1834 (posted 2026-06-03)
+- [x] Faucet client module: faucet_client.c/h (commit f7f24fa)
+- [x] Config fields: faucet_url, faucet_poll_interval_s (commit f7f24fa)
+- [x] 13 faucet unit tests pass (commit f7f24fa)
 - [ ] Flash mining config to working NerdAxe + run test-mining-token
 - [ ] Full E2E with translator: translator mints → mining.token → ESP32 wallet
 - [ ] 1E: Miner auto-discovery (NerdQAxe scans for TollGate-* SSIDs)
 - [ ] 1F: Full E2E: Board + NerdAxe + hashpool VPS → mining → token → internet
+
+### Mining-for-Internet — Phase 1H: Faucet Hardware Verification — IN PROGRESS
+
+#### Phase 0: Fix Mint URL Mismatch
+- [ ] 0-1. VPS: change mint.config.toml url → `http://66.92.204.38:3338`
+- [ ] 0-2. VPS: change tproxy.config.toml [mint] url → `http://66.92.204.38:3338`
+- [ ] 0-3. VPS: restart mint + translator
+- [ ] 0-4. Verify faucet returns external URL in tokens
+- [ ] 0-5. ESP32: add hashpool mint to accepted_mints in Makefile config template
+- [ ] 0-6. `make test-unit` passes
+- [ ] 0-7. `idf.py build` succeeds
+
+#### Phase 1: Build & Flash
+- [ ] 1-1. `make lock-a PHASE="faucet-hw-test"`
+- [ ] 1-2. `make write-mining-config-vps BOARD=a STRATUM_HOST=66.92.204.38`
+- [ ] 1-3. `make flash-a`
+- [ ] 1-4. Start serial monitor
+
+#### Phase 2: Boot Verification (Serial)
+- [ ] 2-1. Board boots + WiFi connect + upstream IP
+- [ ] 2-2. Stratum client connects to VPS translator
+- [ ] 2-3. Faucet client task starts
+- [ ] 2-4. First faucet poll succeeds (token received + wallet receive)
+- [ ] 2-5. ehash unit handling check (potential blocker)
+
+#### Phase 3: Wallet Balance (HTTP)
+- [ ] 3-1. `GET /wallet` returns balance > 0
+- [ ] 3-2. Balance grows after 2-3 faucet polls
+- [ ] 3-3. `GET /wallet` returns proof_count > 0
+
+#### Phase 4: Multiple Faucet Polls
+- [ ] 4-1. 3+ polls succeed, balance grows each time
+- [ ] 4-2. No recurring errors in serial log
+
+#### Phase 5: Manual E2E (Pay → Session → Internet)
+- [ ] 5-1. `POST /wallet/send` returns cashuA token
+- [ ] 5-2. `POST /` with token → session created
+- [ ] 5-3. `GET /usage` shows active session
+- [ ] 5-4. Internet access works through AP
+- [ ] 5-5. Session expires → internet blocked
+- [ ] 5-6. Re-pay → session restored
+
+#### Phase 6: Integration Tests
+- [ ] 6-1. `make test-mining-token` passes
+- [ ] 6-2. `make smoke` passes
+- [ ] 6-3. Write test-faucet-wallet.mjs integration test
+
+#### Phase 7: NerdQAxe Full E2E (optional)
+- [ ] 7-1. NerdQAxe connects to TollGate AP + stratum
+- [ ] 7-2. Shares flow through to VPS pool
+- [ ] 7-3. Faucet accumulates from mining
+- [ ] 7-4. Full loop: mine → faucet → wallet → pay → internet
+
+#### Phase 8: Cleanup
+- [ ] 8-1. Commit all changes
+- [ ] 8-2. Tag `v1.5.0`
+- [ ] 8-3. Update planning docs
+- [ ] 8-4. `make unlock-a`
+- [ ] 8-5. Push all repos
 
 ---
 
@@ -402,10 +464,10 @@
 - [x] 1G-6-3. Push esp32-tollgate to relay.ngit.dev via nostr://
 - [x] 1G-6-4. Update REMOTES.md with current board inventory
 
-#### Step 7: Fix SV1 submit bug — IN PROGRESS
+#### Step 7: Fix SV1 submit bug — COMPLETE (tag v1.4.0)
 - [x] 1G-7-1. Root cause analysis complete (extranonce2 missing from submit)
-- [ ] 1G-7-2. Implement fix (see SV1 Submit Bug checklist above)
-- [ ] 1G-7-3. Verify shares accepted by translator
+- [x] 1G-7-2. Implement fix (added extranonce2 to submit, all tests pass)
+- [x] 1G-7-3. Verify shares accepted by translator (6,363+ shares, 0 errors)
 
 #### Step 8: Verify token flow
 - [ ] 1G-8-1. Shares → pool → mint → token
@@ -469,9 +531,16 @@ The ESP32 `mining.submit` message omits the required `extranonce2` field, shifti
 
 ## TODO — Remaining
 
-### Phase 1G: Ship Phase 1 (Session 2026-06-10) — IN PROGRESS
-- See Session 2026-06-10 checklist above
-- See SV1 Submit Bug fix plan above
+### Phase 1H: Faucet Hardware Verification — IN PROGRESS
+- See Phase 1H checklist above (Phase 0-8)
+- Key blocker: mint URL mismatch (Phase 0)
+- Key risk: ehash unit handling in nucula wallet
+
+### Phase 1G: Ship Phase 1 (Session 2026-06-10) — MOSTLY COMPLETE
+- [x] SV1 submit bug FIXED (tag v1.4.0)
+- [x] Hashpool chain running on VPS1
+- [x] Faucet API exposed and working
+- [ ] Full E2E: mine → faucet → wallet → session → internet (Phase 1H)
 
 ### Local Relay (branch `feature/local-relay`) — DONE, merging to master
 - [ ] Integration test: CVM through local relay
