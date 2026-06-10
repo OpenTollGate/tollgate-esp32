@@ -83,7 +83,7 @@ esp_err_t sw_miner_start(void)
     s_running = true;
     s_hashrate = 0.0;
 
-    BaseType_t ret = xTaskCreate(sw_miner_task, "sw_miner", 6144, NULL, 2, &s_task_handle);
+    BaseType_t ret = xTaskCreate(sw_miner_task, "sw_miner", 4096, NULL, 2, &s_task_handle);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create sw_miner task");
         s_running = false;

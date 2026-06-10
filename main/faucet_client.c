@@ -3,6 +3,7 @@
 #include "tls_worker.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
+#include "esp_system.h"
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -15,22 +16,28 @@ static TaskHandle_t s_task = NULL;
 
 static char *s_response_buf = NULL;
 static int s_response_len = 0;
+static int s_response_cap = 0;
 
 static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 {
     switch (evt->event_id) {
     case HTTP_EVENT_ON_DATA:
         if (s_response_buf == NULL) {
-            s_response_buf = malloc(4096);
+            s_response_cap = 8192;
+            s_response_buf = malloc(s_response_cap);
             if (!s_response_buf) return ESP_FAIL;
             s_response_len = 0;
         }
-        int space = 4096 - s_response_len - 1;
-        if (space > 0 && evt->data_len <= space) {
-            memcpy(s_response_buf + s_response_len, evt->data, evt->data_len);
-            s_response_len += evt->data_len;
-            s_response_buf[s_response_len] = '\0';
+        if (s_response_len + evt->data_len + 1 > s_response_cap) {
+            int new_cap = s_response_cap * 2;
+            char *new_buf = realloc(s_response_buf, new_cap);
+            if (!new_buf) return ESP_FAIL;
+            s_response_buf = new_buf;
+            s_response_cap = new_cap;
         }
+        memcpy(s_response_buf + s_response_len, evt->data, evt->data_len);
+        s_response_len += evt->data_len;
+        s_response_buf[s_response_len] = '\0';
         break;
     default:
         break;
@@ -98,7 +105,7 @@ static bool faucet_poll_once(void)
     if (success && cJSON_IsTrue(success) && token_item && cJSON_IsString(token_item)) {
         const char *token = token_item->valuestring;
         int amount = amount_item ? amount_item->valueint : 0;
-        ESP_LOGI(TAG, "Received %d ehash from faucet", amount);
+        ESP_LOGI(TAG, "Received %d ehash from faucet (token len=%d, prefix=%.6s)", amount, (int)strlen(token), token);
         tls_worker_submit(token);
         result = true;
     }
@@ -126,14 +133,19 @@ static void faucet_client_task(void *arg)
 
 esp_err_t faucet_client_start(void)
 {
+    ESP_LOGI(TAG, "faucet_client_start() called");
     const tollgate_config_t *cfg = tollgate_config_get();
     if (cfg->faucet_url[0] == '\0') {
         ESP_LOGI(TAG, "No faucet URL configured, skipping");
         return ESP_OK;
     }
-    if (s_running) return ESP_OK;
+    if (s_running) {
+        ESP_LOGI(TAG, "Already running, skipping");
+        return ESP_OK;
+    }
     s_running = true;
-    BaseType_t ret = xTaskCreate(faucet_client_task, "faucet_cli", 6144, NULL, 3, &s_task);
+    ESP_LOGI(TAG, "Creating faucet task (stack=4096, url=%s, free_heap=%lu)", cfg->faucet_url, (unsigned long)esp_get_free_heap_size());
+    BaseType_t ret = xTaskCreate(faucet_client_task, "faucet_cli", 4096, NULL, 3, &s_task);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create faucet client task");
         s_running = false;
