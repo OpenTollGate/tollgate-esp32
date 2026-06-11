@@ -95,6 +95,7 @@ endef
 .PHONY: tokens wallet-setup wallet-info wallet-balance mint-token send-token
 .PHONY: clean erase-nvs reset serial-log bootstrap-config
 .PHONY: write-mining-config write-mining-config-vps
+.PHONY: write-b2b-config-a write-b2b-config-b
 .PHONY: cvm-pubkey cvm-test-tool cvm-announce
 .PHONY: lock-a lock-b unlock-a unlock-b force-unlock-a force-unlock-b lock-status
 
@@ -147,6 +148,8 @@ help:
 	@echo "  reset             Hardware reset on PORT"
 	@echo "  bootstrap-config  Write .env values to SPIFFS config.json"
 	@echo "  write-mining-config-vps  Write mining config with VPS stratum_host"
+	@echo "  write-b2b-config-a       Write B2B upstream config to Board A (TollGate-B96D80)"
+	@echo "  write-b2b-config-b       Write B2B downstream config to Board B (client → Board A)"
 	@echo "  serial-log        Capture serial output"
 
 # ──────────────────────────────────────────────
@@ -420,6 +423,44 @@ write-mining-config-vps:
 	python3 -m esptool --port $(PORT_FOR_BOARD) --baud $(BAUD) write_flash $(SPIFFS_OFFSET) "$$TMPDIR/spiffs.bin" && \
 	rm -rf "$$TMPDIR" && \
 	echo "VPS mining config written (stratum_host=$(STRATUM_HOST):$(STRATUM_PORT))."
+
+B2B_MINT_URL := http://66.92.204.38:3338
+B2B_FAUCET_URL := http://66.92.204.38:8083/mint/tokens
+B2B_STRATUM_HOST := 66.92.204.38
+
+define write_b2b_config_a
+	$(call require_lock_$(1))
+	@echo "=== Writing B2B upstream config to Board $(1) ($(PORT_$(1))) ==="
+	@TMPDIR=$$(mktemp -d) && \
+	echo '{"nsec":"$(NSEC_$(1))","wifi_networks":[{"ssid":"$(WIFI_SSID)","password":"$(WIFI_PASSWORD)"}],"ap_password":"","mint_url":"$(B2B_MINT_URL)","accepted_mints":["$(B2B_MINT_URL)"],"price_per_step":21,"step_size_ms":60000,"client_enabled":false,"display_enabled":false,"cvm_enabled":false,"sync_enabled":false,"wifistr_enabled":false,"local_relay_enabled":false,"mint_health_enabled":true,"mining":{"enabled":true,"payout_mode":"auto","stratum_host":"$(B2B_STRATUM_HOST)","stratum_port":34255,"stratum_user":"tollgate_test","stratum_pass":"x","mining_port":3334,"faucet_url":"$(B2B_FAUCET_URL)","faucet_poll_interval_s":120}}' > "$$TMPDIR/config.json" && \
+	echo "  Generating SPIFFS image..." && \
+	python3 $(SPIFFSGEN) --page-size 256 --obj-name-len 32 --use-magic --use-magic-len $(SPIFFS_SIZE) "$$TMPDIR" "$$TMPDIR/spiffs.bin" && \
+	echo "  Writing to flash..." && \
+	python3 -m esptool --port $(PORT_$(1)) --baud $(BAUD) write_flash $(SPIFFS_OFFSET) "$$TMPDIR/spiffs.bin" && \
+	rm -rf "$$TMPDIR" && \
+	echo "B2B upstream config written to Board $(1)."
+	@python3 -m esptool --port $(PORT_$(1)) run 2>/dev/null || true
+endef
+
+define write_b2b_config_b
+	$(call require_lock_$(1))
+	@echo "=== Writing B2B downstream config to Board $(1) ($(PORT_$(1))) ==="
+	@TMPDIR=$$(mktemp -d) && \
+	echo '{"nsec":"$(NSEC_$(1))","wifi_networks":[{"ssid":"TollGate-B96D80","password":""},{"ssid":"$(WIFI_SSID)","password":"$(WIFI_PASSWORD)"}],"ap_password":"","mint_url":"$(B2B_MINT_URL)","accepted_mints":["$(B2B_MINT_URL)"],"price_per_step":21,"step_size_ms":60000,"client_enabled":true,"client_steps_to_buy":1,"client_renewal_threshold_pct":20,"client_retry_interval_ms":30000,"display_enabled":false,"cvm_enabled":false,"sync_enabled":false,"wifistr_enabled":false,"local_relay_enabled":false,"mint_health_enabled":true,"mining":{"enabled":true,"payout_mode":"auto","stratum_host":"$(B2B_STRATUM_HOST)","stratum_port":34255,"stratum_user":"tollgate_test","stratum_pass":"x","mining_port":3334,"faucet_url":"$(B2B_FAUCET_URL)","faucet_poll_interval_s":120}}' > "$$TMPDIR/config.json" && \
+	echo "  Generating SPIFFS image..." && \
+	python3 $(SPIFFSGEN) --page-size 256 --obj-name-len 32 --use-magic --use-magic-len $(SPIFFS_SIZE) "$$TMPDIR" "$$TMPDIR/spiffs.bin" && \
+	echo "  Writing to flash..." && \
+	python3 -m esptool --port $(PORT_$(1)) --baud $(BAUD) write_flash $(SPIFFS_OFFSET) "$$TMPDIR/spiffs.bin" && \
+	rm -rf "$$TMPDIR" && \
+	echo "B2B downstream config written to Board $(1)."
+	@python3 -m esptool --port $(PORT_$(1)) run 2>/dev/null || true
+endef
+
+write-b2b-config-a:
+	$(call write_b2b_config_a,A)
+
+write-b2b-config-b:
+	$(call write_b2b_config_b,B)
 
 # ──────────────────────────────────────────────
 # Wallet

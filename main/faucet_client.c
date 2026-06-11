@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "esp_http_client.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -13,6 +14,8 @@
 static const char *TAG = "faucet_client";
 static bool s_running = false;
 static TaskHandle_t s_task = NULL;
+static StaticTask_t s_task_buffer;
+static StackType_t *s_stack_buffer = NULL;
 
 static char *s_response_buf = NULL;
 static int s_response_len = 0;
@@ -145,9 +148,20 @@ esp_err_t faucet_client_start(void)
     }
     s_running = true;
     ESP_LOGI(TAG, "Creating faucet task (stack=4096, url=%s, free_heap=%lu)", cfg->faucet_url, (unsigned long)esp_get_free_heap_size());
-    BaseType_t ret = xTaskCreate(faucet_client_task, "faucet_cli", 4096, NULL, 3, &s_task);
-    if (ret != pdPASS) {
+
+    if (s_stack_buffer) { free(s_stack_buffer); s_stack_buffer = NULL; }
+    s_stack_buffer = (StackType_t *)heap_caps_malloc(4096 * sizeof(StackType_t), MALLOC_CAP_SPIRAM);
+    if (!s_stack_buffer) s_stack_buffer = (StackType_t *)malloc(4096 * sizeof(StackType_t));
+    if (!s_stack_buffer) {
+        ESP_LOGE(TAG, "Failed to allocate faucet task stack");
+        s_running = false;
+        return ESP_FAIL;
+    }
+
+    s_task = xTaskCreateStatic(faucet_client_task, "faucet_cli", 4096, NULL, 3, s_stack_buffer, &s_task_buffer);
+    if (!s_task) {
         ESP_LOGE(TAG, "Failed to create faucet client task");
+        free(s_stack_buffer); s_stack_buffer = NULL;
         s_running = false;
         return ESP_FAIL;
     }

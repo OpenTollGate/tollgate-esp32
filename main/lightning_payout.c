@@ -62,6 +62,11 @@ void lightning_payout_tick(void)
 
     uint64_t balance = nucula_wallet_balance();
 
+    if (strcmp(nucula_wallet_unit(), "sat") != 0) {
+        ESP_LOGI(TAG, "Wallet unit is '%s', skipping Lightning payout", nucula_wallet_unit());
+        return;
+    }
+
     for (int m = 0; m < s_config.mint_count; m++) {
         const payout_mint_config_t *mc = &s_config.mints[m];
 
