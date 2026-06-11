@@ -125,6 +125,8 @@ static esp_err_t api_get_discovery(httpd_req_t *req)
     char price_str[32];
     snprintf(price_str, sizeof(price_str), "%d", cfg->price_per_step);
 
+    const char *wallet_unit = nucula_wallet_unit();
+
     int mint_count = 0;
     const mint_status_t *mints = mint_health_get_all(&mint_count);
     bool any_reachable = false;
@@ -136,7 +138,7 @@ static esp_err_t api_get_discovery(httpd_req_t *req)
         cJSON_AddItemToArray(price_tag, cJSON_CreateString("price_per_step"));
         cJSON_AddItemToArray(price_tag, cJSON_CreateString("cashu"));
         cJSON_AddItemToArray(price_tag, cJSON_CreateString(price_str));
-        cJSON_AddItemToArray(price_tag, cJSON_CreateString("sat"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(wallet_unit));
         cJSON_AddItemToArray(price_tag, cJSON_CreateString(mints[i].url));
         cJSON_AddItemToArray(price_tag, cJSON_CreateString("1"));
         cJSON_AddItemToArray(tags, price_tag);
@@ -147,7 +149,7 @@ static esp_err_t api_get_discovery(httpd_req_t *req)
         cJSON_AddItemToArray(price_tag, cJSON_CreateString("price_per_step"));
         cJSON_AddItemToArray(price_tag, cJSON_CreateString("cashu"));
         cJSON_AddItemToArray(price_tag, cJSON_CreateString(price_str));
-        cJSON_AddItemToArray(price_tag, cJSON_CreateString("sat"));
+        cJSON_AddItemToArray(price_tag, cJSON_CreateString(wallet_unit));
         cJSON_AddItemToArray(price_tag, cJSON_CreateString(cfg->mint_url));
         cJSON_AddItemToArray(price_tag, cJSON_CreateString("1"));
         cJSON_AddItemToArray(tags, price_tag);

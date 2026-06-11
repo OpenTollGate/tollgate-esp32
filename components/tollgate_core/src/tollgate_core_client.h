@@ -6,6 +6,7 @@
 
 #define TG_CLIENT_MAX_MINT_URL        256
 #define TG_CLIENT_MAX_METRIC          32
+#define TG_CLIENT_MAX_UNIT            16
 #define TG_CLIENT_MAX_GW_IP_LEN      16
 
 typedef enum {
@@ -26,6 +27,7 @@ typedef struct {
     int step_size_ms;
     char mint_url[TG_CLIENT_MAX_MINT_URL];
     char metric[TG_CLIENT_MAX_METRIC];
+    char unit[TG_CLIENT_MAX_UNIT];
     bool mining_available;
     uint16_t mining_port;
 } tollgate_discovery_t;

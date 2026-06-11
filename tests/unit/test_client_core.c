@@ -14,7 +14,7 @@ int main(void)
                            "\"tags\":["
                            "[\"metric\",\"milliseconds\"],"
                            "[\"step_size\",\"60000\"],"
-                           "[\"price_per_step\",\"21\",\"21\",\"sha256\",\"https://test.mint\"]"
+                           "[\"price_per_step\",\"cashu\",\"21\",\"sat\",\"https://test.mint\",\"1\"]"
                            "]}";
         tollgate_discovery_t disc = {0};
         bool ok = tollgate_core_client_parse_discovery(json, &disc);
@@ -24,6 +24,7 @@ int main(void)
         ASSERT_EQ_INT(60000, disc.step_size_ms, "step_size_ms");
         ASSERT(strcmp(disc.metric, "milliseconds") == 0, "metric");
         ASSERT(strcmp(disc.mint_url, "https://test.mint") == 0, "mint_url");
+        ASSERT(strcmp(disc.unit, "sat") == 0, "unit is sat");
     }
 
     printf("\n--- parse_discovery wrong kind ---\n");
@@ -64,6 +65,31 @@ int main(void)
         tollgate_discovery_t disc = {0};
         bool ok = tollgate_core_client_parse_discovery(json, &disc);
         ASSERT(ok, "no tags returns true");
+    }
+
+    printf("\n--- parse_discovery hash unit ---\n");
+    {
+        const char *json = "{\"kind\":10021,\"content\":\"\","
+                           "\"tags\":["
+                           "[\"metric\",\"milliseconds\"],"
+                           "[\"step_size\",\"60000\"],"
+                           "[\"price_per_step\",\"cashu\",\"21\",\"hash\",\"http://66.92.204.38:3338\",\"1\"]"
+                           "]}";
+        tollgate_discovery_t disc = {0};
+        bool ok = tollgate_core_client_parse_discovery(json, &disc);
+        ASSERT(ok, "parse_discovery hash returns true");
+        ASSERT_EQ_INT(21, disc.price_per_step, "price_per_step");
+        ASSERT(strcmp(disc.unit, "hash") == 0, "unit is hash");
+        ASSERT(strcmp(disc.mint_url, "http://66.92.204.38:3338") == 0, "mint_url");
+    }
+
+    printf("\n--- parse_discovery unit default ---\n");
+    {
+        const char *json = "{\"kind\":10021,\"tags\":[]}";
+        tollgate_discovery_t disc = {0};
+        bool ok = tollgate_core_client_parse_discovery(json, &disc);
+        ASSERT(ok, "empty tags returns true");
+        ASSERT(strcmp(disc.unit, "sat") == 0, "unit defaults to sat");
     }
 
     printf("\n--- parse_discovery invalid JSON ---\n");

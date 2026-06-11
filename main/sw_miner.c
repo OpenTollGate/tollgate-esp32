@@ -5,6 +5,7 @@
 #include "config.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_heap_caps.h"
 #include "mbedtls/sha256.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,6 +15,8 @@ static const char *TAG = "sw_miner";
 static bool s_running = false;
 static TaskHandle_t s_task_handle = NULL;
 static double s_hashrate = 0.0;
+static StaticTask_t s_task_buffer;
+static StackType_t *s_stack_buffer = NULL;
 
 static void sha256d(const uint8_t *data, size_t len, uint8_t *hash)
 {
@@ -83,9 +86,26 @@ esp_err_t sw_miner_start(void)
     s_running = true;
     s_hashrate = 0.0;
 
-    BaseType_t ret = xTaskCreate(sw_miner_task, "sw_miner", 4096, NULL, 2, &s_task_handle);
-    if (ret != pdPASS) {
+    if (s_stack_buffer) {
+        free(s_stack_buffer);
+        s_stack_buffer = NULL;
+    }
+
+    s_stack_buffer = (StackType_t *)heap_caps_malloc(4096 * sizeof(StackType_t), MALLOC_CAP_SPIRAM);
+    if (!s_stack_buffer) {
+        s_stack_buffer = (StackType_t *)malloc(4096 * sizeof(StackType_t));
+    }
+    if (!s_stack_buffer) {
+        ESP_LOGE(TAG, "Failed to allocate stack");
+        s_running = false;
+        return ESP_FAIL;
+    }
+
+    s_task_handle = xTaskCreateStatic(sw_miner_task, "sw_miner", 4096, NULL, 2, s_stack_buffer, &s_task_buffer);
+    if (!s_task_handle) {
         ESP_LOGE(TAG, "Failed to create sw_miner task");
+        free(s_stack_buffer);
+        s_stack_buffer = NULL;
         s_running = false;
         return ESP_FAIL;
     }
@@ -98,6 +118,10 @@ void sw_miner_stop(void)
     if (s_task_handle) {
         vTaskDelay(pdMS_TO_TICKS(500));
         s_task_handle = NULL;
+    }
+    if (s_stack_buffer) {
+        free(s_stack_buffer);
+        s_stack_buffer = NULL;
     }
 }
 

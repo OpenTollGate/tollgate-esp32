@@ -16,6 +16,7 @@ bool tollgate_core_client_parse_discovery(const char *json_str, tollgate_discove
 
     memset(out, 0, sizeof(tollgate_discovery_t));
     out->is_tollgate = true;
+    strncpy(out->unit, "sat", sizeof(out->unit) - 1);
 
     cJSON *tags = cJSON_GetObjectItemCaseSensitive(root, "tags");
     if (!tags || !cJSON_IsArray(tags)) {
@@ -55,10 +56,14 @@ bool tollgate_core_client_parse_discovery(const char *json_str, tollgate_discove
                 }
             } else {
                 cJSON *amount = cJSON_GetArrayItem(tag, 2);
+                cJSON *unit_val = cJSON_GetArrayItem(tag, 3);
                 cJSON *mint = cJSON_GetArrayItem(tag, 4);
 
                 if (amount && cJSON_IsString(amount)) {
                     out->price_per_step = atoi(amount->valuestring);
+                }
+                if (unit_val && cJSON_IsString(unit_val)) {
+                    strncpy(out->unit, unit_val->valuestring, sizeof(out->unit) - 1);
                 }
                 if (mint && cJSON_IsString(mint)) {
                     strncpy(out->mint_url, mint->valuestring, sizeof(out->mint_url) - 1);

@@ -216,21 +216,29 @@ esp_err_t nucula_wallet_send(uint64_t amount_sat, char *token_out, size_t token_
         return ESP_FAIL;
     }
 
+    std::string wallet_unit = "sat";
+    for (const auto &ks : w->keysets()) {
+        if (ks.active) {
+            wallet_unit = ks.unit;
+            break;
+        }
+    }
+
     std::vector<cashu::Proof> selected, remaining;
     if (!w->select_proofs(amount, selected, remaining)) {
-        ESP_LOGE(TAG, "Insufficient balance for %d sat", amount);
+        ESP_LOGE(TAG, "Insufficient balance for %d %s", amount, wallet_unit.c_str());
         return ESP_FAIL;
     }
 
     std::vector<cashu::Proof> new_proofs, change;
-    if (!w->swap(selected, (int)amount_sat, new_proofs, change)) {
+    if (!w->swap(selected, (int)amount_sat, new_proofs, change, wallet_unit)) {
         ESP_LOGE(TAG, "Swap for send failed");
         return ESP_FAIL;
     }
 
     cashu::Token token;
     token.mint = w->mint_url();
-    token.unit = "sat";
+    token.unit = wallet_unit;
     for (auto &p : new_proofs) token.proofs.push_back(p);
 
     std::string encoded = cashu::serialize_token_v3(token);
@@ -273,6 +281,22 @@ int nucula_wallet_proof_count(void)
         if (s_wallets[i]) total += (int)s_wallets[i]->proofs().size();
     }
     return total;
+}
+
+const char *nucula_wallet_unit(void)
+{
+    static char s_unit[16] = "sat";
+    for (int i = 0; i < s_wallet_count; i++) {
+        if (!s_wallets[i]) continue;
+        for (const auto &ks : s_wallets[i]->keysets()) {
+            if (ks.active) {
+                strncpy(s_unit, ks.unit.c_str(), sizeof(s_unit) - 1);
+                s_unit[sizeof(s_unit) - 1] = '\0';
+                return s_unit;
+            }
+        }
+    }
+    return s_unit;
 }
 
 char *nucula_wallet_proofs_json(void)

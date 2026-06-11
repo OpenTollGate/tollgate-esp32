@@ -27,6 +27,8 @@ esp_err_t nucula_wallet_melt(const char *bolt11_invoice, uint64_t max_fee_sats);
 
 void nucula_wallet_print_status(void);
 
+const char *nucula_wallet_unit(void);
+
 #ifdef __cplusplus
 }
 #endif
