@@ -446,7 +446,7 @@ define write_b2b_config_b
 	$(call require_lock_$(1))
 	@echo "=== Writing B2B downstream config to Board $(1) ($(PORT_$(1))) ==="
 	@TMPDIR=$$(mktemp -d) && \
-	echo '{"nsec":"$(NSEC_$(1))","wifi_networks":[{"ssid":"TollGate-B96D80","password":""},{"ssid":"$(WIFI_SSID)","password":"$(WIFI_PASSWORD)"}],"ap_password":"","mint_url":"$(B2B_MINT_URL)","accepted_mints":["$(B2B_MINT_URL)"],"price_per_step":21,"step_size_ms":60000,"client_enabled":true,"client_steps_to_buy":1,"client_renewal_threshold_pct":20,"client_retry_interval_ms":30000,"display_enabled":false,"cvm_enabled":false,"sync_enabled":false,"wifistr_enabled":false,"local_relay_enabled":false,"mint_health_enabled":true,"mining":{"enabled":true,"payout_mode":"auto","stratum_host":"$(B2B_STRATUM_HOST)","stratum_port":34255,"stratum_user":"tollgate_test","stratum_pass":"x","mining_port":3334,"faucet_url":"$(B2B_FAUCET_URL)","faucet_poll_interval_s":120}}' > "$$TMPDIR/config.json" && \
+	echo '{"nsec":"$(NSEC_$(1))","wifi_networks":[{"ssid":"TollGate-B96D80","password":""}],"ap_password":"","mint_url":"$(B2B_MINT_URL)","accepted_mints":["$(B2B_MINT_URL)"],"price_per_step":21,"step_size_ms":60000,"client_enabled":true,"client_steps_to_buy":1,"client_renewal_threshold_pct":20,"client_retry_interval_ms":30000,"display_enabled":false,"cvm_enabled":false,"sync_enabled":false,"wifistr_enabled":false,"local_relay_enabled":false,"mint_health_enabled":true,"mining":{"enabled":false,"faucet_url":"$(B2B_FAUCET_URL)","faucet_poll_interval_s":120}}' > "$$TMPDIR/config.json" && \
 	echo "  Generating SPIFFS image..." && \
 	python3 $(SPIFFSGEN) --page-size 256 --obj-name-len 32 --use-magic --use-magic-len $(SPIFFS_SIZE) "$$TMPDIR" "$$TMPDIR/spiffs.bin" && \
 	echo "  Writing to flash..." && \

@@ -26,7 +26,7 @@ LDFLAGS := -lmbedcrypto -lcjson -lm
 
 SECP256K1_OBJ := secp256k1.o precomputed_ecmult.o precomputed_ecmult_gen.o
 
-TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_beacon_price test_market test_mint_health test_mining_payment test_stratum_proxy test_session_payment_method test_tollgate_client_mining test_firewall_sandbox test_relay_selector test_relay_validator test_portal test_stratum_client test_mint_health_core test_client_core test_relay_types test_sub_manager test_deletion test_mining_api test_stratum_pow test_display test_faucet_client
+TESTS := test_geohash test_identity test_nostr_event test_cashu test_session test_tollgate_client test_lnurl_pay test_lightning_payout test_mcp_handler test_nip04 test_cvm_server test_beacon_price test_market test_mint_health test_mining_payment test_stratum_proxy test_session_payment_method test_tollgate_client_mining test_firewall_sandbox test_relay_selector test_relay_validator test_portal test_stratum_client test_mint_health_core test_client_core test_relay_types test_sub_manager test_deletion test_mining_api test_stratum_pow test_display test_faucet_client test_remote_miner
 
 .PHONY: all test clean $(TESTS)
 
@@ -70,7 +70,7 @@ test_session: test_session.c $(TG_CORE_SRC)/tollgate_core_cashu.c $(TG_CORE_SRC)
 	$(CC) $(CFLAGS) $(TG_CORE_OBJS_CFLAGS) $^ -o $@ $(LDFLAGS)
 
 test_tollgate_client: test_tollgate_client.c $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c $(TG_CORE_SRC)/tollgate_core_beacon.c $(TG_CORE_SRC)/tollgate_core_market.c $(TG_CORE_SRC)/tollgate_core_client.c
-	$(CC) $(CFLAGS) -I $(REPO_ROOT)/main $< $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c $(TG_CORE_SRC)/tollgate_core_beacon.c $(TG_CORE_SRC)/tollgate_core_market.c $(TG_CORE_SRC)/tollgate_core_client.c -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -include stubs/remote_miner.h -I $(REPO_ROOT)/main $< $(REPO_ROOT)/main/market.c $(REPO_ROOT)/main/beacon_price.c $(TG_CORE_SRC)/tollgate_core_beacon.c $(TG_CORE_SRC)/tollgate_core_market.c $(TG_CORE_SRC)/tollgate_core_client.c -o $@ $(LDFLAGS)
 
 test_lnurl_pay: test_lnurl_pay.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
@@ -106,7 +106,7 @@ test_session_payment_method: test_session_payment_method.c $(TG_CORE_SRC)/tollga
 	$(CC) $(CFLAGS) $(TG_CORE_OBJS_CFLAGS) $^ -o $@ $(LDFLAGS)
 
 test_tollgate_client_mining: test_tollgate_client_mining.c $(TG_CORE_SRC)/tollgate_core_client.c
-	$(CC) $(CFLAGS) -I $(REPO_ROOT)/main $< $(TG_CORE_SRC)/tollgate_core_client.c -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -include stubs/remote_miner.h -I $(REPO_ROOT)/main $< $(TG_CORE_SRC)/tollgate_core_client.c -o $@ $(LDFLAGS)
 
 test_firewall_sandbox: test_firewall_sandbox.c $(TG_CORE_SRC)/tollgate_core_firewall.c $(TG_CORE_SRC)/tollgate_core.c $(TG_CORE_SRC)/tollgate_core_session.c $(TG_CORE_SRC)/tollgate_core_cashu.c $(TG_CORE_SRC)/tollgate_core_mining.c $(TG_CORE_SRC)/tollgate_core_dns.c $(TG_CORE_SRC)/tollgate_core_stratum_proxy.c
 	$(CC) $(CFLAGS) -include stubs/dns_server.h $(TG_CORE_OBJS_CFLAGS) $^ -o $@ $(LDFLAGS)
@@ -148,6 +148,9 @@ test_display: test_display.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 test_faucet_client: test_faucet_client.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+test_remote_miner: test_remote_miner.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 clean:

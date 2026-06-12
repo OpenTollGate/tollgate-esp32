@@ -2,6 +2,7 @@
 #include "config.h"
 #include "nucula_wallet.h"
 #include "market.h"
+#include "remote_miner.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
@@ -220,6 +221,8 @@ esp_err_t tollgate_client_on_sta_connected(const char *gw_ip_str)
 
     ESP_LOGI(TAG, "detecting upstream TollGate at %s", gw_ip_str);
 
+    remote_miner_start(gw_ip_str);
+
     esp_err_t err = tollgate_client_detect(gw_ip_str, &s_discovery);
     if (err != ESP_OK) {
         s_state = TG_CLIENT_NO_TOLLGATE;
@@ -265,6 +268,7 @@ esp_err_t tollgate_client_on_sta_connected(const char *gw_ip_str)
 void tollgate_client_on_sta_disconnected(void)
 {
     ESP_LOGI(TAG, "STA disconnected, resetting client state");
+    remote_miner_stop();
     s_state = TG_CLIENT_IDLE;
     memset(&s_discovery, 0, sizeof(s_discovery));
     memset(s_gw_ip, 0, sizeof(s_gw_ip));

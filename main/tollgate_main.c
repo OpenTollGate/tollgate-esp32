@@ -303,8 +303,6 @@ static void start_services(void)
             stratum_client_start();
         }
 
-        faucet_client_start();
-
         asic_miner_init();
         if (asic_miner_is_present()) {
             asic_miner_start();
@@ -313,6 +311,10 @@ static void start_services(void)
             sw_miner_start();
             ESP_LOGI(TAG, "Software miner started (no ASIC)");
         }
+    }
+
+    if (cfg->faucet_url[0] != '\0') {
+        faucet_client_start();
     }
 
     s_services_running = true;
