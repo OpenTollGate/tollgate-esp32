@@ -150,8 +150,7 @@ esp_err_t faucet_client_start(void)
     ESP_LOGI(TAG, "Creating faucet task (stack=4096, url=%s, free_heap=%lu)", cfg->faucet_url, (unsigned long)esp_get_free_heap_size());
 
     if (s_stack_buffer) { free(s_stack_buffer); s_stack_buffer = NULL; }
-    s_stack_buffer = (StackType_t *)heap_caps_malloc(4096 * sizeof(StackType_t), MALLOC_CAP_SPIRAM);
-    if (!s_stack_buffer) s_stack_buffer = (StackType_t *)malloc(4096 * sizeof(StackType_t));
+    s_stack_buffer = (StackType_t *)heap_caps_malloc(4096 * sizeof(StackType_t), MALLOC_CAP_INTERNAL);
     if (!s_stack_buffer) {
         ESP_LOGE(TAG, "Failed to allocate faucet task stack");
         s_running = false;

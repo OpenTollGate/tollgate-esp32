@@ -1,5 +1,6 @@
 #include "remote_miner.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "mbedtls/sha256.h"
 #include "cJSON.h"
@@ -284,10 +285,7 @@ esp_err_t remote_miner_start(const char *gw_ip)
         s_stack_buffer = NULL;
     }
 
-    s_stack_buffer = (StackType_t *)heap_caps_malloc(4096 * sizeof(StackType_t), MALLOC_CAP_SPIRAM);
-    if (!s_stack_buffer) {
-        s_stack_buffer = (StackType_t *)malloc(4096 * sizeof(StackType_t));
-    }
+    s_stack_buffer = (StackType_t *)heap_caps_malloc(4096 * sizeof(StackType_t), MALLOC_CAP_INTERNAL);
     if (!s_stack_buffer) {
         ESP_LOGE(TAG, "Failed to allocate stack");
         s_running = false;

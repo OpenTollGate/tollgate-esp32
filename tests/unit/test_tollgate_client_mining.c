@@ -38,7 +38,7 @@ int main(void)
         const char *json = "{\"kind\":10021,\"tags\":["
             "[\"metric\",\"milliseconds\"],"
             "[\"step_size\",\"60000\"],"
-            "[\"price_per_step\",\"0\",\"mining\",\"3333\",\"sat\"],"
+            "[\"price_per_step\",\"mining\",\"3333\",\"GH/s\",\"sv1\"],"
             "[\"tips\",\"1\",\"2\",\"5\"]"
             "]}";
 
@@ -72,7 +72,7 @@ int main(void)
         const char *json = "{\"kind\":10021,\"tags\":["
             "[\"metric\",\"milliseconds\"],"
             "[\"step_size\",\"60000\"],"
-            "[\"price_per_step\",\"0\",\"mining\",\"4033\",\"sat\"]"
+            "[\"price_per_step\",\"mining\",\"4033\",\"GH/s\",\"sv1\"]"
             "]}";
 
         tollgate_discovery_t disc;

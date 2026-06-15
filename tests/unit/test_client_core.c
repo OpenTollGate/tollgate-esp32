@@ -41,13 +41,14 @@ int main(void)
                            "\"tags\":["
                            "[\"metric\",\"milliseconds\"],"
                            "[\"step_size\",\"60000\"],"
-                           "[\"price_per_step\",\"0\",\"mining\",\"3333\",\"extra\"]"
+                           "[\"price_per_step\",\"mining\",\"3333\",\"GH/s\",\"sv1\"]"
                            "]}";
         tollgate_discovery_t disc = {0};
         bool ok = tollgate_core_client_parse_discovery(json, &disc);
         ASSERT(ok, "parse_discovery mining returns true");
         ASSERT(disc.mining_available, "mining_available set");
         ASSERT_EQ_INT(3333, (int)disc.mining_port, "mining_port");
+        ASSERT_EQ_INT(0, disc.price_per_step, "price_per_step unset when only mining tag");
     }
 
     printf("\n--- parse_discovery empty tags ---\n");
@@ -81,6 +82,26 @@ int main(void)
         ASSERT_EQ_INT(21, disc.price_per_step, "price_per_step");
         ASSERT(strcmp(disc.unit, "hash") == 0, "unit is hash");
         ASSERT(strcmp(disc.mint_url, "http://66.92.204.38:3338") == 0, "mint_url");
+    }
+
+    printf("\n--- parse_discovery both cashu and mining tags ---\n");
+    {
+        const char *json = "{\"kind\":10021,\"content\":\"\","
+                           "\"tags\":["
+                           "[\"metric\",\"milliseconds\"],"
+                           "[\"step_size\",\"60000\"],"
+                           "[\"price_per_step\",\"cashu\",\"21\",\"hash\",\"http://66.92.204.38:3338\",\"1\"],"
+                           "[\"price_per_step\",\"mining\",\"3334\",\"GH/s\",\"sv1\"]"
+                           "]}";
+        tollgate_discovery_t disc = {0};
+        bool ok = tollgate_core_client_parse_discovery(json, &disc);
+        ASSERT(ok, "parse_discovery both tags returns true");
+        ASSERT(disc.is_tollgate, "is_tollgate set");
+        ASSERT_EQ_INT(21, disc.price_per_step, "price_per_step from cashu tag");
+        ASSERT(strcmp(disc.unit, "hash") == 0, "unit from cashu tag");
+        ASSERT(strcmp(disc.mint_url, "http://66.92.204.38:3338") == 0, "mint_url from cashu tag");
+        ASSERT(disc.mining_available, "mining_available set");
+        ASSERT_EQ_INT(3334, (int)disc.mining_port, "mining_port from mining tag");
     }
 
     printf("\n--- parse_discovery unit default ---\n");

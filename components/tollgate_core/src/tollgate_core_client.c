@@ -45,16 +45,16 @@ bool tollgate_core_client_parse_discovery(const char *json_str, tollgate_discove
             if (val && cJSON_IsString(val)) {
                 out->step_size_ms = atoi(val->valuestring);
             }
-        } else if (strcmp(tag_name->valuestring, "price_per_step") == 0 && tag_len >= 4) {
-            cJSON *payment_type = cJSON_GetArrayItem(tag, 2);
+        } else if (strcmp(tag_name->valuestring, "price_per_step") == 0 && tag_len >= 3) {
+            cJSON *payment_type = cJSON_GetArrayItem(tag, 1);
 
-            if (cJSON_IsString(payment_type) && strcmp(payment_type->valuestring, "mining") == 0 && tag_len >= 5) {
+            if (cJSON_IsString(payment_type) && strcmp(payment_type->valuestring, "mining") == 0 && tag_len >= 3) {
                 out->mining_available = true;
-                cJSON *port_val = cJSON_GetArrayItem(tag, 3);
+                cJSON *port_val = cJSON_GetArrayItem(tag, 2);
                 if (port_val && cJSON_IsString(port_val)) {
                     out->mining_port = (uint16_t)atoi(port_val->valuestring);
                 }
-            } else {
+            } else if (cJSON_IsString(payment_type) && strcmp(payment_type->valuestring, "cashu") == 0 && tag_len >= 6) {
                 cJSON *amount = cJSON_GetArrayItem(tag, 2);
                 cJSON *unit_val = cJSON_GetArrayItem(tag, 3);
                 cJSON *mint = cJSON_GetArrayItem(tag, 4);

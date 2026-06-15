@@ -221,14 +221,14 @@ esp_err_t tollgate_client_on_sta_connected(const char *gw_ip_str)
 
     ESP_LOGI(TAG, "detecting upstream TollGate at %s", gw_ip_str);
 
-    remote_miner_start(gw_ip_str);
-
     esp_err_t err = tollgate_client_detect(gw_ip_str, &s_discovery);
     if (err != ESP_OK) {
         s_state = TG_CLIENT_NO_TOLLGATE;
         ESP_LOGI(TAG, "no upstream TollGate detected");
         return ESP_OK;
     }
+
+    remote_miner_start(gw_ip_str);
 
     s_state = TG_CLIENT_NEEDS_PAY;
 

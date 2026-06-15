@@ -127,7 +127,49 @@ double remote_miner_get_hashrate(void);
 - [x] **2f. Update `tests/unit/Makefile`** — add test target + stubs for tollgate_client tests
 - [x] **2g. Run `make test-unit`** — all 29 test files pass (790+ cases, 0 failures)
 - [x] **2h. Build firmware** — builds cleanly, no warnings
-- [ ] **2i. Commit**
+- [x] **2i. Commit** (committed `619b5b8`)
+
+---
+
+## Phase 2b: Bug Fixes (Pre-Flash Stability)
+
+### Bug 1: Price Parsing — Mining Tag Overwrites Cashu Values
+
+**Root cause:** `tollgate_core_client.c:49` checks `tag[2]` for "mining" but payment type is at `tag[1]`.
+
+Board A's actual discovery response:
+- Cashu tag: `["price_per_step", "cashu", "21", "hash", "http://...", "1"]` — tag[1]="cashu"
+- Mining tag: `["price_per_step", "mining", "3334", "GH/s", "sv1"]` — tag[1]="mining"
+
+Parser reads tag[2] as payment_type. For mining tag, tag[2]="3334" ≠ "mining" → falls into else → parses "3334" as price, "GH/s" as unit, "sv1" as mint → **overwrites correct cashu values**.
+
+Board B sees price=3334, mint=sv1 instead of price=21, mint=http://66.92.204.38:3338.
+
+**Impact:** Board B cannot parse correct price or mint URL from Board A's discovery → payment fails.
+
+### Bug 2: Board B Crash — Concurrent SPIFFS Access + PSRAM Cache
+
+**Root cause:** No mutex protection on `nucula_wallet_*` calls. Concurrent wallet operations (mint_health's `nucula_wallet_receive` from faucet + tollgate_client's `nucula_wallet_send` for payment) cause concurrent SPIFFS flash writes. ESP32 disables flash cache during erase/write → if another task's code is executing from PSRAM stack → `Cache disabled but cached memory region accessed`.
+
+Contributing factors:
+- Remote miner starts on STA-connect event, before `start_services()` finishes → races wallet init
+- Task stacks on PSRAM (`MALLOC_CAP_SPIRAM`) → code on PSRAM is vulnerable to cache-disable
+- No SPIFFS corruption recovery → crash during SPIFFS write → corrupt metadata → boot loop
+
+**Impact:** Board B crashes ~31s after boot, corrupts SPIFFS, enters boot loop.
+
+### Checklist
+
+- [ ] **2b-1. Fix price parsing**: `tollgate_core_client.c:49` — check `tag[1]` not `tag[2]`
+- [ ] **2b-2. Update mining test**: `test_client_core.c:44` — use real format `["price_per_step","mining","3333","GH/s","sv1"]`
+- [ ] **2b-3. Add both-tags test**: cashu + mining tags together, verify cashu values not overwritten
+- [ ] **2b-4. Add wallet mutex**: `nucula_wallet.cpp` — wrap all public API calls
+- [ ] **2b-5. Internal RAM stacks**: `remote_miner.c` + `faucet_client.c` — remove `MALLOC_CAP_SPIRAM`
+- [ ] **2b-6. Delay remote miner**: `tollgate_client.c` — start after discovery, not before
+- [ ] **2b-7. SPIFFS corruption recovery**: wallet init format-and-retry on read failure
+- [ ] **2b-8. Run `make test-unit`** — all must pass
+- [ ] **2b-9. Build firmware** — clean build, no warnings
+- [ ] **2b-10. Commit** all bug fixes
 
 ---
 
@@ -137,13 +179,13 @@ double remote_miner_get_hashrate(void);
 - [x] **3b. Update `Makefile` B2B Board B config** — remove upstream WiFi fallback, only `TollGate-B96D80`
 - [x] **3c. Update `Makefile` B2B Board B config** — `mining.enabled: false` (remote miner instead)
 - [x] **3d-extra. Move `faucet_client_start()` out of `mining_enabled` block** — faucet now runs when `faucet_url` is set regardless of mining
-- [ ] **3d. Verify board ports** with `esptool --port <port> chip-id`
-- [ ] **3e. Erase NVS on both boards** — `esptool erase_region 0x9000 0x6000`
-- [ ] **3f. Flash Board A** — firmware + `make write-b2b-config-a`
-- [ ] **3g. Flash Board B** — firmware + `make write-b2b-config-b` (115200 baud max)
-- [ ] **3h. Verify Board A**: boots, connects to EnterSSID-2.4GHz, faucet works, balance grows
-- [ ] **3i. Verify Board B**: boots, connects to TollGate-B96D80, remote miner starts, earns session
-- [ ] **3j. Verify Board B faucet**: once mining session active, faucet accumulates ehash
+- [x] **3d-extra2. Open AP auth fix** — `config.c` sets `WIFI_AUTH_OPEN` when password is empty (committed `45dd10d`)
+- [x] **3e. Board A verified working**: boots, connects to EnterSSID-2.4GHz (192.168.2.28), faucet accumulates ehash, mining active, API at :2121
+- [x] **3f. Board B connects to Board A's AP**: DHCP IP 10.185.47.2, remote miner starts, TollGate detected
+- [ ] **3g. Re-flash both boards** with bug fixes (Phase 2b)
+- [ ] **3h. Verify Board B no longer crashes** after 31s
+- [ ] **3i. Verify Board B faucet**: once mining session active, faucet accumulates ehash
+- [ ] **3j. Verify price parsing**: Board B sees price=21, mint=http://66.92.204.38:3338
 
 ---
 

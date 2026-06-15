@@ -9,6 +9,7 @@
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <cstring>
 #include <string>
 #include <vector>
@@ -23,10 +24,20 @@ static int s_wallet_count = 0;
 static char s_wallet_urls[MAX_WALLETS][256] = {};
 static bool s_keysets_loaded[MAX_WALLETS] = {};
 static int s_keyset_attempts[MAX_WALLETS] = {};
+static SemaphoreHandle_t s_wallet_mutex = nullptr;
 
 static const int KEYSET_BASE_DELAY_MS = 1000;
 static const int KEYSET_MAX_DELAY_MS = 30000;
 static const int KEYSET_JITTER_MS = 500;
+
+struct WalletLock {
+    WalletLock() {
+        if (s_wallet_mutex) xSemaphoreTake(s_wallet_mutex, pdMS_TO_TICKS(10000));
+    }
+    ~WalletLock() {
+        if (s_wallet_mutex) xSemaphoreGive(s_wallet_mutex);
+    }
+};
 
 static bool ensure_keysets(int slot)
 {
@@ -113,6 +124,10 @@ static esp_err_t init_wallet(int slot, const char *mint_url)
 
     s_wallets[slot]->load_from_nvs();
 
+    if (s_wallets[slot]->proofs().empty()) {
+        ESP_LOGI(TAG, "Wallet[%d] no proofs loaded (fresh or recovered from corruption)", slot);
+    }
+
     ESP_LOGI(TAG, "Wallet[%d] initialized: url=%s balance=%d proofs=%d (keysets lazy)",
              slot, mint_url, s_wallets[slot]->balance(),
              (int)s_wallets[slot]->proofs().size());
@@ -122,6 +137,14 @@ static esp_err_t init_wallet(int slot, const char *mint_url)
 esp_err_t nucula_wallet_init(const char *mint_url)
 {
     if (s_wallet_count > 0) return ESP_OK;
+
+    if (!s_wallet_mutex) {
+        s_wallet_mutex = xSemaphoreCreateMutex();
+        if (!s_wallet_mutex) {
+            ESP_LOGE(TAG, "Failed to create wallet mutex");
+            return ESP_FAIL;
+        }
+    }
 
     if (!s_ctx) {
         s_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
@@ -140,6 +163,14 @@ esp_err_t nucula_wallet_init_multi(const char mint_urls[][256], int count)
 {
     if (s_wallet_count > 0) return ESP_OK;
     if (count > MAX_WALLETS) count = MAX_WALLETS;
+
+    if (!s_wallet_mutex) {
+        s_wallet_mutex = xSemaphoreCreateMutex();
+        if (!s_wallet_mutex) {
+            ESP_LOGE(TAG, "Failed to create wallet mutex");
+            return ESP_FAIL;
+        }
+    }
 
     if (!s_ctx) {
         s_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
@@ -164,6 +195,7 @@ esp_err_t nucula_wallet_init_multi(const char mint_urls[][256], int count)
 esp_err_t nucula_wallet_receive(const char *token_str)
 {
     if (s_wallet_count == 0 || !token_str) return ESP_FAIL;
+    WalletLock lock;
 
     cashu::Token tok;
     bool decoded = false;
@@ -206,6 +238,7 @@ esp_err_t nucula_wallet_receive(const char *token_str)
 esp_err_t nucula_wallet_send(uint64_t amount_sat, char *token_out, size_t token_out_size)
 {
     if (s_wallet_count == 0) return ESP_FAIL;
+    WalletLock lock;
 
     int amount = (int)amount_sat;
     cashu::Wallet *w = find_wallet_for_send(amount);
@@ -267,6 +300,7 @@ esp_err_t nucula_wallet_send(uint64_t amount_sat, char *token_out, size_t token_
 
 uint64_t nucula_wallet_balance(void)
 {
+    WalletLock lock;
     uint64_t total = 0;
     for (int i = 0; i < s_wallet_count; i++) {
         if (s_wallets[i]) total += (uint64_t)s_wallets[i]->balance();
@@ -276,6 +310,7 @@ uint64_t nucula_wallet_balance(void)
 
 int nucula_wallet_proof_count(void)
 {
+    WalletLock lock;
     int total = 0;
     for (int i = 0; i < s_wallet_count; i++) {
         if (s_wallets[i]) total += (int)s_wallets[i]->proofs().size();
@@ -285,6 +320,7 @@ int nucula_wallet_proof_count(void)
 
 const char *nucula_wallet_unit(void)
 {
+    WalletLock lock;
     static char s_unit[16] = "sat";
     for (int i = 0; i < s_wallet_count; i++) {
         if (!s_wallets[i]) continue;
@@ -301,6 +337,7 @@ const char *nucula_wallet_unit(void)
 
 char *nucula_wallet_proofs_json(void)
 {
+    WalletLock lock;
     cJSON *arr = cJSON_CreateArray();
     for (int i = 0; i < s_wallet_count; i++) {
         if (!s_wallets[i]) continue;
@@ -321,6 +358,7 @@ char *nucula_wallet_proofs_json(void)
 esp_err_t nucula_wallet_swap_all(void)
 {
     if (s_wallet_count == 0) return ESP_FAIL;
+    WalletLock lock;
 
     bool any_ok = false;
     for (int i = 0; i < s_wallet_count; i++) {
@@ -358,6 +396,7 @@ esp_err_t nucula_wallet_swap_all(void)
 
 void nucula_wallet_print_status(void)
 {
+    WalletLock lock;
     if (s_wallet_count == 0) {
         ESP_LOGI(TAG, "No wallets initialized");
         return;
@@ -379,6 +418,7 @@ void nucula_wallet_print_status(void)
 esp_err_t nucula_wallet_melt(const char *bolt11_invoice, uint64_t max_fee_sats)
 {
     if (s_wallet_count == 0 || !bolt11_invoice) return ESP_FAIL;
+    WalletLock lock;
 
     cashu::Wallet *w = nullptr;
     for (int i = 0; i < s_wallet_count; i++) {
