@@ -160,16 +160,16 @@ Contributing factors:
 
 ### Checklist
 
-- [ ] **2b-1. Fix price parsing**: `tollgate_core_client.c:49` — check `tag[1]` not `tag[2]`
-- [ ] **2b-2. Update mining test**: `test_client_core.c:44` — use real format `["price_per_step","mining","3333","GH/s","sv1"]`
-- [ ] **2b-3. Add both-tags test**: cashu + mining tags together, verify cashu values not overwritten
-- [ ] **2b-4. Add wallet mutex**: `nucula_wallet.cpp` — wrap all public API calls
-- [ ] **2b-5. Internal RAM stacks**: `remote_miner.c` + `faucet_client.c` — remove `MALLOC_CAP_SPIRAM`
-- [ ] **2b-6. Delay remote miner**: `tollgate_client.c` — start after discovery, not before
-- [ ] **2b-7. SPIFFS corruption recovery**: wallet init format-and-retry on read failure
-- [ ] **2b-8. Run `make test-unit`** — all must pass
-- [ ] **2b-9. Build firmware** — clean build, no warnings
-- [ ] **2b-10. Commit** all bug fixes
+- [x] **2b-1. Fix price parsing**: `tollgate_core_client.c:49` — check `tag[1]` not `tag[2]`
+- [x] **2b-2. Update mining test**: `test_client_core.c:44` — use real format `["price_per_step","mining","3333","GH/s","sv1"]`
+- [x] **2b-3. Add both-tags test**: cashu + mining tags together, verify cashu values not overwritten
+- [x] **2b-4. Add wallet mutex**: `nucula_wallet.cpp` — RAII WalletLock wraps all public API calls
+- [x] **2b-5. Internal RAM stacks**: `remote_miner.c` + `faucet_client.c` — `MALLOC_CAP_INTERNAL` instead of SPIRAM
+- [x] **2b-6. Delay remote miner**: `tollgate_client.c` — start after discovery succeeds, not before
+- [x] **2b-7. SPIFFS corruption recovery**: `wallet.cpp` — delete corrupted proofs file on JSON parse failure
+- [x] **2b-8. Run `make test-unit`** — all 30 test files pass (800+ cases, 0 failures)
+- [x] **2b-9. Build firmware** — clean build, no warnings
+- [x] **2b-10. Commit** all bug fixes (committed `9258dc4`, pushed to orangesync)
 
 ---
 
