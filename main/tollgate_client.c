@@ -141,10 +141,15 @@ static esp_err_t tollgate_client_pay(const char *gw_ip, int amount_sats, int64_t
         return ESP_ERR_INVALID_STATE;
     }
 
-    char token_buf[8192];
-    esp_err_t err = nucula_wallet_send((uint64_t)amount_sats, token_buf, sizeof(token_buf));
+    char *token_buf = malloc(8192);
+    if (!token_buf) {
+        ESP_LOGE(TAG, "Failed to allocate token buffer");
+        return ESP_ERR_NO_MEM;
+    }
+    esp_err_t err = nucula_wallet_send((uint64_t)amount_sats, token_buf, 8192);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "wallet send failed: %s", esp_err_to_name(err));
+        free(token_buf);
         return err;
     }
 
@@ -154,10 +159,11 @@ static esp_err_t tollgate_client_pay(const char *gw_ip, int amount_sats, int64_t
     snprintf(url, sizeof(url), "http://%s:2121/", gw_ip);
 
     char *resp_buf = malloc(8192);
-    if (!resp_buf) return ESP_ERR_NO_MEM;
+    if (!resp_buf) { free(token_buf); return ESP_ERR_NO_MEM; }
 
     int status = 0;
     err = http_post_text(url, token_buf, resp_buf, 8192, &status);
+    free(token_buf);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "payment POST failed: %s", esp_err_to_name(err));
         free(resp_buf);
