@@ -170,6 +170,8 @@ Contributing factors:
 - [x] **2b-8. Run `make test-unit`** — all 30 test files pass (800+ cases, 0 failures)
 - [x] **2b-9. Build firmware** — clean build, no warnings
 - [x] **2b-10. Commit** all bug fixes (committed `9258dc4`, pushed to orangesync)
+- [x] **2b-11. Fix stack overflow** — `token_buf[8192]` moved from stack to heap (committed `179f1f0`)
+- [x] **2b-12. PSRAM CAPS_ALLOC mode** — `CONFIG_SPIRAM_USE_CAPS_ALLOC=y` to keep SPIFFS in internal RAM (committed `179f1f0`)
 
 ---
 
@@ -182,16 +184,16 @@ Contributing factors:
 - [x] **3d-extra2. Open AP auth fix** — `config.c` sets `WIFI_AUTH_OPEN` when password is empty (committed `45dd10d`)
 - [x] **3e. Board A verified working**: boots, connects to EnterSSID-2.4GHz (192.168.2.28), faucet accumulates ehash, mining active, API at :2121
 - [x] **3f. Board B connects to Board A's AP**: DHCP IP 10.185.47.2, remote miner starts, TollGate detected
-- [ ] **3g. Re-flash both boards** with bug fixes (Phase 2b)
-- [ ] **3h. Verify Board B no longer crashes** after 31s
-- [ ] **3i. Verify Board B faucet**: once mining session active, faucet accumulates ehash
-- [ ] **3j. Verify price parsing**: Board B sees price=21, mint=http://66.92.204.38:3338
+- [x] **3g. Re-flash both boards** with bug fixes (Phase 2b + stack overflow + PSRAM CAPS_ALLOC)
+- [x] **3h. Verify Board B no longer crashes** after 31s — STABLE 90s+ (committed `179f1f0`)
+- [x] **3i. Verify Board B faucet**: received 32 ehash at 43s uptime
+- [x] **3j. Verify price parsing**: Board B sees price=21, mint=http://66.92.204.38:3338 ✓
 
 ---
 
 ## Phase 4: Hardware Test — Board B pays Board A
 
-- [ ] **4a. Board B detects TollGate** at gateway 10.185.47.1
+- [x] **4a. Board B detects TollGate** at gateway 10.185.47.1 ✓
 - [ ] **4b. Board B pays Board A** — creates 21 ehash token, POSTs to Board A's :2121
 - [ ] **4c. Board A validates mint, creates session, absorbs token**
 - [ ] **4d. Verify settlement loop** — Board A balance +21, Board B balance -21, session renews
