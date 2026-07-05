@@ -139,12 +139,43 @@
 | Sensor | KY-035 Hall effect | 1 |
 | **Total** | | **12 modules** |
 
+## Cellular Upgrade Path (DECIDED 2026-07-06)
+
+User confirmed: use 4G LTE shield instead of 2G GSM shields.
+
+### Primary: 4G LTE Shield (TO SOURCE)
+Target chips: SIM7600G-H (LTE Cat-4, global bands) or A7670G (LTE Cat-4)
+- Supports 4G/3G/2G fallback
+- AT command interface (same UART as SIM800 — firmware reusable)
+- PPP dial-up for data (LWIP PPP already enabled in sdkconfig.defaults, commit 9c292c8)
+- Available as relay shield variants for remote switching
+- LTE bands for Germany: B1/B3/B7/B20/B28
+
+### Backup: GL.iNet GL-E750 Travel Router (ALREADY IN HAND)
+- Built-in LTE Cat-4 modem (takes nano-SIM)
+- 7800mAh battery (doubles as UPS)
+- WiFi AC dual-band (can act as TollGate AP directly)
+- OpenWrt based — full Linux, can run Hermes
+- USB host, Ethernet WAN/LAN
+- Self-contained: battery + LTE + WiFi in one box
+- Can replace ESP32+GSM entirely if needed, or serve as failover upstream
+
+### Architecture Decision
+```
+PRIMARY PATH: ESP32-S3 → 4G LTE Shield (SIM7600) → TollGate captive portal
+FALLBACK:     GL-E750 (tethered or standalone) → provides WiFi upstream to ESP32
+```
+
+The 2G SIM800 shields remain available for:
+- SMS-controlled relay switching (SIM800C dual-relay board)
+- Development/testing on older networks
+
 ## Recommendations
 
-### For CTG-1 (GSM upstream):
-USE: SIM800L EVB (has external SMA antenna — better signal)
-CONCERN: Both GSM modules are 2G only. Germany 2G shutdown expected 2025-2027.
-FUTURE: Need a 4G LTE module (SIM7600/A7670S) for long-term viability.
+### For CTG-1 (Cellular upstream):
+PRIMARY: Source SIM7600G-H 4G shield (ESP32-S3 UART, PPP dial-up)
+BACKUP: GL-E750 travel router (WiFi tether to ESP32-S3 or standalone AP)
+DEPRECATED: SIM800 2G shields (keep for relay control only)
 
 ### For CTG-9 (Vibration/FFT analysis):
 USE: MPU-9250 (best sensor in the inventory — 9-DoF, high data rate)
