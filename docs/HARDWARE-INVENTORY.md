@@ -1,57 +1,55 @@
 # Car TollGate — Hardware Inventory
 
-> Updated as hardware is identified from photos and user input.
-> Recommendations marked with **[RECOMMENDED]** or **[NOT RECOMMENDED]** with reasoning.
+> Updated 2026-07-06 — identified from photos via GLM-4.6V vision model.
 
-## Power
+## Identified Hardware
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| 200W Solar Panel | Confirmed | Roof-mounted, charges Anker Solix |
-| Anker Solix C1000 | Confirmed | 1000Wh, BLE monitoring (contextvm-anker-solix daemon), 220V AC output |
+### Photo 1: Raspberry Pi (RP3A0-AU)
 
-## Compute
+| Field | Value |
+|-------|-------|
+| **Type** | Single-board computer (Raspberry Pi) |
+| **Chip** | RP3A0-AU (Broadcom BCM2837B0 — Pi 3 series) |
+| **Serial** | 2399158 |
+| **Features** | GPIO header, 2x micro-USB, 1x USB-A, micro-SD, DSI display |
+| **Role** | Car-local Hermes instance (CTG-10) |
+| **Question for user** | Is this a Pi Zero or Pi 3A+/3B+? Need to confirm WiFi/BLE capability |
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| ESP32-S3 Board A | Confirmed | MAC 94:a9:90:2e:37:7c, primary test target |
-| ESP32-S3 Board B | Confirmed | MAC fc:01:2c:c5:50:50, secondary |
-| ESP32-S3 Board C | Confirmed | MAC 20:6e:f1:98:d7:08, display board |
-| Raspberry Pi Zero 2 W | IDENTIFIED | RP3A0-AU (BCM2710A1 quad-core Cortex-A53, 512MB RAM), WiFi+BT. Week 40 2023 batch. For car-local Hermes instance. |
-| BitAxe(s) | Confirmed | NerdAxe variants, ESP32-S3 + BM1397 ASIC |
+### Photo 2: GSM Shield WITHOUT relays (chip marking unclear)
 
-## GSM Shields
+| Field | Value |
+|-------|-------|
+| **Type** | GSM/GPRS module/shield |
+| **Board color** | Blue PCB |
+| **Key features** | SIM card slot, wire antenna, interface pins |
+| **Pin labels** | GND, B0, TMS, TCLK, 3V3 |
+| **Chip marking** | A677A or similar (unclear — could be A7670S?) |
+| **Role** | Data-only upstream for car TollGate (CTG-1) |
+| **Question for user** | What's the exact chip model? Is it SIM800, A7670, SIM7600? |
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| GSM Shield #1 (with relays, SIM800C) | IDENTIFIED | SIM800C 2G modem, 2x SONGLE SRD-05VDC-SL-C relays (10A 250VAC). STM32 controller. UART pins PA9/PA10. Has IMEI. For relay control via SMS. 2G ONLY — being phased out. |
-| GSM Shield #2 (with relay, wide voltage) | IDENTIFIED | Single-channel GSM relay, 6V-36V wide input, SIM holder, TMS/TCLK programming pins. Chip on underside. Also 2G. |
+### Photo 3: GSM Relay Shield (SIM800C)
 
-## GPS
+| Field | Value |
+|-------|-------|
+| **Type** | GSM Relay Shield |
+| **Board color** | Blue PCB |
+| **GSM chip** | **SIM800C** (2G only!) |
+| **Relays** | 2x SONGLE SRD-05VDC-SL-C (10A 250VAC) |
+| **Pin labels** | PA8, PA10, NET, PWR, GND, VCC |
+| **Antenna** | Green wire antenna |
+| **Certification** | CE 0678 |
+| **Role** | SMS-controlled relay switching + backup GSM |
+| **WARNING** | SIM800C is 2G only. 2G is being phased out in many countries. |
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| GPS module(s) | NOT YET PHOTOGRAPHED | User mentioned GPS modules exist — photos pending |
+## Still Needed From User
 
-## IMU / Sensors
+1. **Pi model confirmation** — Pi Zero W? Pi Zero 2 W? Pi 3A+?
+2. **Photo 2 chip model** — the exact text on the main black chip
+3. **How many of each board** do you have?
+4. **GPS modules** — no GPS visible in these photos. Do you have separate GPS modules?
+5. **IMU modules** — no IMU visible in these photos. Do you have separate IMU modules?
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| IMU module(s) | NOT YET PHOTOGRAPHED | User mentioned IMU modules exist — photos pending |
+## Concerns
 
-## SIM / Connectivity
-
-| Component | Status | Details |
-|-----------|--------|---------|
-| SilentLink eSIM | Confirmed | Non-KYC, Lightning top-up, convertible to physical SIM |
-
----
-
-## Pending Questions
-
-1. Which GSM shield connects to which ESP32 board?
-2. What SIM format do the GSM shields take (standard/micro/nano)?
-3. Do the GSM shields use UART or USB to communicate with ESP32?
-4. What's the Raspberry Pi model exactly (Zero W, Zero 2 W, Pi Nano)?
-5. How many IMU modules and where will they be placed on the car?
-6. Where will the GPS module be mounted (roof near solar panel for best signal)?
+- **SIM800C is 2G only** — this is being phased out across Europe. Germany shutdown timeline: 2025-2027. For the car TollGate, the GSM shield WITHOUT relays (Photo 2) should be the primary upstream IF it supports 3G/4G.
+- **Photo 2 chip (A677A?)** — if this is an A7670S, it supports 4G LTE Cat-1 which is ideal. Need confirmation.
