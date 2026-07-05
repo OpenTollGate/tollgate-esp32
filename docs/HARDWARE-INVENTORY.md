@@ -131,13 +131,15 @@
 | Category | Items | Count |
 |----------|-------|-------|
 | Compute | RPi Zero 2 W | 1 |
-| GSM | SIM800L EVB, SIM800C relay, SIM breakout | 3 |
+| Primary Gateway | GL-E750 Mudi V2 (4G LTE + battery + OpenWrt) | 1 |
+| GSM (deprecated) | SIM800L EVB, SIM800C relay, SIM breakout | 3 |
 | GPS | GY-GPS6MV2 (NEO-6M) | 1 |
 | IMU | MPU-9250, ADXL345, GY-291 | 3 |
 | Compass | GY-271 (HMC5883L) | 1 |
 | Power | IRF520 MOSFET x2 | 2 |
 | Sensor | KY-035 Hall effect | 1 |
-| **Total** | | **12 modules** |
+| ESP32-S3 dev boards | 3x ESP32-S3 (for TollGate client/reseller/sensors) | 3 |
+| **Total** | | **16 modules** |
 
 ## Cellular Upgrade Path (DECIDED 2026-07-06)
 
@@ -169,10 +171,23 @@ User confirmed: use 4G LTE shield instead of 2G GSM shields.
   It could serve as the TollGate router itself, with ESP32 handling only
   sensor/relay/MCU tasks via WiFi. Eliminates need for ESP32 PPP/4G entirely.
 
-### Architecture Decision
+### Architecture Decision (UPDATED 2026-07-06)
+
+The GL-E750 is now the PRIMARY TollGate gateway (was: backup).
+The SIM7600 4G shield is now OPTIONAL (for standalone ESP32 use).
+
 ```
-PRIMARY PATH: ESP32-S3 → 4G LTE Shield (SIM7600) → TollGate captive portal
-FALLBACK:     GL-E750 (tethered or standalone) → provides WiFi upstream to ESP32
+GL-E750 (OpenWrt + TollGate Go) = PRIMARY gateway
+  ├── Built-in 4G LTE (EM060K-G Cat-4)
+  ├── Built-in WiFi AP (captive portal)
+  ├── Built-in 7000mAh battery (UPS)
+  └── Runs TollGate natively (OpenWrt platform)
+
+ESP32-S3 + SIM7600E-H 4G shield = OPTIONAL standalone gateway
+  └── For when GL-E750 isn't available (different car, etc.)
+
+BitAxe miners → WiFi → GL-E750 → TollGate portal → 4G internet
+ESP32 boards → WiFi → GL-E750 → TollGate client → resell on own AP
 ```
 
 The 2G SIM800 shields remain available for:

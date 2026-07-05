@@ -1,19 +1,19 @@
 # Car Solar TollGate — Architecture Document
 
-> Self-sustaining mobile node: solar energy → Bitcoin mining → ecash → internet access → sensor exposure
+> DECIDED 2026-07-06: GL.iNet Mudi V2 (GL-E750V2) as primary TollGate gateway
+> Pi Zero 2 W, ESP32-S3 boards, and BitAxe miners as downstream clients/resellers
 
 ## Overview
 
 An old car equipped with a 200W solar panel and Anker Solix C1000 (1000Wh) power bank
 becomes a self-sustaining TollGate node. Excess solar energy (when battery is full)
-powers BitAxe Bitcoin miners. The miners earn ecash via Stratum V2 / hashpool. A
-GSM-connected ESP32 provides mobile data upstream and sells it via TollGate (Cashu
-payments). Both sides achieve positive margin: the GSM gateway profits on data resale,
-and the BitAxes mine more ecash than they spend on internet.
+powers BitAxe Bitcoin miners. The miners earn ecash via Stratum V2.
 
-The end result: the car has "free" internet paid for by solar excess, and ContextVM
-exposes battery state, OBD data, and sensors over the internet via MCP (Model Context
-Protocol over Nostr).
+**Primary gateway:** GL-E750 Mudi V2 (OpenWrt router with built-in 4G LTE, battery)
+**TollGate software:** tollgate-module-basic-go (Go daemon on OpenWrt)
+**Clients:** BitAxe miners + ESP32-S3 boards buy internet via Cashu
+**Resellers:** ESP32-S3 boards can re-sell internet inside the car
+**Interop:** Go-based TollGate (GL-E750) and C-based TollGate (ESP32) must interoperate
 
 ## System Architecture
 
@@ -24,91 +24,129 @@ Protocol over Nostr).
                     │    │   Solar Panel       │───────┼──→ Anker Solix C1000 (1000Wh)
                     │    │   (roof-mounted)    │       │    ├── 220V AC output
                     │    └─────────────────────┘       │    ├── Bluetooth (BLE monitoring)
-                    └─────────────────────────────────┘    └── ContextVM wrapper (existing)
+                    └─────────────────────────────────┘    └── ContextVM wrapper
                                           │
                                     Excess energy
-                                    (battery full)
+                                    (battery full, >80%)
                                           │
                                           ▼
-                    ┌─────────────────────────────────────┐
-                    │        BITAXE MINER(s)               │
-                    │  ESP32-S3 + BM1397 ASIC             │
-                    │  ┌───────────────────────────────┐   │
-                    │  │ esp-miner-tollgate firmware   │   │
-                    │  │ ├── Stratum V2 mining         │   │
-                    │  │ ├── TollGate client (Cashu)   │   │
-                    │  │ ├── Pays for internet         │   │
-                    │  │ └── Mines → earns ecash       │   │
-                    │  └───────────────────────────────┘   │
-                    └───────────────┬─────────────────────┘
-                                    │
-                            WiFi AP (TollGate-XXXX)
-                            Pays Cashu for data
-                                    │
-                                      ▼
-                    ┌─────────────────────────────────────┐
-                    │     GSM UPSTREAM ESP32               │
-                    │  ESP32-S3 + GSM shield               │
-                    │  ┌───────────────────────────────┐   │
-                    │  │ esp32-tollgate firmware       │   │
-                    │  │ ├── WiFi AP (TollGate gateway) │   │
-                    │  │ ├── Cashu payment processing  │   │
-                    │  │ ├── Captive portal            │   │
-                    │  │ ├── PPP/GSM upstream          │   │
-                    │  │ ├── ContextVM (MCP/Nostr)     │   │
-                    │  │ ├── Local Nostr relay         │   │
-                    │  │ └── Sells mobile data         │   │
-                    │  └───────────────────────────────┘   │
-                    │        │                             │
-                    │   SIM card (SilentLink eSIM)         │
-                    │   Non-KYC, Lightning top-up          │
-                    └────────┼────────────────────────────┘
-                             │
-                        Mobile data (3G/4G/LTE)
-                             │
-                             ▼
-                    ┌─────────────────────────────────────┐
-                    │          INTERNET                    │
-                    │  ├── Mining pool (SV2/SV1)          │
-                    │  ├── Cashu mint (hashpool)          │
-                    │  ├── Nostr relays                   │
-                    │  └── ContextVM endpoints (public)   │
-                    └─────────────────────────────────────┘
+                    ┌──────────────────────────────────────────┐
+                    │  GL-E750 MUDI V2 (PRIMARY GATEWAY)       │
+                    │  ┌────────────────────────────────────┐  │
+                    │  │ OpenWrt + TollGate Go              │  │
+                    │  │ ├── 4G LTE (EM060K-G, Cat-4)       │  │
+                    │  │ ├── WiFi AP (TollGate captive portal)│  │
+                    │  │ ├── Cashu payment processing        │  │
+                    │  │ ├── ndsctl MAC authorization        │  │
+                    │  │ ├── Reseller/client mode (to upstream)│  │
+                    │  │ ├── 7000mAh battery (UPS)           │  │
+                    │  │ └── Ethernet WAN/LAN                │  │
+                    │  └────────────────────────────────────┘  │
+                    └──────────────────┬───────────────────────┘
+                                       │
+                              WiFi AP (TollGate-XXXX, open)
+                              Cashu for data (time or bytes)
+                                       │
+         ┌─────────────────────┬───────┴───────┬─────────────────────┐
+         │                     │               │                     │
+    BitAxe #1             BitAxe #2        ESP32-S3 #A          ESP32-S3 #B
+    (miner)               (miner)          (TollGate             (sensors/
+     Stratum V2                              client +              relays)
+     Pays GL-E750                            reseller)             GPS, IMU,
+         │                     │               │                   Hall, IRF520
+         │                     │          Creates own AP
+         │                     │          TollGate-Group-XXXX       │
+         │                     │               │                   │
+         └─────────────────────┴───────┬───────┴───────────────────┘
+                                       │
+                               ┌───────▼────────┐
+                               │    INTERNET     │
+                               │                 │
+                               │ Mining pool     │
+                               │ Nostr relays    │
+                               │ Cashu mints     │
+                               └─────────────────┘
 ```
 
 ## Repositories
 
 | Repo | Path | Role |
 |------|------|------|
-| esp32-tollgate | /home/c03rad0r/esp32-tollgate | ESP32-S3 TollGate firmware (standalone, mature) |
-| esp-miner-tollgate | /home/c03rad0r/esp-miner-tollgate | BitAxe miner fork with TollGate integration plan |
+| tollgate-module-basic-go | /home/c03rad0r/tollgate-module-basic-go | Primary TollGate on GL-E750 (Go, OpenWrt) |
+| esp32-tollgate | /home/c03rad0r/esp32-tollgate | ESP32-S3 TollGate client/reseller (C, ESP-IDF) |
+| esp-miner-tollgate | /home/c03rad0r/esp-miner-tollgate | BitAxe miner fork with TollGate client |
 | contextvm-anker-solix | /home/c03rad0r/contextvm-anker-solix | Anker Solix battery monitoring via BLE + MCP |
-| axepool | /home/c03rad0r/axepool | SV1/SV2 mining proxy with ehash mint integration |
-| tollgate-module-basic-go | /home/c03rad0r/tollgate-module-basic-go | Go backend for OpenWrt routers (reference impl) |
 
-## Device Roles (Phase 1)
+## Device Roles
 
-| Device | Firmware | Upstream | Downstream | Role |
-|--------|----------|----------|------------|------|
-| GSM ESP32 | esp32-tollgate | GSM/LTE (SilentLink SIM) | WiFi AP (TollGate) | Sells mobile data |
-| BitAxe(s) | esp-miner-tollgate | WiFi STA → GSM ESP32's AP | — | Mines Bitcoin, pays for internet |
+| Device | Role | Runs TollGate? | Upstream | Downstream |
+|--------|------|----------------|----------|------------|
+| GL-E750 Mudi V2 | Primary gateway | ✅ Go (OpenWrt) | 4G LTE (EM060K-G) | WiFi AP + Ethernet |
+| ESP32-S3 #A | Client / reseller | ✅ C (ESP-IDF) | WiFi → GL-E750 | WiFi AP (subnet) |
+| ESP32-S3 #B | Sensors / relays | ❌ (no TollGate) | WiFi → GL-E750 or #A | GPS, IMU, Hall, relays |
+| Pi Zero 2 W | Car-local Hermes | ❌ (Hermes only) | WiFi → GL-E750 | — |
+| BitAxe #1 | Miner + TollGate client | ✅ C (esp-miner) | Stratum V2 (internet) | BM1397 ASIC |
+| BitAxe #2 | Miner + TollGate client | ✅ C (esp-miner) | Stratum V2 (internet) | BM1397 ASIC |
 
-### Future: Interchangeable roles
+## Network Topology (Car)
 
-Eventually any ESP32 should be able to act as miner, gateway, or both simultaneously.
-The tollgate_core component extraction enables this — the same code runs in different
-modes depending on available upstream (WiFi STA, GSM, or both).
+```
+[4G SIM (SilentLink eSIM)] → GL-E750 Mudi V2
+  IP: 192.168.1.1 (or GL.iNet default 192.168.8.1)
+  SSID: TollGate-XXXX  (open WiFi, no WPA)
+  Captive portal: ndsctl + TollGate Go daemon
+  Clients: BitAxe, ESP32, Pi, phone
+       │
+       ├── BitAxe #1 (10.0.0.2)
+       ├── BitAxe #2 (10.0.0.3)
+       ├── ESP32 #A  (10.0.0.4)
+       │   └── WiFi AP: TollGate-Group-XXXX (subnet)
+       │       ├── devices inside car
+       │       └── pays GL-E750, resells to its own clients
+       ├── ESP32 #B  (10.0.0.5)
+       └── Pi Zero 2 W (10.0.0.6)
+           └── Hermes agent, ContextVM MCP for sensors
+```
+
+## Interoperability Test (CTG-INTEROP)
+
+**Goal:** Verify Go-based TollGate (GL-E750) and C-based TollGate (ESP32) interoperate:
+1. A BitAxe connects to GL-E750's WiFi → hits TollGate portal → pays Cashu → internet
+2. An ESP32 connects to GL-E750's WiFi → pays Cashu → gets internet
+3. The ESP32 resells internet on its own AP → another device connects and pays the ESP32
+4. The ESP32's Cashu tokens are valid against the same mints used by GL-E750
+
+**Test cases:**
+- `test_go_portal_serves_portal_html` — GL-E750 serves captive portal
+- `test_go_accepts_cashu_payment` — GL-E750 processes Cashu token
+- `test_go_authorizes_mac` — GL-E750 opens gate for paying client
+- `test_esp32_client_buys_from_gl` — ESP32 connects as TollGate client
+- `test_esp32_client_resells` — ESP32 creates its own AP and resells
+- `test_bitaxe_buys_via_esp32` — BitAxe pays ESP32's portal
+- `test_go_esp32_cross_mint` — Both use same Cashu mint
+
+## GL-E750 Setup Path
+
+```
+1. Flash GL-E750 with OpenWrt (or confirm GL.iNet firmware supports opkg)
+2. Install nds (NoDogSplash): opkg install nds
+3. Install tollgate-wrt: opkg install tollgate-wrt_<version>_mipsel_24kc.ipk
+4. Configure /etc/tollgate/config.json
+5. Configure 4G modem (EM060K-G) via GL.iNet web UI or uci
+6. Start tollgate service: /etc/init.d/tollgate start
+7. Test: connect to WiFi → captive portal → pay Cashu → internet
+```
 
 ## Economics Model (Target)
 
 ```
-GSM ESP32:
-  Cost: mobile data plan (SilentLink, Lightning-funded)
-  Revenue: Cashu payments from BitAxes for internet access
-  Target: revenue > cost (positive margin)
+GL-E750:
+  Cost: 4G data plan (SilentLink, Lightning-funded)
+  Revenue: Cashu payments from BitAxe + ESP32 + phone clients
+  Target: revenue > data plan cost (positive margin)
 
 BitAxe:
-  Cost: Cashu payments to GSM ESP32 for internet
+  Cost: Cashu payments to GL-E750 (or ESP32 reseller)
   Revenue: Bitcoin/ecash mined via Stratum V2
   Target: mined value > internet cost (positive margin)
 
@@ -119,85 +157,61 @@ Energy:
 
 ## Key Components
 
-### 1. SilentLink eSIM → Physical SIM
+### 1. GL-E750 Mudi V2
+- OpenWrt-based 4G LTE router with 7000mAh battery
+- Built-in Quectel EM060K-G (Cat-4, 150/50 Mbps)
+- Runs GL.iNet firmware (OpenWrt-based) — can be flashed to standard OpenWrt
+- TollGate: install via opkg or build from tollgate-module-basic-go
+- Architecture: mipsel_24kc (MediaTek MT7621)
 
-SilentLink (silent.link) provides non-KYC eSIMs topped up via Lightning Network.
-The user has a method to flash eSIM profiles onto physical SIM cards for use in
-GSM shields.
+### 2. tollgate-module-basic-go (Go on OpenWrt)
+- Go daemon for OpenWrt routers
+- Produces .ipk packages (CI builds for mipsel_24kc)
+- Dependencies: nds (NoDogSplash for captive portal), Go runtime
+- Config: /etc/tollgate/config.json
+- Service: /etc/init.d/tollgate
+- CLI: tollgate status, tollgate start/stop/restart
 
-**Status:** Need to determine which GSM shield model and its pin mapping.
+### 3. SilentLink eSIM → Physical SIM
+Non-KYC eSIMs topped up via Lightning Network.
+The user has a method to flash eSIM profiles to physical SIM cards.
 
-### 2. GSM Shield → ESP32 PPP
+### 4. esp32-tollgate (ESP32 C client/reseller)
+- ESP-IDF firmware with tollgate_core component
+- Can act as TollGate client (buy from GL-E750 via WiFi STA)
+- Can act as TollGate server (resell on its own WiFi AP)
+- ContextVM server for sensor data (MCP over Nostr)
+- Local Nostr relay for offline-first operation
 
-ESP-IDF supports PPP (Point-to-Point Protocol) over serial for GSM connectivity.
-The GSM shield connects via UART, provides AT command interface, and enters
-data/PPP mode for IP connectivity.
-
-**Integration point:** esp32-tollgate's `tollgate_main.c` — add GSM init alongside
-existing WiFi STA init. PPP becomes an alternative netif for upstream.
-
-### 3. tollgate_core Component Extraction
-
-The esp32-tollgate firmware's core modules (cashu, dns, firewall, session) are being
-extracted into a reusable `tollgate_core` ESP-IDF component. This enables:
-- esp-miner-tollgate to consume it as a dependency (BitAxe becomes TollGate client)
-- Any ESP32 project to add TollGate payment functionality
-- Shared codebase, single source of truth
-
-**Blocked by:** 4 feature branches must merge to esp32-tollgate master first.
-
-### 4. AxePool Mining Proxy
-
-Rust-based SV1 proxy that sits between miners and upstream pools, intercepting
-shares to mint ehash tokens via hashpool. This is how miners earn ecash.
-
-**Status:** Under investigation — need to determine if standalone (VPS) or embedded.
-
-### 5. ContextVM (MCP over Nostr)
-
-The esp32-tollgate firmware already has a ContextVM server exposing 10 MCP tools
-over Nostr kind 25910 events. When the GSM upstream provides internet, these tools
-become publicly accessible — enabling remote monitoring of the car's battery, mining
-status, TollGate sessions, and future sensors.
-
-The contextvm-anker-solix daemon provides BLE monitoring of the Anker Solix power bank
-(98.7% test coverage, OBD reader, telemetry logging, Nostr event publishing).
-
-## Network Topology (Car)
-
-```
-[SilentLink SIM] → GSM shield → ESP32-S3 (GSM gateway)
-                                   │
-                              WiFi AP (TollGate-XXXX, open)
-                                   │
-                    ┌──────────────┼──────────────┐
-                    │              │              │
-               BitAxe #1      BitAxe #2     (future sensors)
-               (miner)        (miner)
-```
+### 5. BitAxe Miner + TollGate Client
+- Stratum V2 mining via esp-miner-tollgate firmware
+- Connects as WiFi client to GL-E750
+- Pays for internet via Cashu
+- Mines Bitcoin/ecash via hashpool
 
 ## Power Budget (Estimated)
 
 | Component | Power Draw | Source |
 |-----------|-----------|--------|
-| Anker Solix C1000 | — | Solar (200W) |
-| GSM ESP32 + shield | ~2-5W (idle), ~10W (TX) | Anker Solix USB/220V |
+| GL-E750 Mudi V2 | ~5-10W (WiFi + 4G + routing) | 7000mAh battery / Anker Solix |
 | BitAxe (NerdAxe) | ~15-25W each | Anker Solix 220V |
-| ESP32-S3 (standalone) | ~0.5W | Anker Solix USB |
+| ESP32-S3 | ~0.5-1W | Anker Solix USB |
+| Pi Zero 2 W | ~2-3W | Anker Solix USB |
 
 200W solar panel at ~5 peak sun hours = ~1000Wh/day
 Anker Solix capacity = 1000Wh
 
-Mining budget = excess after: battery charging + ESP32 + GSM shield
+Mining budget = excess after: battery charging + GL-E750 + ESP32 + Pi
 
 ## Status
 
-- [ ] CTG-1: GSM upstream validated (BLOCKED on hardware info)
-- [ ] CTG-2: 4 branches merged to esp32-tollgate master
-- [ ] CTG-3: tollgate_core extracted
-- [ ] CTG-4: BitAxe TollGate client integrated
-- [ ] CTG-5: AxePool wired to hashpool
-- [ ] CTG-6: ContextVM sensors exposed publicly
+- [ ] CTG-GL1: GL-E750 OpenWrt / firmware confirmed
+- [ ] CTG-GL2: TollGate Go installed and configured
+- [ ] CTG-GL3: 4G modem working (SIM card + data)
+- [ ] CTG-GL4: BitAxe connects and buys internet
+- [ ] CTG-1: ESP32 TollGate client pays GL-E750 (interop test)
+- [ ] CTG-ESP-RESELL: ESP32 resells internet
+- [ ] CTG-6: ContextVM sensors exposed
 - [ ] CTG-7: E2E margin test passed
 
 ## Kanban
