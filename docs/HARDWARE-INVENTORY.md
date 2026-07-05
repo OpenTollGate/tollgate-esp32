@@ -17,27 +17,27 @@
 | ESP32-S3 Board A | Confirmed | MAC 94:a9:90:2e:37:7c, primary test target |
 | ESP32-S3 Board B | Confirmed | MAC fc:01:2c:c5:50:50, secondary |
 | ESP32-S3 Board C | Confirmed | MAC 20:6e:f1:98:d7:08, display board |
-| Raspberry Pi Zero/Nano | AWAITING PHOTO | Car-local Hermes instance, BLE hub |
+| Raspberry Pi Zero 2 W | IDENTIFIED | RP3A0-AU (BCM2710A1 quad-core Cortex-A53, 512MB RAM), WiFi+BT. Week 40 2023 batch. For car-local Hermes instance. |
 | BitAxe(s) | Confirmed | NerdAxe variants, ESP32-S3 + BM1397 ASIC |
 
 ## GSM Shields
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| GSM Shield #1 (with relays) | AWAITING PHOTO | May be useful if relays control power switching |
-| GSM Shield #2 (without relays) | AWAITING PHOTO | Simpler, likely for data-only upstream |
+| GSM Shield #1 (with relays, SIM800C) | IDENTIFIED | SIM800C 2G modem, 2x SONGLE SRD-05VDC-SL-C relays (10A 250VAC). STM32 controller. UART pins PA9/PA10. Has IMEI. For relay control via SMS. 2G ONLY — being phased out. |
+| GSM Shield #2 (with relay, wide voltage) | IDENTIFIED | Single-channel GSM relay, 6V-36V wide input, SIM holder, TMS/TCLK programming pins. Chip on underside. Also 2G. |
 
 ## GPS
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| GPS module(s) | AWAITING PHOTO | For car location via ContextVM/MCP |
+| GPS module(s) | NOT YET PHOTOGRAPHED | User mentioned GPS modules exist — photos pending |
 
 ## IMU / Sensors
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| IMU module(s) | AWAITING PHOTO | Vibration recording for FFT wheel imbalance analysis |
+| IMU module(s) | NOT YET PHOTOGRAPHED | User mentioned IMU modules exist — photos pending |
 
 ## SIM / Connectivity
 
