@@ -143,22 +143,31 @@
 
 User confirmed: use 4G LTE shield instead of 2G GSM shields.
 
-### Primary: 4G LTE Shield (TO SOURCE)
-Target chips: SIM7600G-H (LTE Cat-4, global bands) or A7670G (LTE Cat-4)
-- Supports 4G/3G/2G fallback
-- AT command interface (same UART as SIM800 — firmware reusable)
-- PPP dial-up for data (LWIP PPP already enabled in sdkconfig.defaults, commit 9c292c8)
-- Available as relay shield variants for remote switching
-- LTE bands for Germany: B1/B3/B7/B20/B28
+### Primary: SIM7600E-H 4G LTE Shield (RECOMMENDED — TO SOURCE)
+- Chip: SIMCom SIM7600E-H (Cat-4 LTE, Europe variant)
+- Speeds: 150Mbps DL / 50Mbps UL (same as GL-E750)
+- LTE bands for Germany/EU: B1/B3/B7/B20/B28 (all major EU bands)
+- 2G/3G fallback for maximum compatibility
+- AT command interface over UART (firmware reusable from SIM800 codebase)
+- PPP dial-up for data (LWIP PPP already enabled, commit 9c292c8)
+- Price: ~€15-25 on AliExpress/Amazon DE
+- Search term: "SIM7600E H ESP32 shield" or "SIM7600 4G hat ESP32"
+- Alternative: A7670E (Cat-1, cheaper, lower power, 10/5 Mbps — enough for stratum)
 
-### Backup: GL.iNet GL-E750 Travel Router (ALREADY IN HAND)
-- Built-in LTE Cat-4 modem (takes nano-SIM)
-- 7800mAh battery (doubles as UPS)
-- WiFi AC dual-band (can act as TollGate AP directly)
-- OpenWrt based — full Linux, can run Hermes
-- USB host, Ethernet WAN/LAN
-- Self-contained: battery + LTE + WiFi in one box
-- Can replace ESP32+GSM entirely if needed, or serve as failover upstream
+### Backup: GL.iNet Mudi V2 (GL-E750V2) Travel Router (ALREADY IN HAND)
+- Official name: Mudi V2 (GL-E750V2)
+- Modem: Quectel EM060K-G (4G Global, Cat-4 LTE)
+- Speeds: 150Mbps DL / 50Mbps UL
+- Battery: Rechargeable 7000mAh (doubles as UPS, ~8h runtime)
+- WiFi: IEEE 802.11a/b/g/n/ac (dual-band AC750: 433Mbps@5GHz + 300Mbps@2.4GHz)
+- Ethernet: 1x FE port (10/100Mbps, WAN/LAN)
+- Memory: DDR2 128MB / NOR Flash 16MB + NAND Flash 128MB
+- Power: USB Type-C 5V/2A
+- OS: OpenWrt based (GL.iNet firmware) — CAN RUN TOLLGATE NATIVELY
+- Self-contained: battery + LTE + WiFi + OpenWrt in one box
+- KEY INSIGHT: This router runs OpenWrt, which is TollGate's native platform.
+  It could serve as the TollGate router itself, with ESP32 handling only
+  sensor/relay/MCU tasks via WiFi. Eliminates need for ESP32 PPP/4G entirely.
 
 ### Architecture Decision
 ```
