@@ -1,8 +1,7 @@
 #include "tollgate_client.h"
 #include "config.h"
 #include "nucula_wallet.h"
-#include "market.h"
-#include "remote_miner.h"
+/* STRIPPED from balloon build: market.h, remote_miner.h */
 #include "esp_log.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
@@ -234,7 +233,7 @@ esp_err_t tollgate_client_on_sta_connected(const char *gw_ip_str)
         return ESP_OK;
     }
 
-    remote_miner_start(gw_ip_str);
+    /* STRIPPED: remote_miner_start(gw_ip_str) */
 
     s_state = TG_CLIENT_NEEDS_PAY;
 
@@ -258,23 +257,14 @@ esp_err_t tollgate_client_on_sta_connected(const char *gw_ip_str)
 
     ESP_LOGI(TAG, "upstream TollGate paid: %lldms allotment", (long long)allotment);
 
-    const market_t *mkt = market_get();
-    int cheapest = market_find_cheapest();
-    if (cheapest >= 0 && mkt->entries[cheapest].valid && mkt->entries[cheapest].ssid[0] != '\0') {
-        int upstream_eff = tollgate_core_client_calc_price_per_min(s_discovery.price_per_step, s_discovery.step_size_ms);
-        int cheap_eff = tollgate_core_client_calc_price_per_min(mkt->entries[cheapest].price_per_step, mkt->entries[cheapest].step_size);
-        if (cheap_eff < upstream_eff) {
-            ESP_LOGW(TAG, "CHEAPER TOLLGATE AVAILABLE: %s at %d sats/min vs upstream %d sats/min",
-                     mkt->entries[cheapest].ssid, cheap_eff, upstream_eff);
-        }
-    }
+    /* STRIPPED: market_get() / market_find_cheapest() cheaper-tollgate scan */
     return ESP_OK;
 }
 
 void tollgate_client_on_sta_disconnected(void)
 {
     ESP_LOGI(TAG, "STA disconnected, resetting client state");
-    remote_miner_stop();
+    /* STRIPPED: remote_miner_stop() */
     s_state = TG_CLIENT_IDLE;
     memset(&s_discovery, 0, sizeof(s_discovery));
     memset(s_gw_ip, 0, sizeof(s_gw_ip));

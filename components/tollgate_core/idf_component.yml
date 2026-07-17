@@ -11,6 +11,7 @@ url: https://github.com/OpenTollGate/tollgate-esp32
 license: "MIT"
 targets:
   - esp32s3
+  - esp32c3
 tags:
   - wifi
   - hotspot

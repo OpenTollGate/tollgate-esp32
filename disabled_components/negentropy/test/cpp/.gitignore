@@ -1,0 +1,7 @@
+/harness
+/btreeFuzz
+/measureSpaceUsage
+/lmdbTest
+/subRange
+
+/testdb/

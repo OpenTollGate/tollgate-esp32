@@ -2,7 +2,6 @@
 #include "tollgate_core_cashu.h"
 #include "tollgate_core_session.h"
 #include "tollgate_core_firewall.h"
-#include "tollgate_core_mining.h"
 #include "tollgate_core.h"
 #include "config.h"
 #include "identity.h"
@@ -11,11 +10,8 @@
 #include "esp_heap_caps.h"
 #include "nucula_wallet.h"
 #include "mint_health.h"
-#include "market.h"
+/* STRIPPED from balloon build: market.h, stratum_proxy.h, stratum_client.h, tls_worker.h */
 
-#include "stratum_proxy.h"
-#include "stratum_client.h"
-#include "tls_worker.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "cJSON.h"
@@ -162,17 +158,7 @@ static esp_err_t api_get_discovery(httpd_req_t *req)
     cJSON_AddItemToArray(tips_tag, cJSON_CreateString("5"));
     cJSON_AddItemToArray(tags, tips_tag);
 
-    if (cfg->mining_enabled) {
-        cJSON *mining_tag = cJSON_CreateArray();
-        cJSON_AddItemToArray(mining_tag, cJSON_CreateString("price_per_step"));
-        cJSON_AddItemToArray(mining_tag, cJSON_CreateString("mining"));
-        char mining_port_str[16];
-        snprintf(mining_port_str, sizeof(mining_port_str), "%d", cfg->mining_port);
-        cJSON_AddItemToArray(mining_tag, cJSON_CreateString(mining_port_str));
-        cJSON_AddItemToArray(mining_tag, cJSON_CreateString("GH/s"));
-        cJSON_AddItemToArray(mining_tag, cJSON_CreateString("sv1"));
-        cJSON_AddItemToArray(tags, mining_tag);
-    }
+    /* STRIPPED: mining_tag block (mining subsystem removed) */
 
     cJSON_AddItemToObject(root, "tags", tags);
     cJSON_AddStringToObject(root, "content", "");
@@ -359,7 +345,11 @@ static esp_err_t api_post_payment(httpd_req_t *req)
     cJSON_free(json);
     cJSON_Delete(session_event);
 
-    tls_worker_submit(body_copy);
+    /* STRIPPED: tls_worker_submit(body_copy) — receive token synchronously instead */
+    if (body_copy) {
+        nucula_wallet_receive(body_copy);
+        free(body_copy);
+    }
 
     free(states);
     free(token);
@@ -536,166 +526,8 @@ static esp_err_t api_get_mints(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t api_get_mining_job(httpd_req_t *req)
-{
-    const stratum_job_t *job = stratum_proxy_get_current_job();
-    if (!job || !job->valid) {
-        httpd_resp_set_status(req, "503 Service Unavailable");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"no job\"}", 15);
-        return ESP_OK;
-    }
-
-    cJSON *root = cJSON_CreateObject();
-    cJSON_AddNumberToObject(root, "job_id", job->job_id);
-
-    char prevhash_hex[65];
-    for (int i = 0; i < 32; i++) snprintf(prevhash_hex + i * 2, 3, "%02x", job->prevhash[i]);
-    cJSON_AddStringToObject(root, "prevhash", prevhash_hex);
-
-    char merkle_hex[65];
-    for (int i = 0; i < 32; i++) snprintf(merkle_hex + i * 2, 3, "%02x", job->merkle_root[i]);
-    cJSON_AddStringToObject(root, "merkle_root", merkle_hex);
-
-    cJSON_AddNumberToObject(root, "version", job->version);
-    cJSON_AddNumberToObject(root, "nbits", job->nbits);
-    cJSON_AddNumberToObject(root, "ntime", job->ntime);
-    cJSON_AddNumberToObject(root, "hashprice", tollgate_core_mining_get_current_hashprice());
-
-    char *json = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json, strlen(json));
-    cJSON_free(json);
-    cJSON_Delete(root);
-    return ESP_OK;
-}
-
-static esp_err_t api_post_mining_share(httpd_req_t *req)
-{
-    uint32_t client_ip = 0;
-    get_client_ip(req, &client_ip);
-
-    int content_len = req->content_len;
-    if (content_len <= 0 || content_len > 512) {
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"invalid body\"}", 21);
-        return ESP_OK;
-    }
-
-    char body[512];
-    int total = 0;
-    while (total < content_len) {
-        int r = httpd_req_recv(req, body + total, content_len - total);
-        if (r <= 0) {
-            httpd_resp_set_status(req, "400 Bad Request");
-            httpd_resp_set_type(req, "text/plain");
-            httpd_resp_send(req, "bad request", 11);
-            return ESP_OK;
-        }
-        total += r;
-    }
-    body[total] = '\0';
-
-    cJSON *root = cJSON_Parse(body);
-    if (!root) {
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"invalid json\"}", 21);
-        return ESP_OK;
-    }
-
-    cJSON *j_job_id = cJSON_GetObjectItem(root, "job_id");
-    cJSON *j_nonce = cJSON_GetObjectItem(root, "nonce");
-    cJSON *j_ntime = cJSON_GetObjectItem(root, "ntime");
-    cJSON *j_version = cJSON_GetObjectItem(root, "version");
-    if (!j_job_id || !j_nonce || !j_ntime || !j_version) {
-        cJSON_Delete(root);
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"missing fields\"}", 22);
-        return ESP_OK;
-    }
-
-    uint32_t job_id = (uint32_t)j_job_id->valuedouble;
-    uint32_t nonce = (uint32_t)j_nonce->valuedouble;
-    uint32_t ntime = (uint32_t)j_ntime->valuedouble;
-    cJSON_Delete(root);
-
-    const stratum_job_t *job = stratum_proxy_get_current_job();
-    if (!job || !job->valid || job->job_id != job_id) {
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"stale job\"}", 19);
-        return ESP_OK;
-    }
-
-    esp_err_t share_err = stratum_client_submit_share(job_id, nonce, ntime);
-    bool accepted = (share_err == ESP_OK);
-
-    tollgate_core_mining_update_hashrate(client_ip, accepted);
-    tollgate_mining_client_stats_t *stats = tollgate_core_mining_get_or_create_client(client_ip);
-
-    if (accepted) {
-        const tollgate_config_t *cfg = tollgate_config_get();
-        double hashprice = tollgate_core_mining_get_current_hashprice();
-        uint64_t allotment_ms = tollgate_core_mining_shares_to_allotment_ms(
-            stats->hashrate_ghs, hashprice, cfg->price_per_step, cfg->step_size_ms);
-
-        tg_session_t *session = tollgate_core_session_find_by_ip(client_ip);
-        if (!session || !session->active || session->payment_method != TG_PAYMENT_MINING) {
-            session = tollgate_core_session_create(client_ip, allotment_ms);
-            if (session) session->payment_method = TG_PAYMENT_MINING;
-        } else {
-            tollgate_core_session_extend(session, allotment_ms);
-        }
-    }
-
-    cJSON *resp = cJSON_CreateObject();
-    cJSON_AddBoolToObject(resp, "accepted", accepted);
-    cJSON_AddNumberToObject(resp, "hashrate_ghs", stats ? stats->hashrate_ghs : 0.0);
-    char *json = cJSON_PrintUnformatted(resp);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json, strlen(json));
-    cJSON_free(json);
-    cJSON_Delete(resp);
-    return ESP_OK;
-}
-
-static esp_err_t api_get_mining_stats(httpd_req_t *req)
-{
-    stratum_proxy_stats_t proxy_stats;
-    stratum_proxy_get_stats(&proxy_stats);
-
-    const stratum_client_state_t *client_state = stratum_client_get_state();
-
-    cJSON *root = cJSON_CreateObject();
-
-    cJSON *proxy = cJSON_CreateObject();
-    cJSON_AddNumberToObject(proxy, "hashrate_ghs", proxy_stats.hashrate_ghs);
-    cJSON_AddNumberToObject(proxy, "total_shares", (double)proxy_stats.total_shares);
-    cJSON_AddNumberToObject(proxy, "total_accepted", (double)proxy_stats.total_accepted);
-    cJSON_AddNumberToObject(proxy, "total_rejected", (double)proxy_stats.total_rejected);
-    cJSON_AddNumberToObject(proxy, "hashprice", proxy_stats.current_hashprice);
-    cJSON_AddNumberToObject(proxy, "active_miners", proxy_stats.active_miners);
-    cJSON_AddItemToObject(root, "proxy", proxy);
-
-    cJSON *upstream = cJSON_CreateObject();
-    cJSON_AddBoolToObject(upstream, "connected", client_state->connected);
-    cJSON_AddStringToObject(upstream, "pool_host", client_state->pool_host);
-    cJSON_AddNumberToObject(upstream, "pool_port", client_state->pool_port);
-    cJSON_AddNumberToObject(upstream, "difficulty", (double)client_state->difficulty);
-    cJSON_AddNumberToObject(upstream, "shares_accepted", (double)client_state->shares_accepted);
-    cJSON_AddNumberToObject(upstream, "shares_rejected", (double)client_state->shares_rejected);
-    cJSON_AddItemToObject(root, "upstream", upstream);
-
-    char *json = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json, strlen(json));
-    cJSON_free(json);
-    cJSON_Delete(root);
-    return ESP_OK;
-}
+/* STRIPPED: api_get_mining_job, api_post_mining_share, api_get_mining_stats
+ * (mining subsystem removed from balloon build) */
 
 extern bool s_start_services_called;
 extern bool s_start_ap_services_called;
@@ -778,9 +610,7 @@ static const httpd_uri_t uri_whoami = { .uri = "/whoami", .method = HTTP_GET, .h
 static const httpd_uri_t uri_wallet = { .uri = "/wallet", .method = HTTP_GET, .handler = api_get_wallet };
 static const httpd_uri_t uri_wallet_swap = { .uri = "/wallet/swap", .method = HTTP_POST, .handler = api_post_wallet_swap };
 static const httpd_uri_t uri_wallet_send = { .uri = "/wallet/send", .method = HTTP_POST, .handler = api_post_wallet_send };
-static const httpd_uri_t uri_mining_job = { .uri = "/mining/job", .method = HTTP_GET, .handler = api_get_mining_job };
-static const httpd_uri_t uri_mining_share = { .uri = "/mining/share", .method = HTTP_POST, .handler = api_post_mining_share };
-static const httpd_uri_t uri_mining_stats = { .uri = "/mining/stats", .method = HTTP_GET, .handler = api_get_mining_stats };
+/* mining job/share/stats endpoints stripped (mining subsystem removed) */
 
 static esp_err_t api_get_mining_pubkey(httpd_req_t *req)
 {
@@ -805,44 +635,7 @@ static esp_err_t api_get_mining_pubkey(httpd_req_t *req)
 
 static const httpd_uri_t uri_mining_pubkey = { .uri = "/mining/pubkey", .method = HTTP_GET, .handler = api_get_mining_pubkey };
 
-static esp_err_t api_get_market(httpd_req_t *req)
-{
-    const market_t *mkt = market_get();
-
-    cJSON *root = cJSON_CreateObject();
-    cJSON_AddNumberToObject(root, "count", mkt->count);
-    cJSON_AddNumberToObject(root, "last_scan_s", (double)(mkt->last_scan_ms / 1000));
-
-    cJSON *entries = cJSON_CreateArray();
-    for (int i = 0; i < MARKET_MAX_ENTRIES; i++) {
-        if (!mkt->entries[i].valid) continue;
-        const market_entry_t *e = &mkt->entries[i];
-
-        cJSON *entry = cJSON_CreateObject();
-        char bssid_str[18];
-        snprintf(bssid_str, sizeof(bssid_str), "%02X:%02X:%02X:%02X:%02X:%02X",
-                 e->bssid[0], e->bssid[1], e->bssid[2],
-                 e->bssid[3], e->bssid[4], e->bssid[5]);
-        cJSON_AddStringToObject(entry, "bssid", bssid_str);
-        cJSON_AddStringToObject(entry, "ssid", e->ssid[0] ? e->ssid : "unknown");
-        cJSON_AddNumberToObject(entry, "rssi", e->rssi);
-        cJSON_AddNumberToObject(entry, "price_per_step", e->price_per_step);
-        cJSON_AddNumberToObject(entry, "step_size", (double)e->step_size);
-        cJSON_AddStringToObject(entry, "metric", e->metric ? "bytes" : "milliseconds");
-        if (e->geohash[0]) cJSON_AddStringToObject(entry, "geohash", e->geohash);
-        cJSON_AddItemToArray(entries, entry);
-    }
-    cJSON_AddItemToObject(root, "entries", entries);
-
-    char *json = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json, strlen(json));
-    cJSON_free(json);
-    cJSON_Delete(root);
-    return ESP_OK;
-}
-
-static const httpd_uri_t uri_market = { .uri = "/market", .method = HTTP_GET, .handler = api_get_market };
+/* /market endpoint stripped for balloon build (market.c removed) */
 static const httpd_uri_t uri_debug = { .uri = "/debug", .method = HTTP_GET, .handler = api_get_debug };
 
 esp_err_t tollgate_api_start(void)
@@ -876,14 +669,9 @@ esp_err_t tollgate_api_start(void)
     httpd_register_uri_handler(s_api_server, &uri_wallet);
     httpd_register_uri_handler(s_api_server, &uri_wallet_swap);
     httpd_register_uri_handler(s_api_server, &uri_wallet_send);
-    httpd_register_uri_handler(s_api_server, &uri_market);
+    /* uri_market stripped */
 
-    const tollgate_config_t *cfg = tollgate_config_get();
-    if (cfg->mining_enabled) {
-        httpd_register_uri_handler(s_api_server, &uri_mining_job);
-        httpd_register_uri_handler(s_api_server, &uri_mining_share);
-        httpd_register_uri_handler(s_api_server, &uri_mining_stats);
-    }
+    /* mining endpoints stripped — not registered */
 
     ESP_LOGI(TAG, "TollGate API started on port 2121");
 
