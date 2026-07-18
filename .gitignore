@@ -46,6 +46,9 @@ tests/unit/test_tollgate_client_mining
 interop/routers.env
 components/tollgate_core/dist/
 tests/unit/test_display
+tests/unit/test_faucet_client
+tests/unit/test_relay_selector
+tests/unit/test_remote_miner
 
 # auto-generated opencode session handover (do not commit)
 HANDOVER.md
